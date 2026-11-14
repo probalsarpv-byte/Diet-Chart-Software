@@ -134,6 +134,17 @@ export type AgniType = 'mandagni' | 'tikshnagni' | 'vishamagni' | 'samagni';
 export type PopulationGroup = 'adult_standard' | 'pediatric' | 'pregnancy' | 'lactation' | 'geriatric';
 export type BmrFloorStrategy = 'clamped_to_bmr' | 'clinician_custom' | 'unrestricted_clinical_guidance';
 
+export interface AssessmentAnswerMap {
+  [questionId: string]: any;
+}
+
+export interface AssessmentData {
+  version: string; // matches questionnaireRegistry.version
+  answers: AssessmentAnswerMap;
+  completed: boolean;
+  completedAt?: string; // ISO timestamp
+}
+
 export type ClinicalConditionId = 
   | 't2d_ir'
   | 'hypothyroid'
