@@ -17,11 +17,13 @@ import {
   PopulationApplicability,
 } from './types';
 import { PatientProfile } from '../../types';
+import { aggregateEvidence } from './evidenceAggregator';
 
 // ─── P2 Engine Input ──────────────────────────────────────────────
 export interface P2EngineInput {
   patient: PatientProfile;
-  observations: ClinicalObservation[];
+  observations?: ClinicalObservation[];
+  assessmentAnswers?: Record<string, any>;
   previousApprovals?: ClinicianApprovalRecord[];
 }
 
@@ -527,8 +529,32 @@ function identifyMissingData(observations: ClinicalObservation[], hypotheses: Cl
 }
 
 // ─── Main Engine Function ─────────────────────────────────────────
-export function runP2Analysis(input: P2EngineInput): P2AnalysisResult {
-  const { patient, observations, previousApprovals = [] } = input;
+export function runP2Analysis(
+  inputOrPatient: P2EngineInput | PatientProfile,
+  assessmentAnswers?: Record<string, any>,
+  previousApprovals?: ClinicianApprovalRecord[]
+): P2AnalysisResult {
+  let patient: PatientProfile;
+  let observations: ClinicalObservation[];
+  let approvals: ClinicianApprovalRecord[] = previousApprovals || [];
+
+  if ('id' in inputOrPatient && 'gender' in inputOrPatient && 'age' in inputOrPatient) {
+    // Called as runP2Analysis(patient, assessmentAnswers, previousApprovals)
+    patient = inputOrPatient as PatientProfile;
+    observations = aggregateEvidence(patient, assessmentAnswers || {});
+  } else {
+    // Called as runP2Analysis(P2EngineInput)
+    const input = inputOrPatient as P2EngineInput;
+    patient = input.patient;
+    if (input.observations && input.observations.length > 0) {
+      observations = input.observations;
+    } else {
+      observations = aggregateEvidence(patient, input.assessmentAnswers || {});
+    }
+    if (input.previousApprovals) {
+      approvals = input.previousApprovals;
+    }
+  }
 
   const domainFindings = buildDomainFindings(observations, patient);
   const redFlags = detectRedFlags(observations, patient);
@@ -539,7 +565,7 @@ export function runP2Analysis(input: P2EngineInput): P2AnalysisResult {
   const missingData = identifyMissingData(observations, hypotheses);
 
   const finalHypotheses = hypotheses.map(h => {
-    const prior = previousApprovals.find(a => a.targetId === h.id && a.targetType === 'hypothesis');
+    const prior = approvals.find(a => a.targetId === h.id && a.targetType === 'hypothesis');
     if (prior) {
       return { ...h, clinicianDecision: prior.decision as 'accepted' | 'rejected' | 'uncertain' | 'more_info_needed' | 'pending' };
     }
@@ -574,7 +600,7 @@ export function runP2Analysis(input: P2EngineInput): P2AnalysisResult {
     priorities,
     timelineEvents,
     interventionGoals,
-    approvalHistory: previousApprovals,
+    approvalHistory: approvals,
     dietPlanningContext,
     missingHighValueData: missingData,
   };

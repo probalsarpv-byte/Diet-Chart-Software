@@ -5,6 +5,7 @@ import { usePractice } from '@/context/PracticeContext';
 import { Header } from '@/components/Header';
 import { NavigationTabs } from '@/components/NavigationTabs';
 import { IntakeTab } from '@/components/tabs/IntakeTab';
+import { AssessmentTab } from '@/components/tabs/AssessmentTab';
 import { ConditionsTab } from '@/components/tabs/ConditionsTab';
 import { DNITab } from '@/components/tabs/DNITab';
 import { DietChartTab } from '@/components/tabs/DietChartTab';
@@ -22,6 +23,7 @@ export default function Home() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
         {activeTab === 'intake' && <IntakeTab />}
+        {activeTab === 'assessment' && <AssessmentTab />}
         {activeTab === 'conditions' && <ConditionsTab />}
         {activeTab === 'dni' && <DNITab />}
         {activeTab === 'diet' && <DietChartTab />}

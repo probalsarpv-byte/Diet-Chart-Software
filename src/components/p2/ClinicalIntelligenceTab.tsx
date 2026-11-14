@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { usePractice } from '@/context/PracticeContext';
+import { useAssessment } from '@/context/AssessmentContext';
 import { runP2Analysis } from '../../engine/p2/index';
 import { ClinicianDecision } from '../../engine/p2/types';
 import { FunctionalMatrixView } from './FunctionalMatrixView';
@@ -11,8 +12,9 @@ import { ClinicalTimelineView } from './ClinicalTimelineView';
 import { InterventionStrategyView } from './InterventionStrategyView';
 import { PriorityBoard } from './PriorityBoard';
 import { MissingDataPanel } from './MissingDataPanel';
+import { ClinicalIntelligenceReport } from './ClinicalIntelligenceReport';
 
-type SubTab = 'matrix' | 'hypotheses' | 'redflags' | 'timeline' | 'priorities' | 'interventions' | 'missing';
+type SubTab = 'matrix' | 'hypotheses' | 'redflags' | 'timeline' | 'priorities' | 'interventions' | 'missing' | 'report';
 
 const SUB_TABS: Array<{ id: SubTab; label_en: string; label_bn: string }> = [
   { id: 'redflags', label_en: 'Red Flags', label_bn: 'রেড ফ্ল্যাগ' },
@@ -22,22 +24,25 @@ const SUB_TABS: Array<{ id: SubTab; label_en: string; label_bn: string }> = [
   { id: 'timeline', label_en: 'Timeline', label_bn: 'টাইমলাইন' },
   { id: 'interventions', label_en: 'Interventions', label_bn: 'হস্তক্ষেপ' },
   { id: 'missing', label_en: 'Data Gaps', label_bn: 'তথ্য ফাঁক' },
+  { id: 'report', label_en: 'Clinical Report', label_bn: 'ক্লিনিক্যাল রিপোর্ট' },
 ];
 
 export const ClinicalIntelligenceTab: React.FC = () => {
   const { patient, language } = usePractice();
+  const { data: assessmentData } = useAssessment();
   const lang = language;
   const [subTab, setSubTab] = useState<SubTab>('redflags');
 
-  // Run P2 analysis memoized on patient changes
+  // Run P2 analysis memoized on patient and assessment changes
   const analysis = useMemo(() => {
     if (!patient?.id) return null;
     try {
-      return runP2Analysis(patient);
-    } catch {
+      return runP2Analysis(patient, assessmentData.answers);
+    } catch (e) {
+      console.error("P2 Analysis error:", e);
       return null;
     }
-  }, [patient]);
+  }, [patient, assessmentData.answers]);
 
   // Local state for clinician decisions (hypotheses & interventions)
   const [hypotheses, setHypotheses] = useState(() => analysis?.hypotheses ?? []);
@@ -184,6 +189,9 @@ export const ClinicalIntelligenceTab: React.FC = () => {
         )}
         {subTab === 'missing' && (
           <MissingDataPanel missingItems={analysis.missingHighValueData} lang={lang} />
+        )}
+        {subTab === 'report' && (
+          <ClinicalIntelligenceReport result={analysis} patient={patient} lang={lang} />
         )}
       </div>
     </div>

@@ -9,7 +9,9 @@ import {
   UtensilsCrossed, 
   TrendingUp, 
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  Stethoscope,
+  Network
 } from 'lucide-react';
 
 export const NavigationTabs: React.FC = () => {
@@ -19,48 +21,64 @@ export const NavigationTabs: React.FC = () => {
     {
       id: 'intake' as const,
       icon: ClipboardList,
-      label_bn: '১. ইনটেক ও ল্যাব অ্যানালাইজার',
-      label_en: '1. Intake & Lab Analyzer',
+      label_bn: '১. ইনটেক ও ল্যাব',
+      label_en: '1. Intake & Labs',
       badge: patient.labs.lab_flags && patient.labs.lab_flags.length > 0 ? `${patient.labs.lab_flags.length} flags` : null,
       badgeColor: 'bg-amber-500/15 text-amber-500'
     },
     {
+      id: 'assessment' as const,
+      icon: Stethoscope,
+      label_bn: '২. ১৪-ডোমেন অ্যাসেসমেন্ট',
+      label_en: '2. 14-Domain Assessment',
+      badge: 'P1 Engine',
+      badgeColor: 'bg-primary/15 text-primary'
+    },
+    {
+      id: 'clinical_intelligence' as const,
+      icon: Network,
+      label_bn: '৩. রুট-কজ ইন্টেলিজেন্স ও ম্যাট্রিক্স',
+      label_en: '3. Root-Cause Intelligence',
+      badge: 'P2 Decision',
+      badgeColor: 'bg-purple-500/15 text-purple-500'
+    },
+    {
       id: 'conditions' as const,
       icon: TrafficCone,
-      label_bn: '২. মাল্টি-ডিজিজ কনফ্লিক্ট ও ট্রাফিক লাইট',
-      label_en: '2. Multi-Disease Traffic Light',
+      label_bn: '৪. ট্রাফিক লাইট কনফ্লিক্ট',
+      label_en: '4. Traffic Light Conflicts',
       badge: `${trafficLight.red.length} Red`,
       badgeColor: 'bg-rose-500/15 text-rose-500'
     },
     {
       id: 'dni' as const,
       icon: Pill,
-      label_bn: '৩. ড্রাগ-নিউট্রিয়েন্ট ও ২৪ঘণ্টা টাইমলাইন',
-      label_en: '3. DNI & 24h Daily Timeline',
+      label_bn: '৫. ড্রাগ-নিউট্রিয়েন্ট ও টাইমলাইন',
+      label_en: '5. DNI & Timeline',
       badge: dniResult.criticalWarnings.length > 0 ? 'Alert' : null,
       badgeColor: 'bg-rose-500/15 text-rose-500'
     },
     {
       id: 'diet' as const,
       icon: UtensilsCrossed,
-      label_bn: '৪. অটো-স্কেলড ডায়েট ও ফুড এক্সচেঞ্জ',
-      label_en: '4. Scaled Diet & Food Exchanges',
+      label_bn: '৬. অটো-স্কেলড ডায়েট',
+      label_en: '6. Scaled Diet Chart',
       badge: isDietPlanDirty ? 'Sync' : `${patient.calculated.target_calories} kcal`,
       badgeColor: isDietPlanDirty ? 'bg-amber-500 text-white font-bold animate-pulse' : 'bg-emerald-500/15 text-emerald-500'
     },
     {
       id: 'followup' as const,
       icon: TrendingUp,
-      label_bn: '৫. লংগিটিউডিনাল ভিজিট ও ফেজ ৪',
-      label_en: '5. Follow-Up & Phase Progression',
+      label_bn: '৭. লংগিটিউডিনাল ফলো-আপ',
+      label_en: '7. Follow-Up Visits',
       badge: `Phase ${patient.current_phase}`,
       badgeColor: 'bg-primary/15 text-primary'
     },
     {
       id: 'report' as const,
       icon: FileText,
-      label_bn: '৬. প্রিন্ট-রেডি A4 ক্লিনিক্যাল রিপোর্ট',
-      label_en: '6. Printable A4 Clinical Report',
+      label_bn: '৮. প্রিন্ট-রেডি রিপোর্ট',
+      label_en: '8. Clinical Report',
       badge: 'PDF',
       badgeColor: 'bg-blue-500/15 text-blue-500'
     }
