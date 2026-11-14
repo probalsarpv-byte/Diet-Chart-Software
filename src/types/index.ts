@@ -344,7 +344,9 @@ export interface DietChartMealItem {
   prep_note_bn: string;
   prep_note_en: string;
   alternatives: FoodExchangeItem[];
-  traffic_status?: 'GREEN' | 'YELLOW';
+  traffic_status?: 'GREEN' | 'YELLOW' | 'RED';
+  contraindicated_reasons?: string[];
+  contraindicated_reasons_bn?: string[];
 }
 
 export interface IncompatiblePairWarning {
@@ -401,7 +403,7 @@ export interface LongitudinalVisit {
   whtr: number;
   bristol_stool: number;
   energy_score: number;
-  symptom_relief_pct: number;
+  symptom_relief_pct?: number;
   homa_ir?: number;
   tg_hdl_ratio?: number;
   hba1c?: number;

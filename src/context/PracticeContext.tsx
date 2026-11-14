@@ -487,31 +487,75 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const isDietPlanDirty = Boolean(patient.is_diet_plan_dirty);
 
   const dismissDirtyWarning = useCallback(() => {
+    const hasRed = dietChart.some(m => m.items.some(i => i.traffic_status === 'RED'));
+    if (hasRed) {
+      // Cannot dismiss warning when hard RED contraindications remain in the active chart
+      return;
+    }
     setPatient(prev => ({ ...prev, is_diet_plan_dirty: false }));
-  }, []);
+  }, [dietChart]);
 
   const recalculateDietPlan = useCallback((preserveManualEdits: boolean = false) => {
     if (preserveManualEdits) {
-      // Keep existing meals, but update items against new traffic light to highlight any red/yellow items
-      const redIds = new Set(trafficLight.red.map(r => r.id));
-      setDietChart(prev => prev.map(meal => ({
-        ...meal,
-        items: meal.items.map(item => ({
-          ...item,
-          traffic_status: redIds.has(item.food_id) ? undefined : (trafficLight.green.some(g => g.id === item.food_id) ? 'GREEN' : 'YELLOW')
-        }))
-      })));
+      // Keep existing meals, but update items against current traffic light to highlight any red/yellow items
+      const redMap = new Map(trafficLight.red.map(r => [r.id, r]));
+      let hasRedContraindications = false;
+
+      setDietChart(prev => prev.map(meal => {
+        const updatedItems = meal.items.map(item => {
+          const redMatch = redMap.get(item.food_id);
+          if (redMatch) {
+            hasRedContraindications = true;
+            return {
+              ...item,
+              traffic_status: 'RED' as const,
+              contraindicated_reasons: redMatch.reasons.map(r => r.note_en),
+              contraindicated_reasons_bn: redMatch.reasons.map(r => r.note_bn)
+            };
+          }
+          const isGreen = trafficLight.green.some(g => g.id === item.food_id);
+          return {
+            ...item,
+            traffic_status: isGreen ? ('GREEN' as const) : ('YELLOW' as const),
+            contraindicated_reasons: undefined,
+            contraindicated_reasons_bn: undefined
+          };
+        });
+
+        // Recalculate nutritional totals after modification
+        const meal_calories = updatedItems.reduce((sum, i) => sum + i.kcal, 0);
+        const meal_protein_g = Math.round(updatedItems.reduce((sum, i) => sum + i.protein_g, 0) * 10) / 10;
+        const meal_carbs_g = Math.round(updatedItems.reduce((sum, i) => sum + i.carbs_g, 0) * 10) / 10;
+        const meal_fat_g = Math.round(updatedItems.reduce((sum, i) => sum + i.fat_g, 0) * 10) / 10;
+
+        return {
+          ...meal,
+          items: updatedItems,
+          meal_calories,
+          meal_protein_g,
+          meal_carbs_g,
+          meal_fat_g
+        };
+      }));
+
+      setPatient(prev => ({
+        ...prev,
+        is_diet_plan_dirty: hasRedContraindications,
+        has_unresolved_diet_contraindications: hasRedContraindications,
+        diet_plan_generated_at: new Date().toISOString(),
+        manual_edits_preserved: preserveManualEdits
+      }));
     } else {
       const fresh = buildAutoScaledDietChart(patient, allFoods, trafficLight);
       setDietChart(fresh);
+      setPatient(prev => ({
+        ...prev,
+        is_diet_plan_dirty: false,
+        has_unresolved_diet_contraindications: false,
+        diet_plan_generated_at: new Date().toISOString(),
+        manual_edits_preserved: false
+      }));
     }
-
-    setPatient(prev => ({
-      ...prev,
-      is_diet_plan_dirty: false,
-      diet_plan_generated_at: new Date().toISOString(),
-      manual_edits_preserved: preserveManualEdits
-    }));
   }, [patient, trafficLight]);
 
   const updateMealItemRawGrams = useCallback((mealId: string, itemId: string, rawGrams: number) => {
@@ -795,7 +839,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const newId = `pt_${Date.now()}`;
     const freshCalculated = calculateAnthropometrics(
       40, 'female', 155, 65, 80, 'sedentary', 
-      ['t2d_ir'], 'adult_standard', undefined, 'clamped_to_bmr'
+      [], 'adult_standard', undefined, 'clamped_to_bmr'
     );
 
     const freshPatient: PatientProfile = {
@@ -818,7 +862,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       confirmed_allergies: [],
       clinician_disallowed_foods: [],
       clinician_disallowed_tags: [],
-      selected_conditions: ['t2d_ir'],
+      selected_conditions: [], // Patient isolation: New patients start with no pre-assigned conditions
       active_medications: [],
       gut_profile: {
         bloating: 'none',

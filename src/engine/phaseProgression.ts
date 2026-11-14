@@ -82,7 +82,9 @@ export function compareLongitudinalProgress(visits: LongitudinalVisit[]): Longit
   const weightDeltaPct = Math.round(((latest.weight_kg - baseline.weight_kg) / baseline.weight_kg) * 1000) / 10;
   const whtrDelta = Math.round((latest.whtr - baseline.whtr) * 100) / 100;
   const bristolStoolDelta = latest.bristol_stool - baseline.bristol_stool;
-  const symptomScoreDelta = latest.symptom_relief_pct - baseline.symptom_relief_pct;
+  const symptomScoreDelta = (latest.symptom_relief_pct !== undefined && baseline.symptom_relief_pct !== undefined)
+    ? latest.symptom_relief_pct - baseline.symptom_relief_pct
+    : (latest.symptom_relief_pct ?? 0) - (baseline.symptom_relief_pct ?? 0);
 
   let homaIrDelta: number | undefined = undefined;
   if (latest.homa_ir !== undefined && baseline.homa_ir !== undefined) {
@@ -140,10 +142,10 @@ export function advanceToNextPhase(record: PatientRecord, options?: TransitionOp
   const todayStr = new Date().toISOString().split('T')[0];
   const lastVisit = record.visits[record.visits.length - 1];
 
-  // Use actual evaluated percentage or carry forward last visit's actual recorded percentage (default to 0 if not assessed)
+  // Use actual evaluated percentage or carry forward last visit's actual recorded percentage (remains undefined if unassessed)
   const evaluatedSymptomRelief = options?.actualSymptomReliefPct !== undefined 
     ? Math.max(0, Math.min(100, options.actualSymptomReliefPct))
-    : (lastVisit?.symptom_relief_pct ?? 0);
+    : lastVisit?.symptom_relief_pct;
 
   const newVisit: LongitudinalVisit = {
     visit_id: `v_${Date.now()}`,
@@ -160,8 +162,8 @@ export function advanceToNextPhase(record: PatientRecord, options?: TransitionOp
     hba1c: record.patient.labs.hba1c,
     tsh: record.patient.labs.tsh,
     uric_acid: record.patient.labs.uric_acid,
-    clinical_observations: options?.clinicalObservations || "Clinician observation recorded during scheduled phase transition evaluation.",
-    phase_transition_rationale: options?.rationale || `Phase criteria met for ${CLINICAL_PHASES[nextPhase].title_en}.`,
+    clinical_observations: options?.clinicalObservations || "Phase transition evaluated and recorded by clinician.",
+    phase_transition_rationale: options?.rationale || `Clinician authorized phase transition to ${CLINICAL_PHASES[nextPhase].title_en} based on longitudinal clinical evaluation.`,
     is_phase_transition: true,
     diet_plan_snapshot_summary: options?.dietSnapshotSummary || `Target ${record.patient.calculated.target_calories} kcal, ${record.patient.calculated.target_protein_g}g Protein.`,
     notes_bn: options?.notes_bn || `${CLINICAL_PHASES[nextPhase].title_bn} শুরু করা হলো। রোগীর ক্লিনিক্যাল অগ্রগতির ভিত্তিতে পর্যায় পরিবর্তন অনুমোদন করা হয়েছে।`,

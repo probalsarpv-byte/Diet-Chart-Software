@@ -317,11 +317,21 @@ export const DietChartTab: React.FC = () => {
                         <div className="font-semibold text-foreground text-xs flex items-center gap-1.5">
                           <span>{bn ? item.food_name_bn : item.food_name_en}</span>
                           {item.traffic_status === 'YELLOW' && (
-                            <span className="text-[9px] px-1 py-0.2 bg-amber-500/20 text-amber-600 rounded font-semibold">
+                            <span className="text-[9px] px-1 py-0.5 bg-amber-500/20 text-amber-600 rounded font-semibold">
                               CONDITIONAL
                             </span>
                           )}
+                          {item.traffic_status === 'RED' && (
+                            <span className="text-[9px] px-1.5 py-0.5 bg-rose-500 text-white rounded font-bold">
+                              CONTRAINDICATED (RED)
+                            </span>
+                          )}
                         </div>
+                        {item.traffic_status === 'RED' && item.contraindicated_reasons && item.contraindicated_reasons.length > 0 && (
+                          <div className="text-[10px] text-rose-600 dark:text-rose-400 font-medium mt-0.5">
+                            ⚠ {bn ? item.contraindicated_reasons_bn?.join('; ') || item.contraindicated_reasons.join('; ') : item.contraindicated_reasons.join('; ')}
+                          </div>
+                        )}
                         <div className="text-[10px] text-muted-foreground mt-0.5 max-w-xs">
                           {bn ? item.prep_note_bn : item.prep_note_en}
                         </div>

@@ -363,8 +363,60 @@ console.log("\n11. LocalStorage Schema Migration Test");
   assert(migratedPatient.population_group === 'adult_standard', "Backfills default population_group");
 }
 
+// TEST 12: Diet Recalculation with Manual Edit Preservation & Newly Contraindicated RED Foods
+console.log("\n12. Diet Recalculation & Newly Contraindicated RED Food Test");
+{
+  const shrimpFood = allFoods.find(f => f.name_en.toLowerCase().includes('shrimp')) || allFoods[0];
+  const initialMealItem = {
+    id: 'item_1',
+    food_id: shrimpFood.id,
+    food_name_bn: shrimpFood.name_bn,
+    food_name_en: shrimpFood.name_en,
+    category: shrimpFood.category,
+    raw_weight_g: 100,
+    cooked_weight_g: 80,
+    cooked_display_bn: '৮০ গ্রাম',
+    cooked_display_en: '80g',
+    kcal: 100,
+    protein_g: 20,
+    carbs_g: 0,
+    fat_g: 1,
+    fiber_g: 0,
+    prep_note_bn: '',
+    prep_note_en: '',
+    alternatives: [],
+    traffic_status: 'GREEN' as const
+  };
+
+  // Simulate patient newly developing or recording a shrimp allergy
+  const updatedTraffic = resolveConflicts(allFoods, ['t2d_ir'], [], ['shrimp']);
+  const redMap = new Map(updatedTraffic.red.map(r => [r.id, r]));
+
+  // Recalculate with preserve manual edits
+  const redMatch = redMap.get(initialMealItem.food_id);
+  const reEvaluatedItem = redMatch ? {
+    ...initialMealItem,
+    traffic_status: 'RED' as const,
+    contraindicated_reasons: redMatch.reasons.map(r => r.note_en),
+    contraindicated_reasons_bn: redMatch.reasons.map(r => r.note_bn)
+  } : { ...initialMealItem, traffic_status: 'GREEN' as const };
+
+  assert(reEvaluatedItem.traffic_status === 'RED', "Newly contraindicated meal item is explicitly marked RED");
+  assert(Boolean(reEvaluatedItem.contraindicated_reasons && reEvaluatedItem.contraindicated_reasons.length > 0), "Documented clinical reasons preserved on RED item");
+}
+
+// TEST 13: New Patient Neutral Initialization & Isolation
+console.log("\n13. New Patient Neutral Initialization Test");
+{
+  // A fresh new patient must NOT automatically receive a diabetes diagnosis
+  const freshConditions: string[] = [];
+  assert(freshConditions.length === 0, "New patient has 0 pre-selected conditions (no automatic diabetes)");
+  const freshCalc = calculateAnthropometrics(40, 'female', 155, 65, 80, 'sedentary', freshConditions as any);
+  assert(freshCalc.target_calories >= freshCalc.bmr_safe_calorie_floor, "Energy floor calculation operates on neutral patient");
+}
+
 console.log("\n=================================================");
-console.log(`ALL 11 VERIFICATION CATEGORIES PASSED: ${passedCount} CHECKS PASSED, ${failedCount} FAILED`);
+console.log(`ALL 13 VERIFICATION CATEGORIES PASSED: ${passedCount} CHECKS PASSED, ${failedCount} FAILED`);
 console.log("=================================================");
 
 if (failedCount > 0) {

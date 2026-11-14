@@ -23,13 +23,41 @@ export const ReportTab: React.FC = () => {
 
   const approvedSupplements = candidateSupplements.filter(s => s.approval_status === 'clinician_approved');
 
+  const redDietItems = dietChart.flatMap(m => m.items.filter(i => i.traffic_status === 'RED'));
+  const hasUnresolvedContraindications = redDietItems.length > 0;
+
   const handlePrint = () => {
+    if (hasUnresolvedContraindications) {
+      alert(bn
+        ? "ত্রুটি: খাদ্যতালিকায় নিষিদ্ধ (লাল) খাবার অন্তর্ভুক্ত রয়েছে। রোগীর নিরাপত্তার স্বার্থে এই রিপোর্ট প্রিন্ট বা অনুমোদন করা যাবে না। অনুগ্রহ করে ডায়েট চার্ট ট্যাবে গিয়ে লাল তালিকাভুক্ত খাবারগুলো পরিবর্তন বা রিসেট করুন।"
+        : "Error: The diet chart contains strictly contraindicated (RED) food items. For clinical safety, this report cannot be finalized or printed until all contraindicated foods are resolved."
+      );
+      return;
+    }
     window.print();
   };
 
   return (
     <div className="space-y-6 pb-12">
       
+      {/* Critical Red Contraindication Alert Banner */}
+      {hasUnresolvedContraindications && (
+        <div className="bg-rose-500/10 border-2 border-rose-500 rounded-2xl p-4 text-rose-600 dark:text-rose-400 flex items-start gap-3 shadow-md no-print">
+          <XCircle className="h-6 w-6 flex-shrink-0 mt-0.5 text-rose-500" />
+          <div className="space-y-1">
+            <h3 className="font-bold text-sm">
+              {bn ? 'ক্লিনিক্যাল সতর্কতা: খাদ্যতালিকায় নিষিদ্ধ (লাল) খাবার উপস্থিত!' : 'Critical Clinical Alert: Unresolved Contraindicated (RED) Foods!'}
+            </h3>
+            <p className="text-xs">
+              {bn
+                ? `খাদ্যতালিকায় ${redDietItems.length} টি খাবার রোগীর বর্তমান স্বাস্থ্য অবস্থা বা অ্যালার্জির সাথে সাংঘর্ষিক: ${redDietItems.map(i => i.food_name_bn).join(', ')}। চূড়ান্ত রিপোর্ট প্রিন্ট করার পূর্বে অবশ্যই এগুলো অপসারণ করতে হবে।`
+                : `The active diet chart contains ${redDietItems.length} contraindicated items (${redDietItems.map(i => i.food_name_en).join(', ')}). Report approval and export are blocked until these items are replaced.`
+              }
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Top Action Bar (Hidden in Print) */}
       <div className="bg-card border rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 no-print">
         <div className="flex items-center gap-2">
