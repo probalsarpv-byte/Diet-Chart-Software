@@ -44,6 +44,15 @@ export interface FoodItem {
   prep_note_en: string;
 }
 
+export type RestrictionCategory = 
+  | 'confirmed_allergy'
+  | 'clinician_restriction'
+  | 'hard_contraindication'
+  | 'evidence_conditional'
+  | 'suspected_intolerance'
+  | 'phase_specific'
+  | 'preference';
+
 export interface NutrientDepletion {
   nutrient: string;
   severity: 'high' | 'medium' | 'low';
@@ -97,6 +106,23 @@ export interface SupplementItem {
   contraindications: string[];
 }
 
+export interface CandidateSupplement extends SupplementItem {
+  approval_status: 'candidate_review' | 'clinician_approved' | 'rejected';
+  prescribed_dose?: string;
+  clinician_notes?: string;
+  indication_trigger?: string;
+}
+
+export interface SupplementOverlapWarning {
+  nutrient: string;
+  total_amount_estimated: string;
+  tolerable_upper_limit: string;
+  sources: string[];
+  warning_bn: string;
+  warning_en: string;
+  severity: 'high' | 'medium';
+}
+
 export interface ActivityLevelConfig {
   factor: number;
   label_en: string;
@@ -105,6 +131,9 @@ export interface ActivityLevelConfig {
 
 export type ActivityLevel = 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active';
 export type AgniType = 'mandagni' | 'tikshnagni' | 'vishamagni' | 'samagni';
+export type PopulationGroup = 'adult_standard' | 'pediatric' | 'pregnancy' | 'lactation' | 'geriatric';
+export type BmrFloorStrategy = 'clamped_to_bmr' | 'clinician_custom' | 'unrestricted_clinical_guidance';
+
 export type ClinicalConditionId = 
   | 't2d_ir'
   | 'hypothyroid'
@@ -131,6 +160,11 @@ export interface CalculatedAnthropometrics {
   target_carbs_g: number;
   target_fat_g: number;
   protein_ratio_used: string;
+  population_group: PopulationGroup;
+  population_warning?: string;
+  bmr_floor_strategy: BmrFloorStrategy;
+  is_estimated: boolean;
+  energy_calculation_method: string;
 }
 
 export interface LabFlag {
@@ -142,6 +176,7 @@ export interface LabFlag {
   status: 'optimal' | 'borderline' | 'abnormal' | 'critical';
   insight_en: string;
   insight_bn: string;
+  is_diagnostic_threshold?: boolean;
 }
 
 export interface FunctionalLabs {
@@ -178,6 +213,7 @@ export interface GutAndAyurvedicProfile {
 }
 
 export interface PatientProfile {
+  schema_version: number;
   id: string;
   name: string;
   age: number;
@@ -192,6 +228,13 @@ export interface PatientProfile {
   activity_level: ActivityLevel;
   sleep_hours: number;
   shift_worker: boolean;
+  population_group: PopulationGroup;
+  trimester?: 1 | 2 | 3;
+  bmr_floor_strategy: BmrFloorStrategy;
+  custom_calorie_floor?: number;
+  confirmed_allergies: string[]; // e.g. ['peanut', 'egg', 'shrimp', 'gluten', 'dairy']
+  clinician_disallowed_foods: string[]; // food IDs or keywords explicitly forbidden by clinician
+  clinician_disallowed_tags: string[]; // tags explicitly blocked by clinician
   selected_conditions: ClinicalConditionId[];
   active_medications: string[]; // medicine IDs or generic names
   gut_profile: GutAndAyurvedicProfile;
@@ -205,6 +248,10 @@ export interface PatientProfile {
     meal_structure?: '3_meals' | '3_meals_1_snack' | 'intermittent_fasting_16_8';
   };
   custom_clinical_notes?: string;
+  is_diet_plan_dirty?: boolean;
+  assessment_last_updated_at?: string;
+  diet_plan_generated_at?: string;
+  manual_edits_preserved?: boolean;
 }
 
 export interface DiseaseRule {
@@ -216,7 +263,7 @@ export interface DiseaseRule {
   redTags: string[];
   yellowTags: string[];
   greenTags: string[];
-  redFoods?: string[]; // specific food codes or keywords
+  redFoods?: string[];
   yellowFoods?: string[];
   greenFoods?: string[];
   macroAdjustment: {
@@ -233,10 +280,13 @@ export interface DiseaseRule {
 }
 
 export interface EvaluatedReason {
-  conditionId: ClinicalConditionId | 'DNI_INTERACTION';
+  conditionId: ClinicalConditionId | 'DNI_INTERACTION' | 'ALLERGY' | 'CLINICIAN_RULE' | 'PHASE_RULE';
   conditionNameBn: string;
   conditionNameEn: string;
   status: 'GREEN' | 'YELLOW' | 'RED';
+  category: RestrictionCategory;
+  provenance: string;
+  isOverridable: boolean;
   note_bn: string;
   note_en: string;
 }
@@ -244,6 +294,7 @@ export interface EvaluatedReason {
 export interface EvaluatedFoodItem extends FoodItem {
   traffic_status: 'GREEN' | 'YELLOW' | 'RED';
   reasons: EvaluatedReason[];
+  hard_blocked?: boolean;
 }
 
 export interface TrafficLightResult {
@@ -261,6 +312,7 @@ export interface FoodExchangeItem {
   cooked_display_en: string;
   kcal: number;
   protein_g: number;
+  traffic_status: 'GREEN' | 'YELLOW';
 }
 
 export interface DietChartMealItem {
@@ -281,12 +333,21 @@ export interface DietChartMealItem {
   prep_note_bn: string;
   prep_note_en: string;
   alternatives: FoodExchangeItem[];
+  traffic_status?: 'GREEN' | 'YELLOW';
 }
 
 export interface IncompatiblePairWarning {
   warning_bn: string;
   warning_en: string;
   severity: 'high' | 'medium';
+}
+
+export interface MealSlotConstraintError {
+  slot_name: string;
+  category: FoodCategory;
+  reason_bn: string;
+  reason_en: string;
+  violated_constraints: string[];
 }
 
 export interface DietChartMeal {
@@ -301,8 +362,10 @@ export interface DietChartMeal {
   meal_carbs_g: number;
   meal_fat_g: number;
   meal_gl: number;
+  meal_gl_is_estimated: boolean;
   meal_pral: number;
   incompatible_warnings: IncompatiblePairWarning[];
+  slot_errors?: MealSlotConstraintError[];
 }
 
 export interface DailyTimelineItem {
@@ -315,6 +378,7 @@ export interface DailyTimelineItem {
   warning_bn?: string;
   warning_en?: string;
   verified_products?: string[];
+  is_prescription_medication?: boolean;
 }
 
 export interface LongitudinalVisit {
@@ -334,14 +398,20 @@ export interface LongitudinalVisit {
   uric_acid?: number;
   notes_bn?: string;
   notes_en?: string;
+  clinical_observations?: string;
+  phase_transition_rationale?: string;
+  is_phase_transition?: boolean;
+  diet_plan_snapshot_summary?: string;
 }
 
 export interface PatientRecord {
+  schema_version: number;
   patient: PatientProfile;
   visits: LongitudinalVisit[];
   current_diet_chart: DietChartMeal[];
-  current_supplements: SupplementItem[];
+  current_supplements: CandidateSupplement[];
   timeline: DailyTimelineItem[];
   updated_at: string;
+  created_at?: string;
+  is_demo_patient?: boolean;
 }
-

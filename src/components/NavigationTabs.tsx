@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 export const NavigationTabs: React.FC = () => {
-  const { activeTab, setActiveTab, language, trafficLight, dniResult, patient } = usePractice();
+  const { activeTab, setActiveTab, language, trafficLight, dniResult, patient, isDietPlanDirty } = usePractice();
 
   const tabs = [
     {
@@ -21,7 +21,7 @@ export const NavigationTabs: React.FC = () => {
       icon: ClipboardList,
       label_bn: '১. ইনটেক ও ল্যাব অ্যানালাইজার',
       label_en: '1. Intake & Lab Analyzer',
-      badge: patient.labs.lab_flags.length > 0 ? `${patient.labs.lab_flags.length} flags` : null,
+      badge: patient.labs.lab_flags && patient.labs.lab_flags.length > 0 ? `${patient.labs.lab_flags.length} flags` : null,
       badgeColor: 'bg-amber-500/15 text-amber-500'
     },
     {
@@ -45,8 +45,8 @@ export const NavigationTabs: React.FC = () => {
       icon: UtensilsCrossed,
       label_bn: '৪. অটো-স্কেলড ডায়েট ও ফুড এক্সচেঞ্জ',
       label_en: '4. Scaled Diet & Food Exchanges',
-      badge: `${patient.calculated.target_calories} kcal`,
-      badgeColor: 'bg-emerald-500/15 text-emerald-500'
+      badge: isDietPlanDirty ? 'Sync' : `${patient.calculated.target_calories} kcal`,
+      badgeColor: isDietPlanDirty ? 'bg-amber-500 text-white font-bold animate-pulse' : 'bg-emerald-500/15 text-emerald-500'
     },
     {
       id: 'followup' as const,
@@ -96,4 +96,3 @@ export const NavigationTabs: React.FC = () => {
     </div>
   );
 };
-

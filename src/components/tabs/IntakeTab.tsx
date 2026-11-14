@@ -1,31 +1,84 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { 
   User, 
   Scale, 
   HeartPulse, 
-  Flame, 
   ShieldAlert, 
-  CheckCircle2, 
   AlertTriangle, 
-  Activity, 
-  Sparkles,
   Zap,
-  Info
+  Plus,
+  X,
+  Lock,
+  Baby,
+  Stethoscope
 } from 'lucide-react';
 import { ACTIVITY_FACTORS } from '@/engine/anthropometrics';
-import { ActivityLevel, AgniType } from '@/types';
+import { ActivityLevel, AgniType, PopulationGroup, BmrFloorStrategy } from '@/types';
 
 export const IntakeTab: React.FC = () => {
-  const { patient, updatePatient, updateLabs, updateGutProfile, language } = usePractice();
-  const { calculated, labs, gut_profile } = patient;
+  const { 
+    patient, 
+    updatePatient, 
+    updateLabs, 
+    updateGutProfile, 
+    language,
+    addConfirmedAllergy,
+    removeConfirmedAllergy,
+    addClinicianDisallowedFood,
+    removeClinicianDisallowedFood
+  } = usePractice();
 
+  const { calculated, labs, gut_profile } = patient;
   const bn = language === 'bn';
+
+  const [allergyInput, setAllergyInput] = useState('');
+  const [restrictionInput, setRestrictionInput] = useState('');
+
+  const handleAddAllergy = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (allergyInput.trim()) {
+      addConfirmedAllergy(allergyInput.trim());
+      setAllergyInput('');
+    }
+  };
+
+  const handleAddRestriction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (restrictionInput.trim()) {
+      addClinicianDisallowedFood(restrictionInput.trim());
+      setRestrictionInput('');
+    }
+  };
+
+  const commonAllergens = [
+    { id: 'shrimp', bn: 'চিংড়ি (Shrimp)', en: 'Shrimp' },
+    { id: 'egg', bn: 'ডিম (Egg)', en: 'Egg' },
+    { id: 'peanut', bn: 'চীনাবাদাম (Peanut)', en: 'Peanut' },
+    { id: 'gluten', bn: 'গ্লুটেন / গম (Gluten)', en: 'Gluten / Wheat' },
+    { id: 'dairy', bn: 'দুধ / দুগ্ধজাত (Dairy)', en: 'Dairy / Cow Milk' },
+    { id: 'soy', bn: 'সয়াবিন (Soy)', en: 'Soy' },
+  ];
 
   return (
     <div className="space-y-6 pb-12">
+
+      {/* Population Warning Banner (If triggered) */}
+      {calculated.population_warning && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div>
+            <div className="text-xs font-semibold text-amber-500">
+              {bn ? 'ক্লিনিক্যাল পপুলেশন সতর্কতা' : 'Clinical Population Precaution'}
+            </div>
+            <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+              {calculated.population_warning}
+            </p>
+          </div>
+        </div>
+      )}
       
       {/* 1. Patient Demographics & Anthropometrics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -35,9 +88,12 @@ export const IntakeTab: React.FC = () => {
           
           {/* Basic Demographic Card */}
           <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 border-b pb-3 text-foreground font-semibold text-sm">
-              <User className="h-4 w-4 text-primary" />
-              <span>{bn ? 'রোগীর প্রাথমিক তথ্য' : 'Patient Information'}</span>
+            <div className="flex items-center justify-between border-b pb-3 text-foreground font-semibold text-sm">
+              <div className="flex items-center gap-2">
+                <User className="h-4 w-4 text-primary" />
+                <span>{bn ? 'রোগীর প্রাথমিক তথ্য ও জনসংখ্যা ক্যাটাগরি' : 'Patient Information & Population Group'}</span>
+              </div>
+              <span className="text-[11px] font-normal text-muted-foreground">ID: {patient.id}</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -82,6 +138,40 @@ export const IntakeTab: React.FC = () => {
 
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  {bn ? 'জনসংখ্যা গ্রুপ (Population Group)' : 'Population Group'}
+                </label>
+                <select
+                  value={patient.population_group || 'adult_standard'}
+                  onChange={e => updatePatient({ population_group: e.target.value as PopulationGroup })}
+                  className="w-full px-3 py-2 text-sm bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="adult_standard">{bn ? 'প্রাপ্তবয়স্ক সাধারণ (Adult Standard)' : 'Adult Standard'}</option>
+                  <option value="pediatric">{bn ? 'পেডিয়াট্রিক / শিশু-কিশোর (<১৮)' : 'Pediatric (<18y)'}</option>
+                  <option value="pregnancy">{bn ? 'গর্ভকালীন পুষ্টি (Pregnancy)' : 'Pregnancy'}</option>
+                  <option value="lactation">{bn ? 'স্তন্যদানকারী মা (Lactation)' : 'Lactation'}</option>
+                  <option value="geriatric">{bn ? 'বার্ধক্যকালীন পুষ্টি (Geriatric >65y)' : 'Geriatric (>65y)'}</option>
+                </select>
+              </div>
+
+              {patient.population_group === 'pregnancy' && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">
+                    {bn ? 'গর্ভকালীন ট্রাইমেস্টার' : 'Pregnancy Trimester'}
+                  </label>
+                  <select
+                    value={patient.trimester || 1}
+                    onChange={e => updatePatient({ trimester: Number(e.target.value) as 1 | 2 | 3 })}
+                    className="w-full px-3 py-2 text-sm bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value={1}>{bn ? '১ম ট্রাইমেস্টার (সপ্তাহ ১-১২: +০ kcal)' : '1st Trimester (+0 kcal)'}</option>
+                    <option value={2}>{bn ? '২য় ট্রাইমেস্টার (সপ্তাহ ১৩-২৬: +৩৪০ kcal)' : '2nd Trimester (+340 kcal)'}</option>
+                    <option value={3}>{bn ? '৩য় ট্রাইমেস্টার (সপ্তাহ ২৭-৪০: +৪৫২ kcal)' : '3rd Trimester (+452 kcal)'}</option>
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
                   {bn ? 'মোবাইল নম্বর' : 'Phone'}
                 </label>
                 <input
@@ -120,6 +210,36 @@ export const IntakeTab: React.FC = () => {
                   <option value={4}>{bn ? 'Phase 4: লাইফস্টাইল রক্ষণাবেক্ষণ' : 'Phase 4: Maintenance'}</option>
                 </select>
               </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  {bn ? 'ক্যালোরি ফ্লোর পলিসি' : 'BMR Floor Strategy'}
+                </label>
+                <select
+                  value={patient.bmr_floor_strategy || 'clamped_to_bmr'}
+                  onChange={e => updatePatient({ bmr_floor_strategy: e.target.value as BmrFloorStrategy })}
+                  className="w-full px-3 py-2 text-sm bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <option value="clamped_to_bmr">{bn ? 'BMR এ আবদ্ধ (স্বাভাবিক ও নিরাপদ)' : 'Clamped to BMR (Safe standard)'}</option>
+                  <option value="clinician_custom">{bn ? 'চিকিৎসকের কাস্টম ফ্লোর' : 'Clinician Custom Floor'}</option>
+                  <option value="unrestricted_clinical_guidance">{bn ? 'ক্লিনিক্যাল গাইডেন্স (মুক্ত ঘাটতি)' : 'Clinical Guidance (Non-clamped)'}</option>
+                </select>
+              </div>
+
+              {patient.bmr_floor_strategy === 'clinician_custom' && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">
+                    {bn ? 'কাস্টম ফ্লোর (kcal)' : 'Custom Calorie Floor'}
+                  </label>
+                  <input
+                    type="number"
+                    value={patient.custom_calorie_floor || ''}
+                    onChange={e => updatePatient({ custom_calorie_floor: Number(e.target.value) })}
+                    className="w-full px-3 py-2 text-sm bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    placeholder="e.g. 1100"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -215,6 +335,112 @@ export const IntakeTab: React.FC = () => {
             </div>
           </div>
 
+          {/* Confirmed Allergies & Clinician Direct Exclusions Card */}
+          <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 border-b pb-3 text-foreground font-semibold text-sm">
+              <Lock className="h-4 w-4 text-rose-500" />
+              <span>{bn ? 'নিশ্চিত অ্যালার্জি ও চিকিৎসকের ব্যক্তিগত নিষেধাজ্ঞা' : 'Confirmed Allergies & Direct Clinician Restrictions'}</span>
+            </div>
+
+            {/* Confirmed Allergies Sub-section */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground block">
+                {bn ? '১. রোগীর নিশ্চিত অ্যালার্জি (Confirmed Allergies - সম্পূর্ণ লাল তালিকাভুক্ত হবে):' : '1. Confirmed Allergies (Non-overridable RED exclusion):'}
+              </label>
+
+              {/* Quick Select Allergen Chips */}
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {commonAllergens.map(alg => {
+                  const isSelected = patient.confirmed_allergies.includes(alg.id);
+                  return (
+                    <button
+                      key={alg.id}
+                      type="button"
+                      onClick={() => isSelected ? removeConfirmedAllergy(alg.id) : addConfirmedAllergy(alg.id)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition ${
+                        isSelected 
+                          ? 'bg-rose-500 text-white border-rose-600' 
+                          : 'bg-background hover:bg-secondary text-muted-foreground'
+                      }`}
+                    >
+                      {bn ? alg.bn : alg.en} {isSelected && '✓'}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Custom Allergy Input */}
+              <form onSubmit={handleAddAllergy} className="flex gap-2">
+                <input
+                  type="text"
+                  value={allergyInput}
+                  onChange={e => setAllergyInput(e.target.value)}
+                  placeholder={bn ? "অন্যান্য নির্দিষ্ট অ্যালার্জি টাইপ করুন (যেমন: cashew, mustard)" : "Type other specific allergy..."}
+                  className="flex-1 px-3 py-1.5 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 text-xs font-medium bg-rose-500 hover:bg-rose-600 text-white rounded-lg flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>{bn ? 'যোগ করুন' : 'Add'}</span>
+                </button>
+              </form>
+
+              {/* Active Allergies List */}
+              {patient.confirmed_allergies.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {patient.confirmed_allergies.map(alg => (
+                    <span key={alg} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-500 border border-rose-500/30">
+                      <strong>{alg}</strong>
+                      <button type="button" onClick={() => removeConfirmedAllergy(alg)} className="hover:text-rose-700">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Clinician Direct Exclusions Sub-section */}
+            <div className="space-y-2 pt-3 border-t">
+              <label className="text-xs font-medium text-foreground block">
+                {bn ? '২. চিকিৎসকের নির্দিষ্ট খাবার নিষেধাজ্ঞা (Direct Clinician Exclusions):' : '2. Clinician Specific Disallowed Foods / Tags:'}
+              </label>
+
+              <form onSubmit={handleAddRestriction} className="flex gap-2">
+                <input
+                  type="text"
+                  value={restrictionInput}
+                  onChange={e => setRestrictionInput(e.target.value)}
+                  placeholder={bn ? "খাবারের নাম বা ট্যাগ (যেমন: beef, high_oxalate)" : "Enter food name or tag to restrict..."}
+                  className="flex-1 px-3 py-1.5 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 text-xs font-medium bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>{bn ? 'নিষেধাজ্ঞা যোগ' : 'Exclude'}</span>
+                </button>
+              </form>
+
+              {patient.clinician_disallowed_foods.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {patient.clinician_disallowed_foods.map(item => (
+                    <span key={item} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                      <span>{item}</span>
+                      <button type="button" onClick={() => removeClinicianDisallowedFood(item)} className="hover:text-amber-700">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+
         </div>
 
         {/* Right 1 Col: Live Calculated Cards & Safety Floor */}
@@ -224,16 +450,19 @@ export const IntakeTab: React.FC = () => {
           <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 shadow-sm">
             <div className="flex items-center gap-2 text-emerald-500 font-semibold text-xs mb-1">
               <ShieldAlert className="h-4 w-4" />
-              <span>{bn ? 'BMR-নিরাপদ ক্যালোরি ফ্লোর গ্যারান্টি' : 'BMR-Safe Calorie Floor'}</span>
+              <span>{bn ? 'ক্যালোরি লক্ষ্য ও BMR ফ্লোর গ্যারান্টি' : 'Calorie Target & BMR Floor'}</span>
             </div>
             <p className="text-xs text-muted-foreground mb-2">
               {bn 
-                ? 'থাইরয়েড ফাংশন ও বেসাল মেটাবলিক রেট অক্ষুণ্ণ রাখতে ক্যালোরি লক্ষ্য কখনই BMR এর নিচে নামবে না।' 
-                : 'Deficit is strictly clamped at or above BMR to prevent metabolic adaptation and thyroid down-regulation.'}
+                ? 'থাইরয়েড ও মেটাবলিক গতি সচল রাখতে ক্যালোরি লক্ষ্য কখনই ঝুঁকিপূর্ণভাবে নামবে না।' 
+                : 'Deficit is bounded to prevent metabolic slowdown. Policy: ' + patient.bmr_floor_strategy}
             </p>
             <div className="flex items-baseline justify-between pt-2 border-t border-emerald-500/20">
               <span className="text-xs font-medium">{bn ? 'নিরাপদ দৈনিক ক্যালোরি:' : 'Target Intake:'}</span>
               <span className="text-lg font-bold text-emerald-500">{calculated.target_calories} kcal</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-1 text-right">
+              Floor: {calculated.bmr_safe_calorie_floor} kcal
             </div>
           </div>
 
@@ -282,31 +511,35 @@ export const IntakeTab: React.FC = () => {
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-emerald-500 font-medium">{bn ? 'প্রোটিন (Protein):' : 'Protein:'}</span>
-                <span className="font-semibold">{calculated.target_protein_g} gm ({Math.round((calculated.target_protein_g * 4 / calculated.target_calories) * 100)}%)</span>
+                <span className="font-semibold">{calculated.target_protein_g} gm ({Math.round((calculated.target_protein_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
               </div>
               <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full" style={{ width: `${Math.round((calculated.target_protein_g * 4 / calculated.target_calories) * 100)}%` }} />
+                <div className="bg-emerald-500 h-full" style={{ width: `${Math.round((calculated.target_protein_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%` }} />
               </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-blue-500 font-medium">{bn ? 'শর্করা (Complex Carbs):' : 'Carbohydrates:'}</span>
-                <span className="font-semibold">{calculated.target_carbs_g} gm ({Math.round((calculated.target_carbs_g * 4 / calculated.target_calories) * 100)}%)</span>
+                <span className="font-semibold">{calculated.target_carbs_g} gm ({Math.round((calculated.target_carbs_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
               </div>
               <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
-                <div className="bg-blue-500 h-full" style={{ width: `${Math.round((calculated.target_carbs_g * 4 / calculated.target_calories) * 100)}%` }} />
+                <div className="bg-blue-500 h-full" style={{ width: `${Math.round((calculated.target_carbs_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%` }} />
               </div>
             </div>
 
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-amber-500 font-medium">{bn ? 'স্বাস্থ্যকর চর্বি (Healthy Fat):' : 'Healthy Fats:'}</span>
-                <span className="font-semibold">{calculated.target_fat_g} gm ({Math.round((calculated.target_fat_g * 9 / calculated.target_calories) * 100)}%)</span>
+                <span className="font-semibold">{calculated.target_fat_g} gm ({Math.round((calculated.target_fat_g * 9 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
               </div>
               <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
-                <div className="bg-amber-500 h-full" style={{ width: `${Math.round((calculated.target_fat_g * 9 / calculated.target_calories) * 100)}%` }} />
+                <div className="bg-amber-500 h-full" style={{ width: `${Math.round((calculated.target_fat_g * 9 / Math.max(1, calculated.target_calories)) * 100)}%` }} />
               </div>
+            </div>
+
+            <div className="pt-2 text-[10px] text-muted-foreground border-t">
+              {bn ? 'দ্রষ্টব্য: সমস্ত শক্তির হিসাব গাণিতিক প্রাক্কলন (Mifflin-St Jeor), প্রত্যক্ষ ক্যালোরিমেট্রি নয়।' : 'Note: Values are calculated estimates, not direct calorimetry.'}
             </div>
           </div>
 
@@ -494,7 +727,7 @@ export const IntakeTab: React.FC = () => {
                   </div>
                 </div>
                 <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${labs.homa_ir >= 2.0 ? 'bg-rose-500/15 text-rose-500' : 'bg-emerald-500/15 text-emerald-500'}`}>
-                  {labs.homa_ir >= 2.0 ? (bn ? 'উচ্চ প্রতিরোধ' : 'High IR') : (bn ? 'স্বাভাবিক' : 'Optimal')}
+                  {labs.homa_ir >= 2.0 ? (bn ? 'উচ্চ প্রতিরোধ ঝুঁকি' : 'High Risk') : (bn ? 'স্বাভাবিক' : 'Optimal')}
                 </span>
               </div>
             )}
@@ -522,16 +755,21 @@ export const IntakeTab: React.FC = () => {
         )}
 
         {/* Detailed Flags Table */}
-        {labs.lab_flags.length > 0 && (
+        {labs.lab_flags && labs.lab_flags.length > 0 && (
           <div className="space-y-2 pt-2">
             <div className="text-xs font-semibold text-foreground">
-              {bn ? 'স্বয়ংক্রিয় অপটিমাল রেঞ্জ মূল্যায়ন ও ক্লিনিক্যাল দিকনির্দেশনা:' : 'Functional Range Analysis & Clinical Flags:'}
+              {bn ? 'ফাংশনাল ল্যাব ঝুঁকি সূচক ও ক্লিনিক্যাল দিকনির্দেশনা:' : 'Functional Biomarker Risk Analysis & Flags:'}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {labs.lab_flags.map((flag, idx) => (
                 <div key={idx} className="p-3 rounded-xl border bg-background/50 text-xs space-y-1">
                   <div className="flex justify-between items-center">
-                    <span className="font-semibold text-foreground">{flag.marker}</span>
+                    <span className="font-semibold text-foreground flex items-center gap-1.5">
+                      {flag.marker}
+                      {flag.is_diagnostic_threshold && (
+                        <span className="text-[9px] px-1 py-0.2 bg-rose-500 text-white rounded font-bold">DIAGNOSTIC</span>
+                      )}
+                    </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
                       flag.status === 'optimal' 
                         ? 'bg-emerald-500/15 text-emerald-500' 
@@ -722,4 +960,3 @@ export const IntakeTab: React.FC = () => {
     </div>
   );
 };
-

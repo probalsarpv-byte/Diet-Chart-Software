@@ -1,7 +1,9 @@
 import { 
   ActivityLevel, 
   CalculatedAnthropometrics, 
-  ClinicalConditionId 
+  ClinicalConditionId,
+  PopulationGroup,
+  BmrFloorStrategy
 } from '../types';
 
 export const ACTIVITY_FACTORS: Record<ActivityLevel, { factor: number; label_en: string; label_bn: string }> = {
@@ -12,13 +14,17 @@ export const ACTIVITY_FACTORS: Record<ActivityLevel, { factor: number; label_en:
 };
 
 /**
- * Deterministic Anthropometric Calculator
- * - Mifflin-St Jeor Equation for BMR
- * - Hamwi / Devine Equation for Ideal Body Weight (IBW)
- * - Adjusted Body Weight for BMI >= 25 (prevents overfeeding protein)
- * - Asian BMI Classifications (WHO Asian Cut-offs)
- * - Waist-to-Height Ratio (WHtR) for visceral adiposity and cardiometabolic risk
- * - BMR-Safe Calorie Floor (Strict clinical constraint: intake must never drop below BMR)
+ * Deterministic Anthropometric & Metabolic Energy Calculator
+ * 
+ * Clinical Features:
+ * - Mifflin-St Jeor Equation for estimated Basal Metabolic Rate (BMR)
+ * - Devine Equation for Ideal Body Weight (IBW)
+ * - Adjusted Body Weight for BMI >= 25 to prevent protein overfeeding
+ * - WHO Asian BMI Classifications (23.0 overweight, 27.5 obese)
+ * - Waist-to-Height Ratio (WHtR) for visceral adiposity assessment
+ * - Population Safety Gates (Pediatrics, Pregnancy, Lactation alerts)
+ * - Configurable BMR Calorie Floor Strategy (clamped, clinician custom, or clinical guidance)
+ * - Explicit estimation provenance labeling
  */
 export function calculateAnthropometrics(
   age: number,
@@ -27,17 +33,30 @@ export function calculateAnthropometrics(
   weight_kg: number,
   waist_cm: number,
   activity_level: ActivityLevel = 'sedentary',
-  conditions: ClinicalConditionId[] = []
+  conditions: ClinicalConditionId[] = [],
+  population_group: PopulationGroup = 'adult_standard',
+  trimester?: 1 | 2 | 3,
+  bmr_floor_strategy: BmrFloorStrategy = 'clamped_to_bmr',
+  custom_calorie_floor?: number
 ): CalculatedAnthropometrics {
-  const height_m = height_cm / 100;
+  const height_m = Math.max(0.5, height_cm / 100);
   const height_in = height_cm / 2.54;
 
-  // 1. BMI Calculation
+  // 1. Population Suitability Gate
+  let population_warning: string | undefined;
+  if (age < 18 || population_group === 'pediatric') {
+    population_warning = "সতর্কতা: ১৮ বছরের কম বয়সীদের ক্ষেত্রে প্রাপ্তবয়স্কদের Mifflin-St Jeor ও BMI কাট-অফ প্রযোজ্য নয়; পেডিয়াট্রিক গ্রোথ চার্ট (WHO Z-Score) অনুসরণ আবশ্যক। / Warning: Adult Mifflin-St Jeor & BMI thresholds are not validated for pediatric populations (<18y); utilize WHO growth percentiles.";
+  } else if (population_group === 'pregnancy') {
+    population_warning = `সতর্কতা: গর্ভকালীন পুষ্টিতে ওজন কমানোর উদ্দেশ্যে ক্যালোরি ঘাটতি সম্পূর্ণ নিষিদ্ধ। গর্ভকালীন ট্রাইমেস্টার (${trimester ? `ট্রাইমেস্টার ${trimester}` : 'অনুল্লিখিত'}) অনুযায়ী অতিরিক্ত শক্তির চাহিদা যোগ করা প্রয়োজন। / Warning: Hypocaloric weight-loss diets are contraindicated in pregnancy. Additional gestational energy accretion is required.`;
+  } else if (population_group === 'lactation') {
+    population_warning = "স্তন্যদানকারী মায়ের জন্য দৈনিক অতিরিক্ত ৪০০-৫০০ কিলোক্যালোরি ও পর্যাপ্ত তরল নিশ্চিত করুন। / Lactation requires an additional ~400-500 kcal/day for milk synthesis.";
+  }
+
+  // 2. BMI Calculation (Asian WHO cut-offs)
   const bmi = Math.round((weight_kg / (height_m * height_m)) * 10) / 10;
   let bmi_category_en = "Normal Weight";
   let bmi_category_bn = "স্বাভাবিক ওজন";
 
-  // Asian WHO cut-offs
   if (bmi < 18.5) {
     bmi_category_en = "Underweight (<18.5)";
     bmi_category_bn = "স্বল্প ওজন (<১৮.৫)";
@@ -52,7 +71,7 @@ export function calculateAnthropometrics(
     bmi_category_bn = "স্থূলতা / ওবেসিটি (≥২৭.৫)";
   }
 
-  // 2. Ideal Body Weight (Devine formula)
+  // 3. Ideal Body Weight (Devine formula)
   let ibw_kg = 50;
   if (height_in > 60) {
     const inches_over_5ft = height_in - 60;
@@ -65,10 +84,9 @@ export function calculateAnthropometrics(
     // Under 5 feet
     ibw_kg = gender === 'male' ? 50 - (2.3 * (60 - height_in)) : 45.5 - (2.3 * (60 - height_in));
   }
-  ibw_kg = Math.round(ibw_kg * 10) / 10;
+  ibw_kg = Math.round(Math.max(30, ibw_kg) * 10) / 10;
 
-  // 3. Adjusted Body Weight (Used for protein & calories in overweight/obesity)
-  // Adjusted BW = IBW + 0.4 * (Actual - IBW)
+  // 4. Adjusted Body Weight (Protects lean mass during protein calculation in overweight/obesity)
   let adjusted_bw_kg = weight_kg;
   let protein_ratio_used = "Actual Weight (1.2 g/kg)";
   if (bmi >= 25 && weight_kg > ibw_kg) {
@@ -78,8 +96,8 @@ export function calculateAnthropometrics(
     protein_ratio_used = "Actual Weight (1.4 g/kg for muscle building)";
   }
 
-  // 4. Waist-to-Height Ratio (WHtR)
-  const whtr = Math.round((waist_cm / height_cm) * 100) / 100;
+  // 5. Waist-to-Height Ratio (WHtR)
+  const whtr = Math.round((waist_cm / Math.max(50, height_cm)) * 100) / 100;
   let whtr_risk_en = "Low Cardiometabolic Risk (<0.50)";
   let whtr_risk_bn = "কম কার্ডিওমেটাবলিক ঝুঁকি (<০.৫০)";
   if (whtr >= 0.60) {
@@ -90,43 +108,60 @@ export function calculateAnthropometrics(
     whtr_risk_bn = "উচ্চ পেটের চর্বি ও ইনসুলিন রেজিস্ট্যান্স ঝুঁকি (০.৫০ - ০.৫৯)";
   }
 
-  // 5. Mifflin-St Jeor BMR
-  // Men: BMR = 10 * weight (kg) + 6.25 * height (cm) - 5 * age + 5
-  // Women: BMR = 10 * weight (kg) + 6.25 * height (cm) - 5 * age - 161
+  // 6. Mifflin-St Jeor Estimated BMR
   let bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age);
   bmr += gender === 'male' ? 5 : -161;
-  bmr = Math.round(bmr);
+  bmr = Math.round(Math.max(800, bmr));
 
-  // 6. Total Daily Energy Expenditure (TDEE)
+  // 7. Estimated TDEE
   const actFactor = ACTIVITY_FACTORS[activity_level]?.factor || 1.2;
-  const tdee = Math.round(bmr * actFactor);
+  let tdee = Math.round(bmr * actFactor);
 
-  // 7. BMR-Safe Calorie Floor Calculation
-  // CRITICAL CLINICAL SAFETY: Never prescribe below BMR. Calorie deficit must be safe (15-20% deficit, but max floor = BMR).
-  const bmr_safe_calorie_floor = bmr;
-  
+  // Pregnancy / Lactation Energy Additions
+  if (population_group === 'pregnancy') {
+    if (trimester === 2) tdee += 340;
+    else if (trimester === 3) tdee += 452;
+  } else if (population_group === 'lactation') {
+    tdee += 450;
+  }
+
+  // 8. Calorie Floor Determination
+  let effective_floor = bmr;
+  if (bmr_floor_strategy === 'clinician_custom' && custom_calorie_floor && custom_calorie_floor > 600) {
+    effective_floor = custom_calorie_floor;
+  } else if (bmr_floor_strategy === 'unrestricted_clinical_guidance') {
+    effective_floor = 1000; // minimum emergency safety baseline
+  }
+  const bmr_safe_calorie_floor = effective_floor;
+
+  // 9. Target Calorie Computation
   let target_calories = tdee;
-  if (bmi >= 23) {
-    // Moderate fat loss deficit of 400 kcal, but clamped at BMR
-    target_calories = Math.max(bmr_safe_calorie_floor, tdee - 450);
+  if (population_group === 'pregnancy' || population_group === 'pediatric') {
+    // No deficit
+    target_calories = tdee;
+  } else if (bmi >= 23) {
+    // Moderate deficit of ~450 kcal for weight management, respecting floor strategy
+    if (bmr_floor_strategy === 'clamped_to_bmr') {
+      target_calories = Math.max(bmr_safe_calorie_floor, tdee - 450);
+    } else if (bmr_floor_strategy === 'clinician_custom') {
+      target_calories = Math.max(bmr_safe_calorie_floor, tdee - 450);
+    } else {
+      target_calories = Math.max(1000, tdee - 450);
+    }
   } else if (bmi < 18.5) {
-    // Underweight: surplus of 300 kcal
     target_calories = tdee + 350;
   } else {
-    // Maintenance
     target_calories = tdee;
   }
-  // Round to nearest 25 kcal
   target_calories = Math.round(target_calories / 25) * 25;
 
-  // 8. Macronutrient Targets
-  // Base protein: 1.2 - 1.5 g/kg of Adjusted BW (or IBW if severely obese)
+  // 10. Macronutrient Targets
   let protein_multiplier = 1.2;
   if (conditions.includes('t2d_ir') || conditions.includes('pcos') || conditions.includes('fatty_liver')) {
-    protein_multiplier = 1.35; // higher protein for satiety and insulin stabilization
+    protein_multiplier = 1.35;
   }
   if (conditions.includes('hypertension_ckd')) {
-    protein_multiplier = 0.9; // cautious protein for renal support
+    protein_multiplier = 0.9;
     protein_ratio_used = "Renal-Cautious (0.9 g/kg of IBW)";
   }
 
@@ -134,13 +169,12 @@ export function calculateAnthropometrics(
   const target_protein_g = Math.round(referenceWeightForProtein * protein_multiplier);
   const protein_kcal = target_protein_g * 4;
 
-  // Remaining calories divided between Carbs & Fats
   let carb_pct = 0.40;
   let fat_pct = 0.35;
 
   if (conditions.includes('t2d_ir') || conditions.includes('pcos') || conditions.includes('fatty_liver')) {
     carb_pct = 0.30;
-    fat_pct = 0.40; // healthy fats (mustard oil, ghee, nuts, seeds)
+    fat_pct = 0.40;
   }
   if (conditions.includes('gut_dysbiosis')) {
     carb_pct = 0.35;
@@ -167,7 +201,11 @@ export function calculateAnthropometrics(
     target_protein_g,
     target_carbs_g,
     target_fat_g,
-    protein_ratio_used
+    protein_ratio_used,
+    population_group,
+    population_warning,
+    bmr_floor_strategy,
+    is_estimated: true,
+    energy_calculation_method: "Mifflin-St Jeor (Estimated REE/BMR) + Activity Factor"
   };
 }
-

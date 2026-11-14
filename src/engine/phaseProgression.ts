@@ -114,7 +114,21 @@ export function compareLongitudinalProgress(visits: LongitudinalVisit[]): Longit
   };
 }
 
-export function advanceToNextPhase(record: PatientRecord): PatientRecord {
+export interface TransitionOptions {
+  actualSymptomReliefPct?: number;
+  clinicalObservations?: string;
+  rationale?: string;
+  notes_bn?: string;
+  notes_en?: string;
+  dietSnapshotSummary?: string;
+}
+
+/**
+ * Transitions patient to the next functional care phase.
+ * NEVER fabricates symptom relief percentages.
+ * Records actual clinician evaluation, rationale, and diet snapshot summary.
+ */
+export function advanceToNextPhase(record: PatientRecord, options?: TransitionOptions): PatientRecord {
   const current = record.patient.current_phase;
   const nextPhase = (Math.min(4, current + 1)) as 1 | 2 | 3 | 4;
 
@@ -124,6 +138,12 @@ export function advanceToNextPhase(record: PatientRecord): PatientRecord {
   };
 
   const todayStr = new Date().toISOString().split('T')[0];
+  const lastVisit = record.visits[record.visits.length - 1];
+
+  // Use actual evaluated percentage or carry forward last visit's actual recorded percentage (default to 0 if not assessed)
+  const evaluatedSymptomRelief = options?.actualSymptomReliefPct !== undefined 
+    ? Math.max(0, Math.min(100, options.actualSymptomReliefPct))
+    : (lastVisit?.symptom_relief_pct ?? 0);
 
   const newVisit: LongitudinalVisit = {
     visit_id: `v_${Date.now()}`,
@@ -134,14 +154,18 @@ export function advanceToNextPhase(record: PatientRecord): PatientRecord {
     whtr: record.patient.calculated.whtr,
     bristol_stool: record.patient.gut_profile.bristol_stool_score,
     energy_score: record.patient.gut_profile.energy_score,
-    symptom_relief_pct: Math.min(100, (current * 25)),
+    symptom_relief_pct: evaluatedSymptomRelief,
     homa_ir: record.patient.labs.homa_ir,
     tg_hdl_ratio: record.patient.labs.tg_hdl_ratio,
     hba1c: record.patient.labs.hba1c,
     tsh: record.patient.labs.tsh,
     uric_acid: record.patient.labs.uric_acid,
-    notes_bn: `${CLINICAL_PHASES[nextPhase].title_bn} শুরু করা হলো। রোগীর সাধারণ অবস্থার অগ্রগতি সন্তোষজনক।`,
-    notes_en: `Transitioned into ${CLINICAL_PHASES[nextPhase].title_en}. Clinical progress evaluated.`
+    clinical_observations: options?.clinicalObservations || "Clinician observation recorded during scheduled phase transition evaluation.",
+    phase_transition_rationale: options?.rationale || `Phase criteria met for ${CLINICAL_PHASES[nextPhase].title_en}.`,
+    is_phase_transition: true,
+    diet_plan_snapshot_summary: options?.dietSnapshotSummary || `Target ${record.patient.calculated.target_calories} kcal, ${record.patient.calculated.target_protein_g}g Protein.`,
+    notes_bn: options?.notes_bn || `${CLINICAL_PHASES[nextPhase].title_bn} শুরু করা হলো। রোগীর ক্লিনিক্যাল অগ্রগতির ভিত্তিতে পর্যায় পরিবর্তন অনুমোদন করা হয়েছে।`,
+    notes_en: options?.notes_en || `Transitioned into ${CLINICAL_PHASES[nextPhase].title_en} upon clinician evaluation.`
   };
 
   return {
@@ -152,3 +176,39 @@ export function advanceToNextPhase(record: PatientRecord): PatientRecord {
   };
 }
 
+/**
+ * Adds a follow-up visit while maintaining the current phase.
+ * Allows longitudinal tracking without forcing an unwarranted phase jump.
+ */
+export function recordFollowUpVisit(record: PatientRecord, visitData: Partial<LongitudinalVisit>): PatientRecord {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const lastVisit = record.visits[record.visits.length - 1];
+
+  const newVisit: LongitudinalVisit = {
+    visit_id: `v_${Date.now()}`,
+    visit_date: visitData.visit_date || todayStr,
+    phase: record.patient.current_phase,
+    weight_kg: visitData.weight_kg ?? record.patient.weight_kg,
+    waist_cm: visitData.waist_cm ?? record.patient.waist_cm,
+    whtr: visitData.whtr ?? record.patient.calculated.whtr,
+    bristol_stool: visitData.bristol_stool ?? record.patient.gut_profile.bristol_stool_score,
+    energy_score: visitData.energy_score ?? record.patient.gut_profile.energy_score,
+    symptom_relief_pct: visitData.symptom_relief_pct ?? (lastVisit?.symptom_relief_pct ?? 0),
+    homa_ir: visitData.homa_ir ?? record.patient.labs.homa_ir,
+    tg_hdl_ratio: visitData.tg_hdl_ratio ?? record.patient.labs.tg_hdl_ratio,
+    hba1c: visitData.hba1c ?? record.patient.labs.hba1c,
+    tsh: visitData.tsh ?? record.patient.labs.tsh,
+    uric_acid: visitData.uric_acid ?? record.patient.labs.uric_acid,
+    clinical_observations: visitData.clinical_observations,
+    is_phase_transition: false,
+    diet_plan_snapshot_summary: visitData.diet_plan_snapshot_summary,
+    notes_bn: visitData.notes_bn || "নিয়মিত ফলো-আপ ভিজিট সম্পন্ন হয়েছে।",
+    notes_en: visitData.notes_en || "Routine longitudinal follow-up visit logged."
+  };
+
+  return {
+    ...record,
+    visits: [...record.visits, newVisit],
+    updated_at: new Date().toISOString()
+  };
+}

@@ -8,19 +8,20 @@ import {
   Globe, 
   ShieldCheck, 
   Activity, 
-  Flame, 
   Clock, 
   Utensils, 
   CheckCircle, 
   AlertTriangle, 
   XCircle,
-  CookingPot
+  Lock
 } from 'lucide-react';
 
 export const ReportTab: React.FC = () => {
-  const { patient, dietChart, trafficLight, dniResult, language, setLanguage } = usePractice();
+  const { patient, dietChart, trafficLight, dniResult, candidateSupplements, language, setLanguage } = usePractice();
   const bn = language === 'bn';
   const phaseInfo = CLINICAL_PHASES[patient.current_phase];
+
+  const approvedSupplements = candidateSupplements.filter(s => s.approval_status === 'clinician_approved');
 
   const handlePrint = () => {
     window.print();
@@ -123,6 +124,30 @@ export const ReportTab: React.FC = () => {
           </div>
         </div>
 
+        {/* Safety Summary Bar: Allergies & Clinician Exclusions */}
+        {(patient.confirmed_allergies.length > 0 || patient.clinician_disallowed_foods.length > 0) && (
+          <div className="p-3 rounded-xl border border-rose-300 bg-rose-50 dark:bg-rose-950/20 text-xs space-y-1">
+            <div className="font-bold text-rose-700 dark:text-rose-400 flex items-center gap-1.5">
+              <Lock className="h-3.5 w-3.5" />
+              <span>{bn ? 'ক্লিনিক্যাল সুরক্ষা ও সম্পূর্ণ নিষিদ্ধ খাদ্যসমূহ (Absolute Exclusions):' : 'Absolute Patient Exclusions (Allergens & Clinician Directives):'}</span>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px] text-slate-700 dark:text-slate-300">
+              {patient.confirmed_allergies.length > 0 && (
+                <div>
+                  <strong>{bn ? 'নিশ্চিত অ্যালার্জি:' : 'Confirmed Allergies:'} </strong>
+                  <span className="text-rose-600 font-semibold">{patient.confirmed_allergies.join(', ')}</span>
+                </div>
+              )}
+              {patient.clinician_disallowed_foods.length > 0 && (
+                <div>
+                  <strong>{bn ? 'চিকিৎসকের নিষেধাজ্ঞা:' : 'Clinician Exclusions:'} </strong>
+                  <span className="text-amber-600 font-semibold">{patient.clinician_disallowed_foods.join(', ')}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Anthropometrics & Functional Biomarkers Summary */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
           
@@ -203,7 +228,7 @@ export const ReportTab: React.FC = () => {
                     {item.time}
                   </span>
                   <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 print:text-slate-700">
-                    {bn ? item.title_bn : item.title_en}
+                    {bn ? item.title_bn : item.title_en} {item.is_prescription_medication && '(RX)'}
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-600 dark:text-slate-300 print:text-slate-700 leading-tight">
@@ -332,10 +357,15 @@ export const ReportTab: React.FC = () => {
 
         {/* Nutritionist Signature & Disclaimer */}
         <div className="pt-6 border-t flex flex-col sm:flex-row justify-between items-end gap-6 text-xs avoid-break">
-          <div className="text-[10px] text-slate-400 print:text-slate-500 max-w-sm">
-            {bn 
-              ? 'এই পরামর্শপত্র ১০০% বৈজ্ঞানিক ও ডিটারমিনিস্টিক রুলস ইঞ্জিনের সাহায্যে তৈরি। কোনো কৃত্রিম বুদ্ধিমত্তা (AI) বা অনির্দিষ্ট অ্যালগরিদম ব্যবহৃত হয়নি।' 
-              : '100% deterministic clinical functional nutrition protocol. Generated strictly via evidence-based clinical rules engines.'}
+          <div className="text-[10px] text-slate-400 print:text-slate-500 max-w-sm space-y-1">
+            <p>
+              {bn 
+                ? 'এই পরামর্শপত্র ১০০% বৈজ্ঞানিক ও ডিটারমিনিস্টিক রুলস ইঞ্জিনের সাহায্যে তৈরি। কোনো কৃত্রিম বুদ্ধিমত্তা (AI) ব্যবহৃত হয়নি।' 
+                : '100% deterministic clinical functional nutrition protocol. Generated strictly via evidence-based clinical rules engines.'}
+            </p>
+            <p className="text-[9px] text-slate-400">
+              Disclaimer: Clinical functional nutrition guidance. Patient records are stored locally on device.
+            </p>
           </div>
 
           <div className="text-center sm:text-right">
@@ -354,4 +384,3 @@ export const ReportTab: React.FC = () => {
     </div>
   );
 };
-

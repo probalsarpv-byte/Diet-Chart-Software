@@ -3,7 +3,6 @@
 import React, { useState, useMemo } from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { DISEASE_RULES } from '@/engine/diseaseRules';
-import { ClinicalConditionId, EvaluatedFoodItem, FoodCategory } from '@/types';
 import { 
   ShieldAlert, 
   CheckCircle, 
@@ -15,8 +14,9 @@ import {
   Clock, 
   ChevronDown, 
   ChevronUp,
-  Tag,
-  Sparkles
+  Sparkles,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 
 export const ConditionsTab: React.FC = () => {
@@ -47,6 +47,19 @@ export const ConditionsTab: React.FC = () => {
       return matchCat && matchQuery;
     });
   }, [currentFoods, searchQuery, selectedCategory]);
+
+  const getCategoryLabel = (cat: string) => {
+    switch (cat) {
+      case 'confirmed_allergy': return bn ? 'নিশ্চিত অ্যালার্জি' : 'Confirmed Allergy';
+      case 'clinician_restriction': return bn ? 'চিকিৎসকের নিষেধাজ্ঞা' : 'Clinician Exclusion';
+      case 'hard_contraindication': return bn ? 'ক্লিনিক্যাল নিষেধাজ্ঞা' : 'Hard Contraindication';
+      case 'evidence_conditional': return bn ? 'শর্তসাপেক্ষ সতর্কতা' : 'Conditional Precaution';
+      case 'phase_specific': return bn ? 'ফেজ-নির্দিষ্ট নিয়ম' : 'Phase Protocol';
+      case 'suspected_intolerance': return bn ? 'সম্ভাব্য সেনসিটিভিটি' : 'Suspected Sensitivity';
+      case 'preference': return bn ? 'থেরাপিউটিক পুষ্টি' : 'Therapeutic Nutrition';
+      default: return cat;
+    }
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -119,8 +132,8 @@ export const ConditionsTab: React.FC = () => {
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
             {bn 
-              ? 'যদি একটি খাদ্য একটি রোগের জন্য সবুজ বা উপকারী হয় (যেমন পালং শাক ডায়াবেটিসে গ্রিন), কিন্তু রোগীর অপর কোনো রোগের কারণে লাল বা নিষিদ্ধ হয় (যেমন হাই ইউরিক অ্যাসিড/গাউট অথবা কিডনির কারণে রেড), তবে চূড়ান্ত তালিকায় খাদ্যটি শতভাগ লাল (RED) হিসেবে বর্জিত হবে এবং রোগীর প্রেসক্রিপশনে উভয় রোগের বৈজ্ঞানিক কারণ প্রদর্শিত হবে।' 
-              : 'Deterministic Safety Guarantee: If a food is Green for Condition A but Red for Condition B, the final status MUST be Red. No food is allowed that endangers any concurrent pathology.'}
+              ? 'যদি একটি খাদ্য একটি রোগের জন্য সবুজ বা উপকারী হয়, কিন্তু রোগীর নিশ্চিত অ্যালার্জি, চিকিৎসকের নিষেধাজ্ঞা বা অপর কোনো রোগের কারণে লাল হয়, তবে চূড়ান্ত তালিকায় খাদ্যটি শতভাগ লাল (RED) হিসেবে বর্জিত হবে এবং প্রতিটি সিদ্ধান্তের প্রমাণ ও ক্যাটাগরি প্রদর্শিত হবে।' 
+              : 'Deterministic Safety Guarantee: Confirmed Allergies, Clinician Exclusions, and Hard Contraindications strictly override lower-tier preferences. If any reason is RED, the final status MUST be Red.'}
           </p>
 
           {/* Active Timing Rules */}
@@ -147,7 +160,6 @@ export const ConditionsTab: React.FC = () => {
             <Sparkles className="h-4 w-4 text-emerald-500" />
             <span>{bn ? 'রোগ সমন্বিত ম্যাক্রো অনুপাত' : 'Condition Macro Adjustments'}</span>
           </div>
-
           <div className="space-y-2 text-xs">
             {activeRules.map(r => (
               <div key={r.id} className="p-2.5 rounded-lg border bg-background/50 space-y-1">
@@ -276,8 +288,13 @@ export const ConditionsTab: React.FC = () => {
               >
                 <div className="flex justify-between items-start gap-2">
                   <div>
-                    <h4 className="font-semibold text-sm leading-tight text-foreground">
-                      {bn ? food.name_bn : food.name_en}
+                    <h4 className="font-semibold text-sm leading-tight text-foreground flex items-center gap-1.5">
+                      <span>{bn ? food.name_bn : food.name_en}</span>
+                      {food.hard_blocked && (
+                        <span title="Hard Blocked (Non-overridable)">
+                          <Lock className="h-3 w-3 text-rose-500" />
+                        </span>
+                      )}
                     </h4>
                     <span className="text-[11px] text-muted-foreground">
                       {bn ? food.name_en : food.name_bn}
@@ -323,7 +340,7 @@ export const ConditionsTab: React.FC = () => {
                     onClick={() => setExpandedFoodId(isExpanded ? null : food.id)}
                     className="w-full flex justify-between items-center text-[11px] font-medium text-primary hover:underline"
                   >
-                    <span>{bn ? `ক্লিনিক্যাল অডিট ট্রেইল (${food.reasons.length}টি রোগ)` : `Clinical Audit Trail (${food.reasons.length} conditions)`}</span>
+                    <span>{bn ? `ক্লিনিক্যাল অডিট ট্রেইল (${food.reasons.length}টি কারণ)` : `Clinical Audit Trail (${food.reasons.length} reasons)`}</span>
                     {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                   </button>
 
@@ -340,9 +357,14 @@ export const ConditionsTab: React.FC = () => {
                               : 'bg-emerald-500/5 border-emerald-500/30 text-emerald-500'
                           }`}
                         >
-                          <div className="font-semibold flex justify-between">
+                          <div className="font-semibold flex justify-between items-center mb-0.5">
                             <span>{bn ? r.conditionNameBn : r.conditionNameEn}</span>
-                            <span>[{r.status}]</span>
+                            <span className="text-[9px] px-1 py-0.2 bg-foreground/10 rounded">
+                              {getCategoryLabel(r.category)}
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-muted-foreground mb-1">
+                            Provenance: {r.provenance} • {r.isOverridable ? 'Overridable' : 'Strict Non-overridable'}
                           </div>
                           <div className="text-muted-foreground mt-0.5">
                             {bn ? r.note_bn : r.note_en}
@@ -369,4 +391,3 @@ export const ConditionsTab: React.FC = () => {
     </div>
   );
 };
-

@@ -12,7 +12,6 @@ import {
   Flame, 
   Sparkles, 
   ShieldCheck,
-  Activity,
   Award
 } from 'lucide-react';
 import { LongitudinalVisit } from '@/types';
@@ -22,16 +21,25 @@ export const FollowUpTab: React.FC = () => {
   const bn = language === 'bn';
 
   const [showAddVisitModal, setShowAddVisitModal] = useState(false);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+
+  // Follow-up form state
   const [newWeight, setNewWeight] = useState<number>(patient.weight_kg);
   const [newWaist, setNewWaist] = useState<number>(patient.waist_cm);
   const [newStool, setNewStool] = useState<number>(patient.gut_profile.bristol_stool_score);
   const [newEnergy, setNewEnergy] = useState<number>(patient.gut_profile.energy_score);
   const [newRelief, setNewRelief] = useState<number>(50);
+  const [clinicalObs, setClinicalObs] = useState<string>('');
   const [newNotes, setNewNotes] = useState<string>('');
+
+  // Transition form state
+  const [transitionRelief, setTransitionRelief] = useState<number>(65);
+  const [transitionRationale, setTransitionRationale] = useState<string>('');
+  const [transitionObservations, setTransitionObservations] = useState<string>('');
 
   const currentPhaseInfo = CLINICAL_PHASES[patient.current_phase];
 
-  // Compare progress
+  // Baseline comparison
   const comparison = compareLongitudinalProgress([
     {
       visit_id: 'v_baseline',
@@ -54,25 +62,30 @@ export const FollowUpTab: React.FC = () => {
     const today = new Date().toISOString().split('T')[0];
     const whtr = Math.round((newWaist / patient.height_cm) * 100) / 100;
 
-    const newV: LongitudinalVisit = {
-      visit_id: `v_${Date.now()}`,
+    const newV: Partial<LongitudinalVisit> = {
       visit_date: today,
-      phase: patient.current_phase,
       weight_kg: newWeight,
       waist_cm: newWaist,
       whtr,
       bristol_stool: newStool,
       energy_score: newEnergy,
       symptom_relief_pct: newRelief,
-      homa_ir: patient.labs.homa_ir,
-      tg_hdl_ratio: patient.labs.tg_hdl_ratio,
-      hba1c: patient.labs.hba1c,
-      notes_bn: newNotes || 'ফলো-আপ ভিজিট সম্পন্ন; সাধারণ স্বাস্থ্য অগ্রগতি রেকর্ড করা হয়েছে।',
-      notes_en: newNotes || 'Follow-up consultation logged.'
+      clinical_observations: clinicalObs,
+      notes_bn: newNotes || 'নিয়মিত ফলো-আপ ভিজিট সম্পন্ন; সাধারণ স্বাস্থ্য অগ্রগতি রেকর্ড করা হয়েছে।',
+      notes_en: newNotes || 'Routine follow-up consultation logged.'
     };
 
     addVisit(newV);
     setShowAddVisitModal(false);
+  };
+
+  const handleConfirmPhaseAdvance = () => {
+    advancePatientPhase({
+      actualSymptomReliefPct: transitionRelief,
+      rationale: transitionRationale || `Clinician confirmed criteria met for Phase ${patient.current_phase + 1}.`,
+      clinicalObservations: transitionObservations || "Patient successfully completed initial phase goals."
+    });
+    setShowAdvanceModal(false);
   };
 
   return (
@@ -95,11 +108,11 @@ export const FollowUpTab: React.FC = () => {
 
           {patient.current_phase < 4 ? (
             <button
-              onClick={advancePatientPhase}
+              onClick={() => setShowAdvanceModal(true)}
               className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-primary text-primary-foreground hover:opacity-90 shadow-sm transition"
             >
               <Sparkles className="h-4 w-4" />
-              <span>{bn ? `১-ক্লিক পরবর্তী ফেজে রূপান্তর (Phase ${patient.current_phase + 1})` : `1-Click Next Phase (${patient.current_phase + 1})`}</span>
+              <span>{bn ? `পরবর্তী ফেজে রূপান্তর মূল্যায়ন (Phase ${patient.current_phase + 1})` : `Evaluate Transition to Phase ${patient.current_phase + 1}`}</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           ) : (
@@ -174,7 +187,7 @@ export const FollowUpTab: React.FC = () => {
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-secondary hover:bg-secondary/80 text-foreground transition"
             >
               <Plus className="h-3.5 w-3.5 text-primary" />
-              <span>{bn ? 'নতুন ফলো-আপ ভিজিট রেকর্ড' : 'Log New Visit'}</span>
+              <span>{bn ? 'নিয়মিত ফলো-আপ ভিজিট রেকর্ড' : 'Log Regular Visit'}</span>
             </button>
           </div>
 
@@ -211,17 +224,17 @@ export const FollowUpTab: React.FC = () => {
             </div>
 
             <div className="p-3.5 rounded-xl border bg-background space-y-1">
-              <div className="text-[11px] text-muted-foreground">{bn ? 'উপসর্গ নিরাময় (Relief):' : 'Symptom Relief:'}</div>
+              <div className="text-[11px] text-muted-foreground">{bn ? 'উপসর্গ উপশম (Relief):' : 'Evaluated Relief:'}</div>
               <div className="text-lg font-bold text-purple-500">
                 +{comparison.latestVisit.symptom_relief_pct}%
               </div>
               <div className="text-[10px] text-muted-foreground">
-                {bn ? 'রোগীর স্বস্তি রেটিং' : 'Self-reported relief'}
+                {bn ? 'ক্লিনিক্যাল মূল্যায়ন' : 'Clinician Evaluated'}
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl border bg-background space-y-1">
-              <div className="text-[11px] text-muted-foreground">HOMA-IR Δ:</div>
+              <div className="text-[11px] text-muted-foreground">HOMA-IR:</div>
               <div className="text-lg font-bold text-amber-500">
                 {patient.labs.homa_ir || 'N/A'}
               </div>
@@ -231,7 +244,7 @@ export const FollowUpTab: React.FC = () => {
             </div>
 
             <div className="p-3.5 rounded-xl border bg-background space-y-1">
-              <div className="text-[11px] text-muted-foreground">TG / HDL Δ:</div>
+              <div className="text-[11px] text-muted-foreground">TG / HDL:</div>
               <div className="text-lg font-bold text-rose-500">
                 {patient.labs.tg_hdl_ratio || 'N/A'}
               </div>
@@ -266,7 +279,7 @@ export const FollowUpTab: React.FC = () => {
                 <th className="py-2.5 px-3 font-semibold">{bn ? 'কোমর (WHtR)' : 'Waist (WHtR)'}</th>
                 <th className="py-2.5 px-3 font-semibold">{bn ? 'ব্রিস্টল স্টুল' : 'Bristol Stool'}</th>
                 <th className="py-2.5 px-3 font-semibold">{bn ? 'উপশম %' : 'Relief %'}</th>
-                <th className="py-2.5 px-4 font-semibold">{bn ? 'ক্লিনিক্যাল নোট' : 'Clinical Notes'}</th>
+                <th className="py-2.5 px-4 font-semibold">{bn ? 'পর্যবেক্ষণ ও নোট' : 'Observations & Notes'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -294,6 +307,11 @@ export const FollowUpTab: React.FC = () => {
                 <tr key={v.visit_id || idx} className="hover:bg-accent/20">
                   <td className="py-3 px-4 font-bold text-foreground">
                     {v.visit_date}
+                    {v.is_phase_transition && (
+                      <span className="ml-1 text-[9px] px-1 py-0.2 bg-emerald-500/20 text-emerald-600 rounded font-bold">
+                        TRANSITION
+                      </span>
+                    )}
                   </td>
                   <td className="py-3 px-3">
                     <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-bold text-[10px]">
@@ -305,7 +323,12 @@ export const FollowUpTab: React.FC = () => {
                   <td className="py-3 px-3">Type {v.bristol_stool}</td>
                   <td className="py-3 px-3 text-emerald-500 font-bold">+{v.symptom_relief_pct}%</td>
                   <td className="py-3 px-4 text-muted-foreground">
-                    {bn ? v.notes_bn : v.notes_en}
+                    <div>{bn ? v.notes_bn : v.notes_en}</div>
+                    {v.clinical_observations && (
+                      <div className="text-[10px] text-muted-foreground/80 mt-0.5 italic">
+                        Obs: {v.clinical_observations}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -314,13 +337,13 @@ export const FollowUpTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. Log Follow-Up Modal */}
+      {/* 4. Log Follow-Up Modal (Regular Visit) */}
       {showAddVisitModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-bold text-sm text-foreground">
-                {bn ? 'নতুন ফলো-আপ ভিজিট সংরক্ষণ করুন' : 'Log Follow-Up Visit'}
+                {bn ? 'নতুন ফলো-আপ ভিজিট সংরক্ষণ করুন' : 'Log Regular Follow-Up Visit'}
               </h3>
               <button 
                 onClick={() => setShowAddVisitModal(false)}
@@ -373,7 +396,7 @@ export const FollowUpTab: React.FC = () => {
                 </div>
                 <div>
                   <label className="font-medium text-muted-foreground block mb-1">
-                    {bn ? 'উপসর্গ উপশম % (Relief):' : 'Symptom Relief %:'}
+                    {bn ? 'উপসর্গ উপশম % (Relief):' : 'Evaluated Relief %:'}
                   </label>
                   <input
                     type="number"
@@ -389,13 +412,26 @@ export const FollowUpTab: React.FC = () => {
 
               <div>
                 <label className="font-medium text-muted-foreground block mb-1">
-                  {bn ? 'ক্লিনিক্যাল মন্তব্য / রোগীর প্রতিক্রিয়া:' : 'Clinical Notes / Patient Feedback:'}
+                  {bn ? 'ক্লিনিক্যাল পর্যবেক্ষণ (Observations):' : 'Clinical Observations:'}
+                </label>
+                <input
+                  type="text"
+                  value={clinicalObs}
+                  onChange={e => setClinicalObs(e.target.value)}
+                  placeholder={bn ? 'হজম, শক্তির মাত্রা, বা মেটাবলিক পর্যবেক্ষণ...' : 'Digestion, gut motility, energy shift...'}
+                  className="w-full px-3 py-2 bg-background border rounded-lg focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="font-medium text-muted-foreground block mb-1">
+                  {bn ? 'ভিজিট নোট:' : 'Consultation Notes:'}
                 </label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={newNotes}
                   onChange={e => setNewNotes(e.target.value)}
-                  placeholder={bn ? 'ওজন হ্রাস, পেটের ফোলাভাব বা এনার্জির উন্নতি...' : 'Improvements in bloating, sleep, energy...'}
+                  placeholder={bn ? 'রোগীর প্রতিক্রিয়া ও পরামর্শ...' : 'Patient feedback and counseling notes...'}
                   className="w-full px-3 py-2 bg-background border rounded-lg focus:ring-1 focus:ring-primary"
                 />
               </div>
@@ -414,7 +450,94 @@ export const FollowUpTab: React.FC = () => {
                 onClick={handleSaveVisit}
                 className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition"
               >
-                {bn ? 'সংরক্ষণ করুন' : 'Save Visit'}
+                {bn ? 'ভিজিট সংরক্ষণ' : 'Save Visit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Advance Phase Transition Modal */}
+      {showAdvanceModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-card border rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span>{bn ? `ফেজ ${patient.current_phase + 1} রূপান্তর অনুমোদন` : `Approve Transition to Phase ${patient.current_phase + 1}`}</span>
+              </h3>
+              <button 
+                onClick={() => setShowAdvanceModal(false)}
+                className="text-muted-foreground hover:text-foreground text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-muted-foreground">
+                <strong className="text-foreground block mb-1">
+                  {CLINICAL_PHASES[(patient.current_phase + 1) as 1 | 2 | 3 | 4]?.title_en}
+                </strong>
+                {CLINICAL_PHASES[(patient.current_phase + 1) as 1 | 2 | 3 | 4]?.core_focus_en}
+              </div>
+
+              <div>
+                <label className="font-medium text-foreground block mb-1">
+                  {bn ? 'রোগীর প্রকৃত উপসর্গ উপশম মূল্যায়ন (%):' : 'Actual Evaluated Symptom Relief (%):'}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={transitionRelief}
+                  onChange={e => setTransitionRelief(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-background border rounded-lg focus:ring-1 focus:ring-primary font-bold text-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-medium text-foreground block mb-1">
+                  {bn ? 'পর্যায় রূপান্তরের কারণ ও সিদ্ধান্ত (Rationale):' : 'Transition Clinical Rationale:'}
+                </label>
+                <input
+                  type="text"
+                  value={transitionRationale}
+                  onChange={e => setTransitionRationale(e.target.value)}
+                  placeholder="e.g. Mucosal inflammation resolved; ready for legume reintroduction"
+                  className="w-full px-3 py-2 bg-background border rounded-lg focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="font-medium text-foreground block mb-1">
+                  {bn ? 'ক্লিনিক্যাল পর্যবেক্ষণ (Observations):' : 'Key Clinical Observations:'}
+                </label>
+                <textarea
+                  rows={2}
+                  value={transitionObservations}
+                  onChange={e => setTransitionObservations(e.target.value)}
+                  placeholder="e.g. Normal Bristol 4 stools for 14 days, fasting glucose stabilized"
+                  className="w-full px-3 py-2 bg-background border rounded-lg focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <button
+                type="button"
+                onClick={() => setShowAdvanceModal(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-secondary transition"
+              >
+                {bn ? 'বাতিল' : 'Cancel'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmPhaseAdvance}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-sm"
+              >
+                {bn ? 'অনুমোদন ও ডায়েট চার্ট আপডেট' : 'Confirm & Update Diet Plan'}
               </button>
             </div>
           </div>
@@ -424,4 +547,3 @@ export const FollowUpTab: React.FC = () => {
     </div>
   );
 };
-

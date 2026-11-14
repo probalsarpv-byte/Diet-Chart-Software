@@ -14,7 +14,10 @@ import {
   Info,
   Layers,
   ChevronDown,
-  CookingPot
+  CookingPot,
+  ShieldAlert,
+  AlertOctagon,
+  CheckCircle2
 } from 'lucide-react';
 import { FoodExchangeItem } from '@/types';
 
@@ -22,6 +25,9 @@ export const DietChartTab: React.FC = () => {
   const { 
     patient, 
     dietChart, 
+    isDietPlanDirty,
+    recalculateDietPlan,
+    dismissDirtyWarning,
     updateMealItemRawGrams, 
     swapMealItemAlternative, 
     removeMealItem, 
@@ -50,9 +56,58 @@ export const DietChartTab: React.FC = () => {
   const targetCarbs = patient.calculated.target_carbs_g;
   const targetFat = patient.calculated.target_fat_g;
 
+  const redIds = new Set(trafficLight.red.map(r => r.id));
+
+  // Foods allowed to be added (excluding RED)
+  const safeAddCandidates = allFoods.filter(f => !redIds.has(f.id));
+
   return (
     <div className="space-y-6 pb-12">
       
+      {/* Assessment Dirty Notification Banner */}
+      {isDietPlanDirty && (
+        <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                {bn ? 'রোগীর মূল্যায়ন পরিবর্তিত হয়েছে — ডায়েট চার্ট সমন্বয় প্রয়োজন' : 'Clinical Assessment Updated — Diet Plan Synchronization Required'}
+              </h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {bn 
+                  ? 'রোগীর রোগ, অ্যালার্জি, ল্যাব বা পরিমাপ পরিবর্তিত হয়েছে। নতুন ক্লিনিক্যাল প্রোটোকল অনুযায়ী ডায়েট চার্টটি পুনঃগণনা করুন।' 
+                  : 'Anthropometrics, conditions, allergies, or medications have changed. Re-synchronize the diet plan.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => recalculateDietPlan(false)}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition flex items-center gap-1.5 shadow-sm"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>{bn ? 'নতুন নিয়মে পুনঃগণনা' : 'Regenerate Plan'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => recalculateDietPlan(true)}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold border bg-background hover:bg-secondary transition text-foreground"
+            >
+              {bn ? 'কাস্টম এডিট রাখুন' : 'Keep Manual Edits'}
+            </button>
+            <button
+              type="button"
+              onClick={dismissDirtyWarning}
+              className="px-2 py-1.5 rounded-xl text-xs text-muted-foreground hover:text-foreground"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 1. Macro & Calorie Targets vs Current Chart Header */}
       <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
@@ -66,7 +121,7 @@ export const DietChartTab: React.FC = () => {
             <p className="text-xs text-muted-foreground mt-0.5">
               {bn 
                 ? 'কাঁচা গ্রাম (Raw) ও রান্না করা পারিবারিক পাত্রের মাপ (Cooked) উভয় প্রদর্শিত হচ্ছে।' 
-                : 'Raw grams and cooked family-pot portions side-by-side with 1-click food exchanges.'}
+                : 'Raw grams and cooked household portions side-by-side with 1-click food exchanges.'}
             </p>
           </div>
 
@@ -92,7 +147,7 @@ export const DietChartTab: React.FC = () => {
             <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
               <div 
                 className={`h-full ${Math.abs(totalKcal - targetKcal) <= 50 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                style={{ width: `${Math.min(100, (totalKcal / targetKcal) * 100)}%` }}
+                style={{ width: `${Math.min(100, (totalKcal / Math.max(1, targetKcal)) * 100)}%` }}
               />
             </div>
           </div>
@@ -106,7 +161,7 @@ export const DietChartTab: React.FC = () => {
             <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
               <div 
                 className="bg-emerald-500 h-full"
-                style={{ width: `${Math.min(100, (totalProtein / targetProtein) * 100)}%` }}
+                style={{ width: `${Math.min(100, (totalProtein / Math.max(1, targetProtein)) * 100)}%` }}
               />
             </div>
           </div>
@@ -120,7 +175,7 @@ export const DietChartTab: React.FC = () => {
             <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
               <div 
                 className="bg-blue-500 h-full"
-                style={{ width: `${Math.min(100, (totalCarbs / targetCarbs) * 100)}%` }}
+                style={{ width: `${Math.min(100, (totalCarbs / Math.max(1, targetCarbs)) * 100)}%` }}
               />
             </div>
           </div>
@@ -134,13 +189,13 @@ export const DietChartTab: React.FC = () => {
             <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
               <div 
                 className="bg-amber-500 h-full"
-                style={{ width: `${Math.min(100, (totalFat / targetFat) * 100)}%` }}
+                style={{ width: `${Math.min(100, (totalFat / Math.max(1, targetFat)) * 100)}%` }}
               />
             </div>
           </div>
 
           <div className="p-3 rounded-xl border bg-background space-y-1">
-            <div className="text-[11px] text-muted-foreground">{bn ? 'গ্লাইসেমিক লোড (GL):' : 'Glycemic Load:'}</div>
+            <div className="text-[11px] text-muted-foreground">{bn ? 'আনুমানিক GL (প্রাক্কলিত):' : 'Estimated GL:'}</div>
             <div className="text-base font-bold text-purple-500">{avgGl}</div>
             <div className="text-[10px] text-muted-foreground font-medium">
               {avgGl < 50 ? (bn ? 'লো গ্লাইসেমিক (আদর্শ)' : 'Low (Optimal)') : (bn ? 'মাঝারি' : 'Moderate')}
@@ -207,11 +262,31 @@ export const DietChartTab: React.FC = () => {
               </div>
             </div>
 
-            {/* Incompatible Warnings Banner if present */}
+            {/* Constraint Errors if present (Safe replacement impossible) */}
+            {meal.slot_errors && meal.slot_errors.length > 0 && (
+              <div className="bg-rose-500/10 border-b border-rose-500/20 px-4 py-3 space-y-2">
+                {meal.slot_errors.map((err, errIdx) => (
+                  <div key={errIdx} className="text-xs text-rose-600 dark:text-rose-400 flex items-start gap-2">
+                    <AlertOctagon className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block">{bn ? `খাদ্য স্লট সতর্কতা (${err.slot_name}):` : `Slot Safety Constraint (${err.slot_name}):`}</strong>
+                      <span>{bn ? err.reason_bn : err.reason_en}</span>
+                      {err.violated_constraints.length > 0 && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {err.violated_constraints.join(' • ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Incompatible Pair Warnings Banner if present */}
             {meal.incompatible_warnings && meal.incompatible_warnings.length > 0 && (
-              <div className="bg-rose-500/10 border-b border-rose-500/20 px-4 py-2.5 space-y-1">
+              <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 space-y-1">
                 {meal.incompatible_warnings.map((w, wIdx) => (
-                  <div key={wIdx} className="text-xs text-rose-500 flex items-center gap-2 font-medium">
+                  <div key={wIdx} className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2 font-medium">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
                     <span>{bn ? w.warning_bn : w.warning_en}</span>
                   </div>
@@ -239,8 +314,13 @@ export const DietChartTab: React.FC = () => {
                       
                       {/* Name & Prep */}
                       <td className="py-3 px-4">
-                        <div className="font-semibold text-foreground text-xs">
-                          {bn ? item.food_name_bn : item.food_name_en}
+                        <div className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+                          <span>{bn ? item.food_name_bn : item.food_name_en}</span>
+                          {item.traffic_status === 'YELLOW' && (
+                            <span className="text-[9px] px-1 py-0.2 bg-amber-500/20 text-amber-600 rounded font-semibold">
+                              CONDITIONAL
+                            </span>
+                          )}
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5 max-w-xs">
                           {bn ? item.prep_note_bn : item.prep_note_en}
@@ -327,13 +407,13 @@ export const DietChartTab: React.FC = () => {
         ))}
       </div>
 
-      {/* 3. Add Custom Food Item Modal */}
+      {/* 3. Add Custom Food Item Modal (Filtered to Safe Candidates Only) */}
       {selectedMealForAdd && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-bold text-sm text-foreground">
-                {bn ? 'খাবারের তালিকা থেকে যোগ করুন' : 'Add Food from Database'}
+                {bn ? 'নিরাপদ খাবারের তালিকা থেকে যোগ করুন' : 'Add Clinically Safe Food'}
               </h3>
               <button 
                 onClick={() => setSelectedMealForAdd(null)}
@@ -346,17 +426,17 @@ export const DietChartTab: React.FC = () => {
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
-                  {bn ? 'খাবার নির্বাচন করুন (সবুজ বা নিরাপদ খাবার অগ্রাধিকার দিন):' : 'Select Food Item:'}
+                  {bn ? 'খাবার নির্বাচন করুন (লাল তালিকাভুক্ত খাদ্য স্বয়ংক্রিয়ভাবে বাদ দেওয়া হয়েছে):' : 'Select Safe Food (RED items filtered out):'}
                 </label>
                 <select
                   value={selectedFoodIdToAdd}
                   onChange={e => setSelectedFoodIdToAdd(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
                 >
-                  <option value="">{bn ? '-- খাবার বাছাই করুন --' : '-- Choose Food --'}</option>
-                  {allFoods.map(f => (
+                  <option value="">{bn ? '-- নিরাপদ খাবার বাছাই করুন --' : '-- Choose Safe Food --'}</option>
+                  {safeAddCandidates.map(f => (
                     <option key={f.id} value={f.id}>
-                      {bn ? f.name_bn : f.name_en} ({f.per_100g.kcal} kcal/100g)
+                      {bn ? f.name_bn : f.name_en} ({f.per_100g.kcal} kcal, P: {f.per_100g.protein_g}g)
                     </option>
                   ))}
                 </select>
@@ -407,4 +487,3 @@ export const DietChartTab: React.FC = () => {
     </div>
   );
 };
-

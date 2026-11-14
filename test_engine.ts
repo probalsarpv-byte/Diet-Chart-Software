@@ -22,7 +22,10 @@ const calculated = calculateAnthropometrics(
   74,  // kg
   92,  // cm
   'sedentary',
-  ['t2d_ir', 'hypothyroid', 'fatty_liver', 'uric_acid_gout']
+  ['t2d_ir', 'hypothyroid', 'fatty_liver', 'uric_acid_gout'],
+  'adult_standard',
+  undefined,
+  'clamped_to_bmr'
 );
 console.log("\n1. Anthropometrics output:");
 console.log(`- BMI: ${calculated.bmi} (${calculated.bmi_category_en})`);
@@ -54,6 +57,7 @@ console.log(`- Total Clinical Lab Flags: ${labs.lab_flags.length}`);
 
 // 3. Test Conflict Resolver (RED > YELLOW > GREEN)
 const patient: PatientProfile = {
+  schema_version: 2,
   id: 'pt_test_001',
   name: "Mrs. Nasreen Akhter",
   age: 48,
@@ -67,6 +71,11 @@ const patient: PatientProfile = {
   activity_level: 'sedentary',
   sleep_hours: 6,
   shift_worker: false,
+  population_group: 'adult_standard',
+  bmr_floor_strategy: 'clamped_to_bmr',
+  confirmed_allergies: ['shrimp'],
+  clinician_disallowed_foods: [],
+  clinician_disallowed_tags: [],
   selected_conditions: ['t2d_ir', 'hypothyroid', 'fatty_liver', 'uric_acid_gout'],
   active_medications: ['med_metformin', 'med_ppi', 'med_levothyroxine'],
   gut_profile: {
@@ -82,7 +91,15 @@ const patient: PatientProfile = {
 };
 
 const activeMeds = meds.filter(m => patient.active_medications.includes(m.id));
-const traffic = resolveConflicts(foods, patient.selected_conditions, activeMeds);
+const traffic = resolveConflicts(
+  foods, 
+  patient.selected_conditions, 
+  activeMeds, 
+  patient.confirmed_allergies, 
+  patient.clinician_disallowed_foods, 
+  patient.clinician_disallowed_tags, 
+  patient.current_phase
+);
 console.log("\n3. Conflict Resolver (RED > YELLOW > GREEN):");
 console.log(`- Green Foods: ${traffic.green.length}`);
 console.log(`- Yellow Foods: ${traffic.yellow.length}`);
@@ -92,12 +109,12 @@ console.log(`- Red Foods: ${traffic.red.length}`);
 const dni = evaluateDNIAndTimeline(patient, meds, supps);
 console.log("\n4. DNI & Daily Timeline:");
 console.log(`- Nutrient Depletions: ${dni.depletions.length}`);
-console.log(`- Recommended Supplements: ${dni.recommendedSupplements.map(s => s.name_en).join(', ')}`);
+console.log(`- Candidate Supplements: ${dni.candidateSupplements.map(s => s.name_en).join(', ')}`);
 console.log(`- Timeline Slots: ${dni.timeline.length}`);
 console.log(`- Critical Warnings: ${dni.criticalWarnings.length}`);
 
 // 5. Test Auto-Scaled Diet Chart
-const chart = buildAutoScaledDietChart(patient, foods, traffic.green);
+const chart = buildAutoScaledDietChart(patient, foods, traffic);
 console.log("\n5. Auto-Scaled Diet Chart:");
 console.log(`- Meals Generated: ${chart.length}`);
 const totalKcal = chart.reduce((sum, m) => sum + m.meal_calories, 0);
@@ -106,4 +123,3 @@ console.log(`- Chart Total Calories: ${totalKcal} kcal (Target: ${calculated.tar
 console.log(`- Chart Total Protein: ${Math.round(totalProtein)} g (Target: ${calculated.target_protein_g})`);
 
 console.log("\n=== ALL ENGINE MODULES VERIFIED DETERMINISTICALLY! ===");
-

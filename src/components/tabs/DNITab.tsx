@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { 
   Pill, 
@@ -8,16 +8,41 @@ import {
   ShieldAlert, 
   AlertTriangle, 
   CheckCircle2, 
-  Zap, 
   Sparkles, 
-  Calendar,
-  Coffee,
-  Heart
+  Check, 
+  X, 
+  Edit3,
+  Lock
 } from 'lucide-react';
 
 export const DNITab: React.FC = () => {
-  const { allMedicines, patient, toggleMedication, dniResult, language } = usePractice();
+  const { 
+    allMedicines, 
+    patient, 
+    toggleMedication, 
+    dniResult, 
+    candidateSupplements, 
+    approveCandidateSupplement, 
+    rejectCandidateSupplement, 
+    overlapWarnings,
+    language 
+  } = usePractice();
   const bn = language === 'bn';
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [customDose, setCustomDose] = useState('');
+  const [customNotes, setCustomNotes] = useState('');
+
+  const handleStartEdit = (id: string, currentDose: string, currentNotes?: string) => {
+    setEditingId(id);
+    setCustomDose(currentDose);
+    setCustomNotes(currentNotes || '');
+  };
+
+  const handleSaveApproval = (id: string) => {
+    approveCandidateSupplement(id, customDose, customNotes);
+    setEditingId(null);
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -79,7 +104,27 @@ export const DNITab: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Critical Spacing & Absorption Alerts */}
+      {/* 2. Cumulative Nutrient Overlap & Tolerable Upper Limit (UL) Warnings */}
+      {overlapWarnings.length > 0 && (
+        <div className="space-y-3">
+          {overlapWarnings.map((warn, idx) => (
+            <div key={idx} className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+              <div className="text-xs text-foreground leading-relaxed">
+                <span className="font-bold text-amber-600 dark:text-amber-400 block mb-0.5">
+                  {bn ? `সাপ্লিমেন্ট ওভারল্যাপ সতর্কতা: ${warn.nutrient} (UL: ${warn.tolerable_upper_limit})` : `Nutrient Overlap Warning: ${warn.nutrient} (UL: ${warn.tolerable_upper_limit})`}
+                </span>
+                {bn ? warn.warning_bn : warn.warning_en}
+                <div className="text-[11px] text-muted-foreground mt-1">
+                  Sources: {warn.sources.join(' + ')}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 3. Critical Spacing & Absorption Alerts */}
       {dniResult.criticalWarnings.length > 0 && (
         <div className="space-y-3">
           {dniResult.criticalWarnings.map((warn, idx) => (
@@ -87,7 +132,7 @@ export const DNITab: React.FC = () => {
               <ShieldAlert className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
               <div className="text-xs text-foreground leading-relaxed">
                 <span className="font-bold text-rose-500 block mb-0.5">
-                  {bn ? 'জরুরি সেবন ব্যবধান ও ক্লিনিক্যাল সতর্কতা:' : 'Critical Timing & Separation Protocol:'}
+                  {bn ? 'জরুরি সেবন ব্যবধান ও ফার্মাকোলজিক্যাল সতর্কতা:' : 'Critical Drug-Nutrient Spacing Protocol:'}
                 </span>
                 {bn ? warn.warning_bn : warn.warning_en}
               </div>
@@ -96,7 +141,7 @@ export const DNITab: React.FC = () => {
         </div>
       )}
 
-      {/* 3. Nutrient Depletions & Orthomolecular Supplements */}
+      {/* 4. Nutrient Depletions & Candidate Supplements with Clinician Review */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Depletions */}
@@ -121,7 +166,7 @@ export const DNITab: React.FC = () => {
                     </span>
                   </div>
                   <div className="text-[11px] text-muted-foreground">
-                    <strong className="text-foreground">{dep.medicineName}</strong> {bn ? 'ওষুধ ব্যবহারের ফলে:' : 'induced mechanism:'}
+                    <strong className="text-foreground">{dep.medicineName}</strong> {bn ? 'ওষুধ ব্যবহারের ফলে ঘাটতির কারণ:' : 'induced mechanism:'}
                   </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     {bn ? dep.depletion.reason_bn : dep.depletion.reason_en}
@@ -132,51 +177,169 @@ export const DNITab: React.FC = () => {
           )}
         </div>
 
-        {/* Targeted Orthomolecular Supplements */}
+        {/* Candidate Orthomolecular Supplements with Clinician Review */}
         <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 text-foreground font-semibold text-xs border-b pb-3">
-            <Sparkles className="h-4 w-4 text-emerald-500" />
-            <span>{bn ? 'টার্গেটেড অর্থোমলিকুলার সাপ্লিমেন্ট (বাংলাদেশে ভেরিফাইড ব্র্যান্ড)' : 'Targeted Orthomolecular Supplements (BD Brands)'}</span>
+          <div className="flex items-center justify-between border-b pb-3">
+            <div className="flex items-center gap-2 text-foreground font-semibold text-xs">
+              <Sparkles className="h-4 w-4 text-emerald-500" />
+              <span>{bn ? 'ক্যান্ডিডেট অর্থোমলিকুলার সাপ্লিমেন্ট (চিকিৎসক অনুমোদন প্রয়োজন)' : 'Candidate Supplements (Clinician Approval Required)'}</span>
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              {candidateSupplements.filter(s => s.approval_status === 'clinician_approved').length} / {candidateSupplements.length} {bn ? 'অনুমোদিত' : 'Approved'}
+            </span>
           </div>
 
           <div className="space-y-3">
-            {dniResult.recommendedSupplements.map(supp => (
-              <div key={supp.id} className="p-3.5 rounded-xl border bg-background text-xs space-y-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-bold text-foreground text-sm">
-                      {bn ? supp.name_bn : supp.name_en}
-                    </h4>
-                    <span className="text-[11px] text-muted-foreground">{supp.category}</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-semibold">
-                    {supp.recommended_dose}
-                  </span>
-                </div>
+            {candidateSupplements.length === 0 ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">
+                {bn ? 'কোনো ক্যান্ডিডেট সাপ্লিমেন্ট প্রস্তাবিত হয়নি।' : 'No candidate supplements triggered.'}
+              </p>
+            ) : (
+              candidateSupplements.map(supp => {
+                const isApproved = supp.approval_status === 'clinician_approved';
+                const isRejected = supp.approval_status === 'rejected';
+                const isUnderEdit = editingId === supp.id;
 
-                <div className="text-[11px] text-muted-foreground bg-secondary/40 p-2 rounded-lg leading-relaxed">
-                  <strong>{bn ? 'সেবন সময় ও প্রোটোকল: ' : 'Timing & Note: '}</strong>
-                  {bn ? supp.timing_note_bn : supp.timing_note_en}
-                </div>
+                return (
+                  <div key={supp.id} className={`p-3.5 rounded-xl border text-xs space-y-2 transition ${
+                    isApproved 
+                      ? 'bg-emerald-500/5 border-emerald-500/30' 
+                      : isRejected 
+                      ? 'bg-rose-500/5 border-rose-500/20 opacity-60' 
+                      : 'bg-background border-amber-500/30'
+                  }`}>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-bold text-foreground text-sm">
+                          {bn ? supp.name_bn : supp.name_en}
+                        </h4>
+                        <span className="text-[10px] text-muted-foreground block">
+                          Trigger: {supp.indication_trigger || supp.category}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
+                          isApproved 
+                            ? 'bg-emerald-500/15 text-emerald-500' 
+                            : isRejected 
+                            ? 'bg-rose-500/15 text-rose-500' 
+                            : 'bg-amber-500/15 text-amber-500'
+                        }`}>
+                          {isApproved ? (bn ? 'অনুমোদিত' : 'Approved') : isRejected ? (bn ? 'বাতিল' : 'Rejected') : (bn ? 'রিভিউ প্রয়োজন' : 'Candidate Review')}
+                        </span>
+                      </div>
+                    </div>
 
-                <div className="flex items-center gap-1.5 text-[11px]">
-                  <strong className="text-foreground">{bn ? 'ভেরিফাইড ব্র্যান্ড:' : 'Verified BD Brands:'}</strong>
-                  <div className="flex flex-wrap gap-1">
-                    {supp.verified_bd_brands.map((b, bIdx) => (
-                      <span key={bIdx} className="px-1.5 py-0.2 rounded bg-primary/10 text-primary font-medium text-[10px]">
-                        {b}
-                      </span>
-                    ))}
+                    {/* Dosage and Notes */}
+                    <div className="text-[11px] bg-secondary/40 p-2 rounded-lg space-y-1">
+                      <div className="flex justify-between">
+                        <span><strong>{bn ? 'প্রস্তাবিত ডোজ:' : 'Dose:'}</strong> {supp.prescribed_dose || supp.recommended_dose}</span>
+                        <span><strong>{bn ? 'সময়বিধি:' : 'Timing:'}</strong> {supp.timing_schedule}</span>
+                      </div>
+                      {supp.clinician_notes && (
+                        <div className="text-[10px] text-muted-foreground pt-1 border-t">
+                          <strong>Note:</strong> {supp.clinician_notes}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Edit Mode */}
+                    {isUnderEdit ? (
+                      <div className="space-y-2 p-2 bg-background border rounded-lg">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block">Dose:</label>
+                            <input
+                              type="text"
+                              value={customDose}
+                              onChange={e => setCustomDose(e.target.value)}
+                              className="w-full px-2 py-1 text-xs border rounded bg-background"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-muted-foreground block">Clinician Note:</label>
+                            <input
+                              type="text"
+                              value={customNotes}
+                              onChange={e => setCustomNotes(e.target.value)}
+                              className="w-full px-2 py-1 text-xs border rounded bg-background"
+                              placeholder="e.g. For 6 weeks then retest"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-1.5 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(null)}
+                            className="px-2 py-1 text-[10px] border rounded"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveApproval(supp.id)}
+                            className="px-2.5 py-1 text-[10px] bg-emerald-600 text-white rounded font-medium"
+                          >
+                            Confirm Approval
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Approval Action Buttons */
+                      <div className="flex justify-between items-center pt-1 border-t border-border/50">
+                        <div className="flex flex-wrap gap-1">
+                          {supp.verified_bd_brands.slice(0, 3).map((b, bIdx) => (
+                            <span key={bIdx} className="px-1.5 py-0.2 rounded bg-primary/10 text-primary font-medium text-[9px]">
+                              {b}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="flex items-center gap-1">
+                          {!isApproved && (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEdit(supp.id, supp.recommended_dose, supp.clinician_notes)}
+                              className="px-2 py-1 rounded text-[10px] font-medium border bg-background hover:bg-secondary flex items-center gap-1 text-foreground"
+                            >
+                              <Edit3 className="h-3 w-3" />
+                              <span>{bn ? 'কাস্টমাইজ ও অনুমোদন' : 'Edit & Approve'}</span>
+                            </button>
+                          )}
+                          {!isApproved && (
+                            <button
+                              type="button"
+                              onClick={() => approveCandidateSupplement(supp.id)}
+                              className="px-2.5 py-1 rounded text-[10px] font-medium bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1"
+                            >
+                              <Check className="h-3 w-3" />
+                              <span>{bn ? 'অনুমোদন' : 'Approve'}</span>
+                            </button>
+                          )}
+                          {!isRejected && (
+                            <button
+                              type="button"
+                              onClick={() => rejectCandidateSupplement(supp.id)}
+                              className="px-2 py-1 rounded text-[10px] font-medium border border-rose-500/30 text-rose-500 hover:bg-rose-500/10 flex items-center gap-1"
+                            >
+                              <X className="h-3 w-3" />
+                              <span>{bn ? 'বাতিল' : 'Reject'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </div>
-            ))}
+                );
+              })
+            )}
           </div>
         </div>
 
       </div>
 
-      {/* 4. Visual 24-Hour Daily Gantt/Schedule Timeline */}
+      {/* 5. Visual 24-Hour Daily Gantt/Schedule Timeline */}
       <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b pb-3">
           <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
@@ -184,16 +347,15 @@ export const DNITab: React.FC = () => {
             <span>{bn ? '২৪ ঘণ্টার দৈনিক ওষুধ, সাপ্লিমেন্ট ও খাদ্য রুটিন (Visual Timeline)' : 'Visual 24-Hour Pill, Supplement & Meal Timeline'}</span>
           </div>
           <span className="text-xs text-muted-foreground">
-            {bn ? 'সঠিক সময়ের ব্যবধানে শোষণ ১০০% বৃদ্ধি পায়' : 'Chronological Absorption Synchronization'}
+            {bn ? 'প্রেসক্রিপশন ওষুধ ও সাপ্লিমেন্ট স্পষ্টভাবে আলাদা চিহ্নিত' : 'Prescription vs Supplemental Differentiation'}
           </span>
         </div>
 
         <div className="relative border-l-2 border-primary/30 ml-4 sm:ml-6 pl-4 sm:pl-6 space-y-6 py-2">
           {dniResult.timeline.map((item, idx) => {
-            const isMed = item.category === 'medication';
+            const isMed = item.category === 'medication' || item.is_prescription_medication;
             const isSupp = item.category === 'supplement';
             const isMeal = item.category === 'meal';
-            const isProto = item.category === 'protocol';
 
             const dotColor = isMed 
               ? 'bg-rose-500' 
@@ -214,8 +376,11 @@ export const DNITab: React.FC = () => {
                       <span className="font-bold text-foreground bg-secondary px-2 py-0.5 rounded text-[11px]">
                         {item.time}
                       </span>
-                      <h4 className="font-semibold text-foreground text-sm">
-                        {bn ? item.title_bn : item.title_en}
+                      <h4 className="font-semibold text-foreground text-sm flex items-center gap-1.5">
+                        <span>{bn ? item.title_bn : item.title_en}</span>
+                        {item.is_prescription_medication && (
+                          <span className="text-[9px] px-1 py-0.2 bg-rose-500 text-white rounded font-bold">RX</span>
+                        )}
                       </h4>
                     </div>
                     <span className={`text-[10px] px-2 py-0.5 rounded font-semibold uppercase ${
@@ -255,4 +420,3 @@ export const DNITab: React.FC = () => {
     </div>
   );
 };
-
