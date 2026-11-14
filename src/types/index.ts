@@ -131,7 +131,17 @@ export interface ActivityLevelConfig {
 
 export type ActivityLevel = 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active';
 export type AgniType = 'mandagni' | 'tikshnagni' | 'vishamagni' | 'samagni';
-export type PopulationGroup = 'adult_standard' | 'pediatric' | 'pregnancy' | 'lactation' | 'geriatric';
+export type PopulationGroup =
+  | 'adult_standard'
+  | 'pediatric'
+  | 'adolescent'
+  | 'pregnancy'
+  | 'lactation'
+  | 'geriatric'
+  | 'oncology'
+  | 'renal'
+  | 'malnutrition_risk'
+  | 'all';
 export type BmrFloorStrategy = 'clamped_to_bmr' | 'clinician_custom' | 'unrestricted_clinical_guidance';
 
 export interface AssessmentAnswerMap {

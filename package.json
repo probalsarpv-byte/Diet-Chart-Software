@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:p0": "tsx test/p0_clinical_safety.test.ts",
+    "test:p1": "tsx test/p1_assessment.test.ts",
+    "test:p2": "tsx test/p2_clinical_intelligence.test.ts",
+    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2"
   },
   "dependencies": {
     "clsx": "^2.1.1",

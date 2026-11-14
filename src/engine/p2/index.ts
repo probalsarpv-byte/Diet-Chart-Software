@@ -134,6 +134,20 @@ function detectRedFlags(observations: ClinicalObservation[], patient: PatientPro
     });
   }
 
+  if (patient.population_group === 'oncology' || patient.population_group === 'malnutrition_risk' || (patient.weight_kg && patient.weight_kg < 45)) {
+    flags.push({
+      id: 'rf_oncology_malnutrition',
+      title_en: 'Severe Nutritional Vulnerability / Malnutrition Risk',
+      title_bn: 'গুরুতর পুষ্টিগত ঝুঁকি ও ম্যালনিউট্রিশন সতর্কতা',
+      triggeringObservationIds: [],
+      urgency: 'immediate',
+      recommendedAction_en: 'Immediate clinical review for malnutrition and oncological cachexia prevention.',
+      recommendedAction_bn: 'ম্যালনিউট্রিশন ও ক্যাশেক্সিয়া প্রতিরোধে তাত্ক্ষণিক ক্লিনিক্যাল পর্যালোচনা।',
+      blocksAutoIntervention: true,
+      requiresClinicianReview: true,
+    });
+  }
+
   if (isPregnant(patient)) {
     const weightLossInterventionObs = observations.filter(o =>
       o.tags?.includes('weight_loss_intervention')

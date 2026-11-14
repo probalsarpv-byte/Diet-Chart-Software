@@ -186,16 +186,22 @@ export function aggregateEvidence(
   // ── Lab values ─────────────────────────────────────────────────
   const labs = patient.labs;
 
-  if (labs.homa_ir !== undefined) {
-    const elevated = labs.homa_ir > 2.5;
-    const tags = elevated ? ['elevated_homa_ir', 'central_adiposity'] : ['normal_homa_ir'];
+  const homaCalc = labs.homa_ir !== undefined 
+    ? labs.homa_ir 
+    : (labs.fasting_glucose !== undefined && labs.fasting_insulin !== undefined && labs.fasting_insulin > 0)
+    ? Math.round(((labs.fasting_glucose * labs.fasting_insulin) / 405) * 100) / 100
+    : undefined;
+
+  if (homaCalc !== undefined) {
+    const elevated = homaCalc > 1.9;
+    const tags = elevated ? ['elevated_homa_ir', 'obs_homa_ir_elevated', 'central_adiposity'] : ['normal_homa_ir', 'obs_normal_homa_ir'];
     add({
       id: makeId(patient.id, 'lab', 'homa_ir'),
       patientId: patient.id,
       visitId,
       category: 'lab',
       sourceLabMarker: 'homa_ir',
-      observedValue: labs.homa_ir,
+      observedValue: homaCalc,
       unit: 'index',
       date,
       dataSource: 'measured',
@@ -207,7 +213,7 @@ export function aggregateEvidence(
 
   if (labs.hba1c !== undefined) {
     const elevated = labs.hba1c >= 5.7;
-    const tags = elevated ? ['elevated_hba1c'] : ['normal_hba1c'];
+    const tags = elevated ? ['elevated_hba1c', 'obs_hba1c_borderline_or_above'] : ['normal_hba1c', 'obs_normal_hba1c'];
     add({
       id: makeId(patient.id, 'lab', 'hba1c'),
       patientId: patient.id,
@@ -227,7 +233,7 @@ export function aggregateEvidence(
 
   if (labs.fasting_glucose !== undefined) {
     const elevated = labs.fasting_glucose >= 100;
-    const tags = elevated ? ['elevated_fasting_glucose'] : ['normal_fasting_glucose'];
+    const tags = elevated ? ['elevated_fasting_glucose', 'obs_elevated_fasting_glucose'] : ['normal_fasting_glucose', 'obs_normal_fasting_glucose'];
     add({
       id: makeId(patient.id, 'lab', 'fasting_glucose'),
       patientId: patient.id,
@@ -456,19 +462,19 @@ export function aggregateEvidence(
   }
 
   // ── Anthropometrics ────────────────────────────────────────────
-  const calc = patient.calculated;
-  if (calc.whtr >= 0.5) {
+  const whtrVal = patient.height_cm > 0 ? (patient.waist_cm / patient.height_cm) : (patient.calculated?.whtr ?? 0);
+  if (whtrVal >= 0.5 || patient.waist_cm >= 85) {
     add({
       id: makeId(patient.id, 'anthro', 'whtr_elevated'),
       patientId: patient.id,
       visitId,
       category: 'anthropometric',
-      observedValue: calc.whtr,
+      observedValue: Math.round(whtrVal * 100) / 100,
       date,
       dataSource: 'calculated',
       verificationStatus: 'clinician_verified',
       associatedDomains: ['transport'],
-      tags: ['elevated_whtr', 'central_adiposity'],
+      tags: ['elevated_whtr', 'central_adiposity', 'obs_central_adiposity'],
     });
   }
 
@@ -520,36 +526,167 @@ export function aggregateEvidence(
   }
 
   // ── Assessment answers ─────────────────────────────────────────
-  const knownTags: Array<[string, string[], FunctionalDomain[]]> = [
-    ['bloating_post_dairy', ['bloating', 'dairy_consumer', 'loose_stool_post_dairy'], ['assimilation']],
-    ['low_vegetable_intake', ['low_vegetable_intake'], ['assimilation']],
-    ['low_protein_intake', ['low_protein_food_frequency'], ['structural_integrity']],
-    ['meal_skipping', ['meal_skipping', 'irregular_meal_timing'], ['assimilation', 'energy']],
-    ['irregular_meal_timing', ['irregular_meal_timing'], ['assimilation', 'energy']],
-    ['low_fluid_intake', ['low_fluid_intake'], ['assimilation', 'structural_integrity']],
-    ['recent_antibiotic', ['antibiotic_exposure'], ['assimilation', 'defense_repair']],
-    ['muscle_weakness', ['muscle_weakness_or_loss'], ['structural_integrity']],
-    ['hair_loss', ['hair_loss'], ['structural_integrity']],
-    ['menstrual_irregularity', ['menstrual_irregularity'], ['communication']],
-    ['sugar_cravings', ['sugar_cravings'], ['energy']],
-    ['alcohol_use', ['alcohol_use'], ['biotransformation']],
+  const answerMapping: Array<{
+    key: string;
+    check: (v: unknown) => boolean;
+    tags: string[];
+    domains: FunctionalDomain[];
+  }> = [
+    {
+      key: 'unintentional_weight_loss',
+      check: (v) => v === true || v === 'yes',
+      tags: ['weight_loss', 'unintentional', 'red_flag_weight_loss'],
+      domains: ['structural_integrity', 'energy'],
+    },
+    {
+      key: 'gi_red_flags_blood',
+      check: (v) => v === true || v === 'yes',
+      tags: ['gi_bleeding', 'rectal_bleeding', 'red_flag_bleeding'],
+      domains: ['assimilation', 'transport'],
+    },
+    {
+      key: 'bloating_frequency',
+      check: (v) => v !== undefined && v !== 'none' && v !== '',
+      tags: ['bloating', 'gi_discomfort'],
+      domains: ['assimilation'],
+    },
+    {
+      key: 'bloating_post_dairy',
+      check: (v) => v === true || v === 'yes',
+      tags: ['bloating', 'dairy_consumer', 'loose_stool_post_dairy'],
+      domains: ['assimilation'],
+    },
+    {
+      key: 'bristol_stool_form',
+      check: (v) => typeof v === 'string' && (v.includes('type_1') || v.includes('type_2')),
+      tags: ['constipation', 'bristol_stool_score'],
+      domains: ['assimilation'],
+    },
+    {
+      key: 'bristol_stool_form',
+      check: (v) => typeof v === 'string' && (v.includes('type_6') || v.includes('type_7')),
+      tags: ['diarrhea', 'bristol_stool_score'],
+      domains: ['assimilation'],
+    },
+    {
+      key: 'postprandial_fatigue',
+      check: (v) => v === true || v === 'yes',
+      tags: ['postprandial_fatigue', 'obs_postprandial_fatigue', 'reactive_hypoglycemia_risk', 'insulin_resistance'],
+      domains: ['energy'],
+    },
+    {
+      key: 'sugar_carbohydrate_cravings',
+      check: (v) => v === 'frequent_daily' || v === 'occasional',
+      tags: ['sugar_cravings', 'obs_sugar_cravings'],
+      domains: ['energy'],
+    },
+    {
+      key: 'sugar_cravings',
+      check: (v) => v === true || v === 'yes',
+      tags: ['sugar_cravings', 'obs_sugar_cravings'],
+      domains: ['energy'],
+    },
+    {
+      key: 'chronic_fatigue_pattern',
+      check: (v) => v === 'severe_exhaustion' || v === 'moderate_fluctuating',
+      tags: ['fatigue', 'mitochondrial_burnout', 'obs_fatigue'],
+      domains: ['energy'],
+    },
+    {
+      key: 'chronic_joint_muscle_pain',
+      check: (v) => v === 'persistent_stiffness' || v === 'mild_weather_related',
+      tags: ['joint_pain', 'inflammatory_burden', 'obs_joint_pain'],
+      domains: ['defense_repair', 'structural_integrity'],
+    },
+    {
+      key: 'daily_ppi_antacid_dependence',
+      check: (v) => v === true || v === 'yes',
+      tags: ['ppi_dependence', 'b12_magnesium_depletion_risk', 'obs_ppi_use'],
+      domains: ['assimilation', 'biotransformation'],
+    },
+    {
+      key: 'recent_antibiotic',
+      check: (v) => v === true || v === 'yes',
+      tags: ['antibiotic_exposure', 'obs_antibiotic_exposure'],
+      domains: ['assimilation', 'defense_repair'],
+    },
+    {
+      key: 'low_vegetable_intake',
+      check: (v) => v === true || v === 'yes',
+      tags: ['low_vegetable_intake', 'low_fiber_diet'],
+      domains: ['assimilation'],
+    },
+    {
+      key: 'daily_protein_food_frequency',
+      check: (v) => v === 'less_than_one' || v === 'one_meal',
+      tags: ['low_protein_food_frequency', 'inadequate_protein'],
+      domains: ['structural_integrity'],
+    },
+    {
+      key: 'low_protein_intake',
+      check: (v) => v === true || v === 'yes',
+      tags: ['low_protein_food_frequency'],
+      domains: ['structural_integrity'],
+    },
+    {
+      key: 'meal_skipping',
+      check: (v) => v === true || v === 'yes',
+      tags: ['meal_skipping', 'irregular_meal_timing'],
+      domains: ['assimilation', 'energy'],
+    },
+    {
+      key: 'irregular_meal_timing',
+      check: (v) => v === true || v === 'yes',
+      tags: ['irregular_meal_timing'],
+      domains: ['assimilation', 'energy'],
+    },
+    {
+      key: 'low_fluid_intake',
+      check: (v) => v === true || v === 'yes',
+      tags: ['low_fluid_intake'],
+      domains: ['assimilation', 'structural_integrity'],
+    },
+    {
+      key: 'muscle_weakness',
+      check: (v) => v === true || v === 'yes',
+      tags: ['muscle_weakness_or_loss'],
+      domains: ['structural_integrity'],
+    },
+    {
+      key: 'hair_loss',
+      check: (v) => v === true || v === 'yes',
+      tags: ['hair_loss'],
+      domains: ['structural_integrity'],
+    },
+    {
+      key: 'menstrual_irregularity',
+      check: (v) => v === true || v === 'yes' || v === 'irregular_delayed',
+      tags: ['menstrual_irregularity'],
+      domains: ['communication'],
+    },
+    {
+      key: 'alcohol_use',
+      check: (v) => v === true || v === 'yes',
+      tags: ['alcohol_use'],
+      domains: ['biotransformation'],
+    },
   ];
 
-  for (const [answerKey, tags, domains] of knownTags) {
-    const val = assessmentAnswers[answerKey];
-    if (val === true || val === 'yes' || val === 'often' || val === 'always') {
+  for (const m of answerMapping) {
+    const val = assessmentAnswers[m.key];
+    if (val !== undefined && m.check(val)) {
       add({
-        id: makeId(patient.id, 'assessment', answerKey),
+        id: makeId(patient.id, 'assessment', m.key),
         patientId: patient.id,
         visitId,
         category: 'symptom',
-        sourceQuestionId: answerKey,
+        sourceQuestionId: m.key,
         observedValue: val as string | boolean,
         date,
         dataSource: 'patient_reported',
         verificationStatus: 'unverified',
-        associatedDomains: domains,
-        tags,
+        associatedDomains: m.domains,
+        tags: m.tags,
       });
     }
   }
