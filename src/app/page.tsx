@@ -10,6 +10,7 @@ import { DNITab } from '@/components/tabs/DNITab';
 import { DietChartTab } from '@/components/tabs/DietChartTab';
 import { FollowUpTab } from '@/components/tabs/FollowUpTab';
 import { ReportTab } from '@/components/tabs/ReportTab';
+import { ClinicalIntelligenceTab } from '@/components/p2/ClinicalIntelligenceTab';
 
 export default function Home() {
   const { activeTab } = usePractice();
@@ -26,6 +27,7 @@ export default function Home() {
         {activeTab === 'diet' && <DietChartTab />}
         {activeTab === 'followup' && <FollowUpTab />}
         {activeTab === 'report' && <ReportTab />}
+        {activeTab === 'clinical_intelligence' && <ClinicalIntelligenceTab />}
       </main>
     </div>
   );

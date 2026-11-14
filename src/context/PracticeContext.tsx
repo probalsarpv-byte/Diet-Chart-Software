@@ -37,8 +37,8 @@ export interface PracticeContextType {
   setLanguage: (lang: 'bn' | 'en') => void;
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
-  activeTab: 'intake' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report';
-  setActiveTab: (tab: 'intake' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report') => void;
+  activeTab: 'intake' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report' | 'clinical_intelligence';
+  setActiveTab: (tab: 'intake' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report' | 'clinical_intelligence') => void;
 
   allFoods: FoodItem[];
   allMedicines: MedicineItem[];
@@ -211,7 +211,7 @@ function migratePatientRecord(record: any): PatientRecord {
 export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [activeTab, setActiveTab] = useState<'intake' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report'>('intake');
+  const [activeTab, setActiveTab] = useState<'intake' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report' | 'clinical_intelligence'>('intake');
 
   const [patient, setPatient] = useState<PatientProfile>(createInitialSeedPatient);
   const [visits, setVisits] = useState<LongitudinalVisit[]>([]);
