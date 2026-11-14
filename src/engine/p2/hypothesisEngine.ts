@@ -472,9 +472,9 @@ export function generateHypotheses(
     not_applicable: 1,
   };
 
-  for (const [hid, entry] of hypothesisMap) {
+  Array.from(hypothesisMap.entries()).forEach(([hid, entry]) => {
     const meta = HYPOTHESIS_META[hid];
-    if (!meta) continue;
+    if (!meta) return;
 
     // Pick the highest evidence level across all triggering rules
     const bestLevel = entry.evidenceLevels.reduce<EvidenceSupportLevel>((best, curr) => {
@@ -484,10 +484,10 @@ export function generateHypotheses(
     // Collect missing evidence
     const missingEvidence: string[] = [];
     const supportedTagsSet = new Set<string>();
-    for (const obsId of entry.supportingObs) {
+    Array.from(entry.supportingObs).forEach((obsId) => {
       const obs = observations.find((o) => o.id === obsId);
       if (obs) for (const t of obs.tags ?? []) supportedTagsSet.add(t);
-    }
+    });
 
     hypotheses.push({
       id: hid,
@@ -510,7 +510,7 @@ export function generateHypotheses(
       clinicianDecision: 'pending',
       isConfirmedDiagnosis: false, // ALWAYS false for hypothesis-generated entries
     });
-  }
+  });
 
   // Sort by evidence level (strongest first)
   hypotheses.sort((a, b) => evidencePriority[b.evidenceSupportLevel] - evidencePriority[a.evidenceSupportLevel]);
