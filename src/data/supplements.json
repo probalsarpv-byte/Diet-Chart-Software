@@ -1,0 +1,168 @@
+[
+  {
+    "id": "supp_magnesium_glycinate",
+    "name_en": "Magnesium Glycinate / Glycerophosphate",
+    "name_bn": "ম্যাগনেসিয়াম গ্লাইসিনেট / গ্লিসারোফসফেট",
+    "category": "Mineral / Nervous System & Muscle",
+    "clinical_indications": [
+      "PPI Induced Hypomagnesemia",
+      "Insulin Resistance",
+      "Anxiety & Insomnia",
+      "Constipation / Muscle Cramps"
+    ],
+    "recommended_dose": "200 - 400 mg elemental magnesium",
+    "timing_schedule": "Night 30-45 mins before bedtime",
+    "timing_note_bn": "ঘুমানোর ৩০-৪৫ মিনিট আগে এক গ্লাস পানিতে। স্নায়ু শান্ত করে এবং গভীর ঘুমে সহায়তা করে।",
+    "timing_note_en": "30-45 minutes before sleep. Supports GABA activation and deep restorative sleep.",
+    "verified_bd_brands": [
+      "Gefomag (Navana Pharma PLC)",
+      "Magik (Incepta)",
+      "Magnesium Chelate"
+    ],
+    "contraindications": [
+      "Severe Renal Failure (eGFR < 30)"
+    ]
+  },
+  {
+    "id": "supp_methyl_b12",
+    "name_en": "Sublingual Methylcobalamin (Active B12)",
+    "name_bn": "মিথাইলকোবালামিন বি১২ (সক্রিয় রূপ)",
+    "category": "Vitamin / Methylation & Nerve Health",
+    "clinical_indications": [
+      "Metformin Induced Depletion",
+      "PPI Induced Malabsorption",
+      "Peripheral Neuropathy",
+      "Fatigue"
+    ],
+    "recommended_dose": "1000 - 1500 mcg sublingual daily",
+    "timing_schedule": "Morning with or after breakfast",
+    "timing_note_bn": "জিহ্বার নিচে রেখে ধীরে ধীরে দ্রবীভূত হতে দিন। সকালের খাবারের পর গ্রহণীয়।",
+    "timing_note_en": "Dissolve under tongue after breakfast. Bypasses impaired gastric intrinsic factor absorption.",
+    "verified_bd_brands": [
+      "Methylcobal (Square)",
+      "Neuro-B Sublingual",
+      "Mecolin"
+    ],
+    "contraindications": []
+  },
+  {
+    "id": "supp_d3_k2",
+    "name_en": "Vitamin D3 (Cholecalciferol) + Vitamin K2 (MK-7)",
+    "name_bn": "ভিটামিন ডি৩ + ভিটামিন কে২ এমকে-৭",
+    "category": "Vitamin / Hormone Precursor & Bone/Vascular Health",
+    "clinical_indications": [
+      "Metabolic Syndrome",
+      "Autoimmune Hashimoto's",
+      "Fatty Liver",
+      "Steroid Bone Loss",
+      "Low Serum 25(OH)D"
+    ],
+    "recommended_dose": "2000 - 5000 IU D3 + 100 mcg K2 MK-7",
+    "timing_schedule": "With lunch (heaviest meal containing healthy fat)",
+    "timing_note_bn": "দুপুরের মূল খাবারের সাথে যেখানে স্বাস্থ্যকর চর্বি (ঘি বা সরিষার তেল) আছে, তার সাথে গ্রহণ করুন।",
+    "timing_note_en": "Fat-soluble nutrient. Must be ingested alongside fat-containing meal for micellar absorption.",
+    "verified_bd_brands": [
+      "D-Rise (Incepta)",
+      "Ostocal-D",
+      "Calbo-D"
+    ],
+    "contraindications": [
+      "Hypercalcemia",
+      "Active Sarcoidosis"
+    ]
+  },
+  {
+    "id": "supp_coq10",
+    "name_en": "Coenzyme Q10 (Ubiquinol / Ubiquinone)",
+    "name_bn": "কো-এনজাইম কিউ১০ (ইউবিকুইনল)",
+    "category": "Antioxidant / Mitochondrial Energy",
+    "clinical_indications": [
+      "Statin Induced Myopathy",
+      "Mitochondrial Fatigue",
+      "Fatty Liver MASLD",
+      "Cardiovascular Support"
+    ],
+    "recommended_dose": "100 - 200 mg daily",
+    "timing_schedule": "With lunch (fatty meal)",
+    "timing_note_bn": "দুপুরের খাবারের মাঝে বা সাথে গ্রহণ করুন। স্ট্যাটিন ওষুধের পেশির ব্যথা দূর করতে সাহায্য করে।",
+    "timing_note_en": "Lipophilic antioxidant. Take with dietary lipid at lunch.",
+    "verified_bd_brands": [
+      "Q-10 (Square Pharma)",
+      "CoQ Forte",
+      "Ubiquin 100"
+    ],
+    "contraindications": []
+  },
+  {
+    "id": "supp_probiotic_boulardii",
+    "name_en": "Saccharomyces Boulardii / Multi-Strain Probiotic",
+    "name_bn": "স্যাকারোমাইসিস বুলারডি / মাল্টি-স্ট্রেন প্রোবায়োটিক",
+    "category": "Gut Microbiome Rebuild",
+    "clinical_indications": [
+      "IBS / Dysbiosis",
+      "Antibiotic Associated Diarrhea",
+      "Gut Permeability (Leaky Gut)",
+      "SIBO Recovery"
+    ],
+    "recommended_dose": "250 - 500 mg (5-10 Billion CFU)",
+    "timing_schedule": "Between meals or morning empty stomach",
+    "timing_note_bn": "সকালে খালি পেটে অথবা দুপুর ও রাতের খাবারের মধ্যবর্তী বিরতিতে সাধারণ পানি দিয়ে।",
+    "timing_note_en": "Take away from hot beverages or prescription antibiotics (minimum 2h gap).",
+    "verified_bd_brands": [
+      "Bolardi (Square Pharma)",
+      "Probio R (Square Pharma)",
+      "Boulardi (Renata)"
+    ],
+    "contraindications": [
+      "Immunocompromised / Central Venous Catheter"
+    ]
+  },
+  {
+    "id": "supp_omega3",
+    "name_en": "Molecularly Distilled Omega-3 Fish Oil (EPA/DHA)",
+    "name_bn": "ওমেগা-৩ ফিশ অয়েল (ইপিএ ও ডিএইচএ)",
+    "category": "Essential Fatty Acids / Anti-inflammatory",
+    "clinical_indications": [
+      "Hypertriglyceridemia (High TG/HDL)",
+      "NAFLD / Fatty Liver",
+      "Systemic Inflammation",
+      "PCOS"
+    ],
+    "recommended_dose": "1000 - 2000 mg active EPA+DHA",
+    "timing_schedule": "With lunch or dinner",
+    "timing_note_bn": "ভারী খাবারের সাথে গ্রহণ করুন যাতে ফিশি বার্প বা অস্বস্তি না হয়।",
+    "timing_note_en": "Take with meal to optimize lymphatic chylomicron absorption and prevent reflux.",
+    "verified_bd_brands": [
+      "Omega-3 (Incepta)",
+      "Efalex",
+      "Omega Forte"
+    ],
+    "contraindications": [
+      "Active Bleeding Disorder / Pre-surgery"
+    ]
+  },
+  {
+    "id": "supp_berberine_inversion",
+    "name_en": "Berberine HCl / Ceylon Cinnamon Extract",
+    "name_bn": "বারবেরিন এইচসিএল / দারুচিনি নির্যাস",
+    "category": "Phytomedicine / AMPK Activator & Insulin Sensitizer",
+    "clinical_indications": [
+      "Type 2 Diabetes",
+      "PCOS Insulin Resistance",
+      "Dyslipidemia",
+      "Visceral Adiposity"
+    ],
+    "recommended_dose": "500 mg 1-2 times daily",
+    "timing_schedule": "15 minutes before lunch and dinner",
+    "timing_note_bn": "খাবারের ১৫ মিনিট পূর্বে গ্রহণ করলে পোস্টপ্র্যান্ডিয়াল ব্লাড সুগার স্পাইক উল্লেখযোগ্যভাবে কমে।",
+    "timing_note_en": "Take 15 minutes before carb-containing meal to blunt glucose excursion via GLUT4 translocation.",
+    "verified_bd_brands": [
+      "Berberine Plus",
+      "Glyco-Balance Herbal"
+    ],
+    "contraindications": [
+      "Pregnancy",
+      "Severe Hypoglycemia"
+    ]
+  }
+]

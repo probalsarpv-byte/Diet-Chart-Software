@@ -1,0 +1,415 @@
+[
+  {
+    "id": "med_metformin",
+    "generic_name": "Metformin",
+    "brand_names_bd": [
+      "Combit",
+      "Daomet",
+      "Diformin",
+      "Gluco-A",
+      "Insumin",
+      "Metfo",
+      "Metfor",
+      "Oramet"
+    ],
+    "drug_class": "Biguanide / Antidiabetic",
+    "mechanism_bn": "হেপাটিক গ্লুকোজ উৎপাদন হ্রাস করে এবং পেরিফেরাল ইনসুলিন সংবেদনশীলতা বাড়ায়।",
+    "mechanism_en": "Decreases hepatic glucose output and increases peripheral insulin sensitivity.",
+    "depletions": [
+      {
+        "nutrient": "Vitamin B12 (Cobalamin)",
+        "severity": "high",
+        "reason_bn": "ইলিয়ামে ক্যালসিয়াম-নির্ভর B12-IF রিসেপ্টর শোষণ ব্যাহত করে। দীর্ঘমেয়াদে B12 অভাব এবং নিউরোপ্যাথির ঝুঁকি বাড়ে।",
+        "reason_en": "Interferes with calcium-dependent B12-intrinsic factor uptake in the terminal ileum. Increases risk of peripheral neuropathy.",
+        "supplement_recommendation": {
+          "name_en": "Methylcobalamin B12 (Active Sublingual)",
+          "name_bn": "অ্যাক্টিভ মিথাইলকোবালামিন বি১২",
+          "dose": "1000 - 1500 mcg/day",
+          "timing": "Morning with breakfast",
+          "verified_bd_brands": [
+            "Methylcobal",
+            "Neuro-B",
+            "Mecolin"
+          ]
+        }
+      },
+      {
+        "nutrient": "Coenzyme Q10 (CoQ10)",
+        "severity": "medium",
+        "reason_bn": "মাইটোকন্ড্রিয়াল কমপ্লেক্স-১ ইনহিবিশনের কারণে কো-এনজাইম Q10 এর মাত্রা হ্রাস পেতে পারে।",
+        "reason_en": "May reduce cellular CoQ10 levels through mitochondrial complex 1 inhibition.",
+        "supplement_recommendation": {
+          "name_en": "Ubiquinol / CoQ10",
+          "name_bn": "কো-এনজাইম কিউ১০ (ইউবিকুইনল)",
+          "dose": "100 mg/day",
+          "timing": "With lunch (fatty meal)",
+          "verified_bd_brands": [
+            "Q10",
+            "CoQ",
+            "Ubiquin"
+          ]
+        }
+      },
+      {
+        "nutrient": "Folate (Vitamin B9)",
+        "severity": "medium",
+        "reason_bn": "B12 এর সাথে সমান্তরালভাবে ফোলেট মেটাবলিজম প্রভাবিত হতে পারে।",
+        "reason_en": "Secondary alteration in methyl cycle and cellular folate trapping.",
+        "supplement_recommendation": {
+          "name_en": "L-Methylfolate (5-MTHF)",
+          "name_bn": "এল-মিথাইলফোলেট",
+          "dose": "400 - 800 mcg/day",
+          "timing": "Morning with meal",
+          "verified_bd_brands": [
+            "Folmax",
+            "Metafol"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "জিআই পার্শ্বপ্রতিক্রিয়া (বমি ভাব, ডায়রিয়া) কমাতে সর্বদা ভারী খাবারের সাথে বা খাবারের ঠিক পরে গ্রহণ করুন।",
+        "rule_en": "Always take with or immediately after main meals to minimize gastrointestinal distress.",
+        "time_slot": "With breakfast & dinner"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Alcohol",
+        "effect_bn": "অ্যালকোহল মেটফর্মিনের সাথে ল্যাকটিক অ্যাসিডোসিসের মারাত্মক ঝুঁকি সৃষ্টি করে।",
+        "effect_en": "Alcohol increases the risk of life-threatening lactic acidosis.",
+        "action": "strictly_avoid"
+      },
+      {
+        "food_or_group": "High Simple Sugar Foods",
+        "effect_bn": "অতিরিক্ত চিনি ও মিষ্টি খাবার মেটফর্মিনের কার্যকারিতা নষ্ট করে রক্তে গ্লুকোজ স্পাইক ঘটায়।",
+        "effect_en": "High simple sugars overwhelm glycemic control and aggravate intestinal bloating.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_ppi",
+    "generic_name": "Omeprazole / Esomeprazole / Pantoprazole / Rabeprazole",
+    "brand_names_bd": [
+      "Seclo",
+      "Losectil",
+      "Nexum",
+      "Maxpro",
+      "Proceptin",
+      "Pantonix",
+      "Trupan",
+      "Finix"
+    ],
+    "drug_class": "Proton Pump Inhibitor (PPI)",
+    "mechanism_bn": "প্যারাইটাল কোষের H+/K+ ATPase পাম্প বন্ধ করে পাকস্থলীর হাইড্রোক্লোরিক অ্যাসিড নিঃসরণ প্রায় সম্পূর্ণ বন্ধ করে।",
+    "mechanism_en": "Suppresses gastric acid production by irreversible inhibition of the H+/K+ ATPase proton pump.",
+    "depletions": [
+      {
+        "nutrient": "Magnesium",
+        "severity": "high",
+        "reason_bn": "পাকস্থলীর অ্যাসিড না থাকলে অন্ত্রে TRPM6/7 ম্যাগনেসিয়াম চ্যানেল অকার্যকর হয়ে হাইপোম্যাগনেসেমিয়া ও মাংসপেশিতে টান সৃষ্টি করে।",
+        "reason_en": "Impaired intestinal magnesium absorption via TRPM6/7 channels causing hypomagnesemia and muscle cramps.",
+        "supplement_recommendation": {
+          "name_en": "Magnesium Glycinate / Glycerophosphate",
+          "name_bn": "ম্যাগনেসিয়াম গ্লাইসিনেট / গ্লিসারোফসফেট",
+          "dose": "200 - 400 mg elemental Mg at bedtime",
+          "timing": "Night before bed",
+          "verified_bd_brands": [
+            "Gefomag (Navana)",
+            "Magik",
+            "Chelated Mg"
+          ]
+        }
+      },
+      {
+        "nutrient": "Vitamin B12",
+        "severity": "high",
+        "reason_bn": "খাবারের প্রোটিন থেকে B12 আলাদা করার জন্য পাকস্থলীর অ্যাসিড (HCl) এবং পেপসিন অপরিহার্য। এসিড না থাকলে B12 শোষিত হয় না।",
+        "reason_en": "Gastric acid and pepsin are mandatory to cleave vitamin B12 from dietary protein complexes.",
+        "supplement_recommendation": {
+          "name_en": "Sublingual Methylcobalamin",
+          "name_bn": "সাবলিঙ্গুয়াল মিথাইলকোবালামিন বি১২",
+          "dose": "1000 mcg/day",
+          "timing": "Under tongue morning",
+          "verified_bd_brands": [
+            "Methylcobal",
+            "Neuro-B"
+          ]
+        }
+      },
+      {
+        "nutrient": "Elemental Iron",
+        "severity": "high",
+        "reason_bn": "আয়রন শোষণের জন্য ফেরিক (Fe3+) থেকে ফেরাস (Fe2+) অবস্থায় রূপান্তর হতে এসিড প্রয়োজন। পিপিআই ব্যবহারে দীর্ঘমেয়াদে রক্তস্বল্পতা হয়।",
+        "reason_en": "Gastric acidity is required to convert insoluble ferric iron to absorbable ferrous state.",
+        "supplement_recommendation": {
+          "name_en": "Iron Bisglycinate Chelate + Vitamin C",
+          "name_bn": "আয়রন বিসগ্লাইসিনেট + ভিটামিন সি",
+          "dose": "20 - 30 mg elemental iron with Vit C",
+          "timing": "Mid-day with water/lemon juice, 2h away from tea/coffee",
+          "verified_bd_brands": [
+            "Fero-C",
+            "Irochelate"
+          ]
+        }
+      },
+      {
+        "nutrient": "Calcium & Zinc",
+        "severity": "medium",
+        "reason_bn": "ক্যালসিয়াম কার্বনেট দ্রবীভূত হতে এসিড লাগে; দীর্ঘমেয়াদে অস্টিওপোরোসিস ও হাড়ের ফ্র্যাকচারের ঝুঁকি বাড়ে।",
+        "reason_en": "Hypochlorhydria reduces dissolution and ionization of calcium and zinc salts.",
+        "supplement_recommendation": {
+          "name_en": "Calcium Citrate Malate + Zinc Picolinate",
+          "name_bn": "ক্যালসিয়াম সাইট্রেট মালেট + জিঙ্ক",
+          "dose": "500 mg Ca + 15 mg Zn",
+          "timing": "With evening meal",
+          "verified_bd_brands": [
+            "Calbo-D",
+            "Ostocit",
+            "Zif"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "পিপিআই ওষুধ সকালের প্রথম খাবারের ৩০-৬০ মিনিট পূর্বে এক গ্লাস সাধারণ পানি দিয়ে গ্রহণ করতে হবে।",
+        "rule_en": "Take 30-60 minutes before the first meal of the day on an empty stomach.",
+        "time_slot": "06:30 AM (Fasting)"
+      },
+      {
+        "rule_bn": "খাবারের পূর্বে এসিড রিফ্লাক্স/হাইপোক্লোরহাইড্রিয়া রোগীদের জন্য আদা কুচি + সৈন্ধব লবণ চিবিয়ে খাওয়া বা অ্যাপেল সাইডার ভিনেগার ডাইলুট করে পান করা সহায়ক।",
+        "rule_en": "For functional hypoacidity/reflux, ginger slices with Himalayan pink salt 20 mins pre-meal stimulates cephalic phase digestion.",
+        "time_slot": "20 mins before lunch and dinner"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Raw Onion, Deep Fried & Excess Chili",
+        "effect_bn": "লোয়ার ইসোফেজিয়াল স্ফিংকটার শিথিল করে রিফ্লাক্স এবং বুকজ্বালা তীব্র করে।",
+        "effect_en": "Relaxes lower esophageal sphincter (LES) pressure triggering acid backflow.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_statin",
+    "generic_name": "Atorvastatin / Rosuvastatin",
+    "brand_names_bd": [
+      "Lipicon",
+      "Atova",
+      "TG-Nil",
+      "Rosuva",
+      "Rasuva",
+      "Lipirex",
+      "Rovista"
+    ],
+    "drug_class": "HMG-CoA Reductase Inhibitor (Statin)",
+    "mechanism_bn": "মেভালোনেট পাথওয়েতে HMG-CoA রিডাক্টেজ এনজাইম ব্লক করে যকৃতে কোলেস্টেরল সংশ্লেষণ বন্ধ করে।",
+    "mechanism_en": "Competitively inhibits HMG-CoA reductase in the mevalonate pathway.",
+    "depletions": [
+      {
+        "nutrient": "Coenzyme Q10 (Ubiquinone / Ubiquinol)",
+        "severity": "high",
+        "reason_bn": "মেভালোনেট পাথওয়ে একইসাথে কোলেস্টেরল ও CoQ10 তৈরি করে। স্ট্যাটিন CoQ10 উৎপাদন ৪০-৫০% কমিয়ে মায়োপ্যাথি, পেশি ব্যথা ও ক্লান্তি সৃষ্টি করে।",
+        "reason_en": "The mevalonate pathway synthesizes both cholesterol and CoQ10. Statins induce profound CoQ10 depletion, contributing to myalgia and mitochondrial fatigue.",
+        "supplement_recommendation": {
+          "name_en": "Ubiquinol / CoQ10 Active Form",
+          "name_bn": "কো-এনজাইম কিউ১০ (ইউবিকুইনল)",
+          "dose": "100 - 200 mg/day",
+          "timing": "With lunch (fatty meal for absorption)",
+          "verified_bd_brands": [
+            "Q-10 (Square)",
+            "Ubiquinol 100",
+            "CoQ Forte"
+          ]
+        }
+      },
+      {
+        "nutrient": "Vitamin D3 + K2 (MK-7)",
+        "severity": "medium",
+        "reason_bn": "স্ট্যাটিন মেটাবলিজমে ভিটামিন ডি রিসেপ্টর এনজাইম জড়িত এবং ভিটামিন ডি ঘাটতি পেশির ব্যথার সংবেদনশীলতা বাড়ায়।",
+        "reason_en": "Low vitamin D exacerbates statin-induced muscle myopathy and aches.",
+        "supplement_recommendation": {
+          "name_en": "Vitamin D3 (2000-4000 IU) + Vitamin K2 MK-7 (100 mcg)",
+          "name_bn": "ভিটামিন ডি৩ + কে২ এমকে-৭",
+          "dose": "2000 - 4000 IU D3 + 100 mcg K2",
+          "timing": "With biggest fat-containing meal (lunch)",
+          "verified_bd_brands": [
+            "D-Rise (Incepta)",
+            "Ostocal-D",
+            "Cal-D"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "সাধারণত রাতের খাবারের পর বা রাতে ঘুমানোর পূর্বে গ্রহণ করা হয়, কারণ যকৃতে রাতে সর্বাধিক কোলেস্টেরল তৈরি হয়।",
+        "rule_en": "Take at bedtime or with evening meal as hepatic cholesterol synthesis peaks at night.",
+        "time_slot": "09:30 PM (Bedtime)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Grapefruit / বাতাবি লেবু",
+        "effect_bn": "গ্রেপফ্রুট বা জাম্বুরা সাইটোক্রোম CYP3A4 এনজাইম নিষ্ক্রিয় করে রক্তে অ্যাটরভাস্ট্যাটিনের ঘনত্ব বিষাক্ত মাত্রায় বাড়িয়ে দেয়।",
+        "effect_en": "Inhibits intestinal CYP3A4, dramatically increasing statin plasma concentration and rhabdomyolysis risk.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_levothyroxine",
+    "generic_name": "Levothyroxine / Thyroxine Sodium",
+    "brand_names_bd": [
+      "Thyrox",
+      "Eltroxin",
+      "Thyronor",
+      "Levonor"
+    ],
+    "drug_class": "Thyroid Hormone (T4)",
+    "mechanism_bn": "সিন্থেটিক T4 হরমোন সরবরাহ করে যা পেরিফেরাল টিস্যুতে টি৩ (T3) তে রূপান্তরিত হয়ে মেটাবলিজম নিয়ন্ত্রণ করে।",
+    "mechanism_en": "Provides synthetic L-3,3',5,5'-tetraiodothyronine (T4) to restore basal metabolic homeostasis.",
+    "depletions": [
+      {
+        "nutrient": "Iron, Calcium, Magnesium Interference",
+        "severity": "high",
+        "reason_bn": "আয়রন, ক্যালসিয়াম ও ম্যাগনেসিয়াম থাইরক্সিনের সাথে অদ্রবণীয় চিলেট তৈরি করে এর শোষণ ৮০% পর্যন্ত নষ্ট করে দেয়।",
+        "reason_en": "Polyvalent cations bind levothyroxine forming unabsorbable chelates.",
+        "supplement_recommendation": {
+          "name_en": "Spaced Multivitamins & Minerals",
+          "name_bn": "৪ ঘণ্টার ব্যবধানে খনিজ পরিপূরক",
+          "dose": "Take all minerals at least 4 hours AFTER levothyroxine",
+          "timing": "Lunch or Afternoon (strictly 4h gap)",
+          "verified_bd_brands": [
+            "Separate from morning dose"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "ঘুম থেকে উঠে সবার প্রথমে সম্পূর্ণ খালি পেটে এক গ্লাস পানিতে গ্রহণ করুন। এর পরবর্তী ৬০ মিনিট কোনো খাবার, চা বা কফি খাবেন না।",
+        "rule_en": "Take immediately upon waking with a full glass of plain water. Wait at least 60 minutes before breakfast, tea or coffee.",
+        "time_slot": "06:00 AM (Immediate Waking)"
+      },
+      {
+        "rule_bn": "ক্যালসিয়াম, আয়রন, ম্যাগনেসিয়াম সাপ্লিমেন্ট এবং দুগ্ধজাত খাবার লেভোথাইরক্সিন গ্রহণের অন্তত ৪ ঘণ্টা পরে গ্রহণ করতে হবে।",
+        "rule_en": "Maintain strict 4-hour gap before taking Calcium, Iron, Magnesium, Multivitamins or Soybean products.",
+        "time_slot": "Keep 4 hours separation"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Soybean & Raw Cruciferous Vegetables",
+        "effect_bn": "কাঁচা ফুলকপি, বাঁধাকপি এবং সয়াবিন থাইরক্সিন শোষণ ও থাইরয়েড পারক্সিডেজ এনজাইমে বাধা দেয়।",
+        "effect_en": "Isoflavones and raw goitrogens interfere with intestinal absorption and thyroidal iodine organification.",
+        "action": "strictly_avoid_raw"
+      },
+      {
+        "food_or_group": "Coffee / Tea within 1 hour",
+        "effect_bn": "ক্যাফেইন ও ট্যানিন থাইরক্সিন শোষণে গুরুতর ব্যাঘাত ঘটায়।",
+        "effect_en": "Caffeine significantly reduces GI absorption of levothyroxine.",
+        "action": "strictly_avoid_timing"
+      }
+    ]
+  },
+  {
+    "id": "med_diuretics",
+    "generic_name": "Furosemide / Hydrochlorothiazide / Spironolactone",
+    "brand_names_bd": [
+      "Fusid",
+      "Frusid",
+      "Lasix",
+      "Uretic",
+      "Aldactone",
+      "Spilac"
+    ],
+    "drug_class": "Diuretic / Antihypertensive",
+    "mechanism_bn": "কিডনির হেনলির লুপ বা ডিস্টাল টিউবিউলে সোডিয়াম ও পানি পুনঃশোষণ প্রতিরোধ করে মূত্রের পরিমাণ বৃদ্ধি করে।",
+    "mechanism_en": "Inhibits electrolyte reabsorption in nephron tubules promoting natriuresis and diuresis.",
+    "depletions": [
+      {
+        "nutrient": "Potassium & Magnesium (Loop/Thiazide)",
+        "severity": "high",
+        "reason_bn": "ফিউরোসেমাইড ও থায়াজাইড মূত্রের সাথে প্রচুর পটাসিয়াম ও ম্যাগনেসিয়াম বের করে দিয়ে অ্যারিথমিয়া ও দুর্বলতা ঘটায়।",
+        "reason_en": "Wasting of urinary potassium and magnesium causing hypokalemia, hypomagnesemia and cardiac arrhythmias.",
+        "supplement_recommendation": {
+          "name_en": "Potassium & Magnesium Citrate / Coconut Water",
+          "name_bn": "পটাসিয়াম ও ম্যাগনেসিয়াম সমৃদ্ধ খাদ্য (ডাবের পানি, শাকসবজি)",
+          "dose": "Electrolyte rich hydration (Note: Contraindicated in Spironolactone!)",
+          "timing": "Morning hydration",
+          "verified_bd_brands": [
+            "Electrolyte ORS",
+            "K-Citrate"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "রাতের ঘুমের ব্যাঘাত ও বারবার প্রস্রাবের বেগ এড়াতে সকালবেলা বা দুপুর ২টার পূর্বে গ্রহণ করুন।",
+        "rule_en": "Take in the morning or early afternoon to avoid nocturia and disrupted sleep.",
+        "time_slot": "08:00 AM (Morning)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "High Potassium foods with Spironolactone",
+        "effect_bn": "স্পাইরোনোল্যাকটোন পটাসিয়াম রিটেইনিং মূত্রবর্ধক; এর সাথে অতিরিক্ত পটাসিয়াম খেলে মারাত্মক হাইপারক্যালেমিয়া হতে পারে।",
+        "effect_en": "Risk of fatal hyperkalemia if combined with high potassium salts or excess coconut water.",
+        "action": "caution_hyperkalemia"
+      }
+    ]
+  },
+  {
+    "id": "med_steroids",
+    "generic_name": "Prednisolone / Dexamethasone",
+    "brand_names_bd": [
+      "Predexen",
+      "Deltason",
+      "Predna",
+      "Dexpa",
+      "Oradexon"
+    ],
+    "drug_class": "Corticosteroid / Glucocorticoid",
+    "mechanism_bn": "প্রদাহজনিত সাইটোকাইনস দমন করে শক্তিশালী প্রদাহনাশক ও ইমিউনোসাপ্রেসিভ প্রভাব তৈরি করে।",
+    "mechanism_en": "Suppresses pro-inflammatory cytokines and arachidonic acid cascade.",
+    "depletions": [
+      {
+        "nutrient": "Calcium, Vitamin D3, Potassium",
+        "severity": "high",
+        "reason_bn": "অন্ত্রে ক্যালসিয়াম শোষণ কমায়, কিডনিতে নির্গমন বাড়ায় এবং অস্টিওব্লাস্ট কোষ দমন করে দ্রুত হাড় ক্ষয় ও অস্টিওপোরোসিস ঘটায়।",
+        "reason_en": "Decreases intestinal calcium absorption, increases renal calcium wasting, and inhibits osteoblastogenesis.",
+        "supplement_recommendation": {
+          "name_en": "Calcium Citrate Malate (800mg) + D3 (4000 IU) + K2",
+          "name_bn": "ক্যালসিয়াম সাইট্রেট মালেট + ভিটামিন ডি৩ + কে২",
+          "dose": "800 mg Ca + 4000 IU D3 + 100 mcg K2",
+          "timing": "Divided doses with lunch & dinner",
+          "verified_bd_brands": [
+            "Calbo-D",
+            "Ostocal-D"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "শরীরের নিজস্ব কর্টিসল ছন্দের সাথে মিল রেখে সকাল ৮টার পূর্বে ভারী খাবারের সাথে গ্রহণ করুন। খালি পেটে গ্যাস্ট্রিক আলসারের ঝুঁকি বাড়ে।",
+        "rule_en": "Take before 8:00 AM with a hearty meal to mirror natural circadian cortisol rhythm and prevent ulceration.",
+        "time_slot": "07:30 AM (With Breakfast)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Refined Carbohydrates & High Sodium",
+        "effect_bn": "কর্টিকোস্টেরয়েড ইনসুলিন রেজিস্ট্যান্স ও সোডিয়াম রিটেনশন ঘটায়; মিষ্টি ও লবণ দ্রুত ওজন বৃদ্ধি ও রক্তচাপ বাড়ায়।",
+        "effect_en": "Causes rapid hyperglycemia, fluid retention, edema and accelerated visceral fat accumulation.",
+        "action": "strictly_avoid"
+      }
+    ]
+  }
+]
