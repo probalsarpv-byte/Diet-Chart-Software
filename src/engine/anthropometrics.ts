@@ -154,6 +154,9 @@ export function calculateAnthropometrics(
     target_calories = tdee;
   }
   target_calories = Math.round(target_calories / 25) * 25;
+  if (bmr_floor_strategy === 'clamped_to_bmr' || bmr_floor_strategy === 'clinician_custom') {
+    target_calories = Math.max(bmr_safe_calorie_floor, target_calories);
+  }
 
   // 10. Macronutrient Targets
   let protein_multiplier = 1.2;
