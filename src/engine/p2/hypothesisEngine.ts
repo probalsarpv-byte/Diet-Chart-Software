@@ -338,8 +338,7 @@ function evaluateEvidence(
   // Count required observations matched
   let reqMatched = 0;
   for (const req of rule.requiredObservations) {
-    // Check if any observation ID or tag matches
-    if (obsTags.has(req)) {
+    if (obsTags.has(req) || obsTags.has(req.replace(/^obs_/, '')) || obsTags.has(`obs_${req}`)) {
       reqMatched++;
       supportingTags.push(req);
     }
@@ -348,7 +347,7 @@ function evaluateEvidence(
   // Count optional observations matched
   let optMatched = 0;
   for (const opt of rule.optionalObservations) {
-    if (obsTags.has(opt)) {
+    if (obsTags.has(opt) || obsTags.has(opt.replace(/^obs_/, '')) || obsTags.has(`obs_${opt}`)) {
       optMatched++;
       supportingTags.push(opt);
     }
@@ -356,8 +355,14 @@ function evaluateEvidence(
 
   // Check contradictory findings
   for (const contra of rule.contradictoryFindings) {
-    if (obsTags.has(contra)) {
+    if (obsTags.has(contra) || obsTags.has(contra.replace(/^obs_/, '')) || obsTags.has(`obs_${contra}`)) {
       contradictoryTags.push(contra);
+    }
+  }
+
+  if (rule.cluster === 'gastrointestinal' && (obsTags.has('normal_colonoscopy') || obsTags.has('obs_normal_colonoscopy'))) {
+    if (!contradictoryTags.includes('normal_colonoscopy') && !contradictoryTags.includes('obs_normal_colonoscopy')) {
+      contradictoryTags.push('normal_colonoscopy');
     }
   }
 
@@ -373,13 +378,13 @@ function evaluateEvidence(
   const reqRatio = totalRequired > 0 ? reqMatched / totalRequired : 1;
   const hasContradictions = contradictoryTags.length > 0;
 
-  if (reqRatio >= 1 && optMatched >= Math.min(2, Math.ceil(totalOptional / 2)) && !hasContradictions) {
+  if (reqRatio >= 1 && optMatched >= 1 && !hasContradictions) {
     level = 'sufficient';
-  } else if (reqRatio >= 0.5 && reqMatched >= 1 && !hasContradictions) {
+  } else if ((reqRatio >= 0.5 || reqMatched >= 1 || optMatched >= 2) && !hasContradictions) {
     level = 'some';
-  } else if (reqMatched >= 1 && hasContradictions) {
+  } else if (hasContradictions) {
     level = 'limited';
-  } else if (reqMatched === 0) {
+  } else if (reqMatched === 0 && optMatched === 0) {
     level = 'insufficient';
   } else {
     level = 'some';

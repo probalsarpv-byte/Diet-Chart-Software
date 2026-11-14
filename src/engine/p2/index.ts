@@ -18,6 +18,9 @@ import {
 } from './types';
 import { PatientProfile } from '../../types';
 import { aggregateEvidence } from './evidenceAggregator';
+import { computeFunctionalMatrix } from './functionalMatrixEngine';
+import { generateHypotheses as generateRuleHypotheses } from './hypothesisEngine';
+import { CLINICAL_RULES } from './clinicalRuleRegistry';
 
 // ─── P2 Engine Input ──────────────────────────────────────────────
 export interface P2EngineInput {
@@ -556,9 +559,9 @@ export function runP2Analysis(
     }
   }
 
-  const domainFindings = buildDomainFindings(observations, patient);
+  const domainFindings = computeFunctionalMatrix(observations);
   const redFlags = detectRedFlags(observations, patient);
-  const hypotheses = generateHypotheses(observations, patient, redFlags);
+  const hypotheses = generateRuleHypotheses(observations, CLINICAL_RULES, patient);
   const priorities = buildPriorities(hypotheses, redFlags);
   const timelineEvents = buildTimeline(observations, patient);
   const interventionGoals = buildInterventionGoals(hypotheses, patient, redFlags);
