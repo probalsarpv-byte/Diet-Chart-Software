@@ -13,6 +13,8 @@ export interface MedicineSearchResult {
   type: 'brand' | 'generic';
   name: string;
   generic_name: string;
+  brandName?: string;
+  genericName?: string;
   manufacturer?: string;
   strength?: string;
   dosage_form?: string;
@@ -22,7 +24,10 @@ export interface MedicineSearchResult {
   clinical_coverage_note_en: string;
   clinical_coverage_note_bn: string;
   source: string;
+  hasDedicatedRules?: boolean;
 }
+
+export type MedicationSearchResult = MedicineSearchResult;
 
 // Known generics with established clinical nutrition rules in Shuddho
 const COVERED_GENERICS_MAP: Record<string, 'fully_covered' | 'partially_covered'> = {
@@ -142,6 +147,9 @@ export function searchMedications(query: string, maxResults = 25): MedicineSearc
     const key = `${item.type}_${item.name}_${item.generic_name}`;
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
+      item.brandName = item.name;
+      item.genericName = item.generic_name;
+      item.hasDedicatedRules = item.rule_coverage_status === 'fully_covered';
       results.push(item);
     }
   }

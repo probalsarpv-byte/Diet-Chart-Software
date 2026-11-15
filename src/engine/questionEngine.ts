@@ -141,7 +141,7 @@ function evaluateLegacyStringCondition(expr: string, answers: Record<string, any
 export function filterVisibleQuestions(
   answers: Record<string, any>,
   questions: QuestionDefinition[],
-  options?: { isQuickMode?: boolean; populationGroup?: string }
+  options?: { isQuickMode?: boolean; populationGroup?: string; clinicalPathways?: string[] }
 ): QuestionDefinition[] {
   return questions.filter((q) => {
     // In Quick Mode, only show high-value screening questions unless answered
@@ -155,6 +155,14 @@ export function filterVisibleQuestions(
         !q.applicablePopulation.includes("all") &&
         !q.applicablePopulation.includes(options.populationGroup as any)
       ) {
+        return false;
+      }
+    }
+
+    // Pathway applicability check
+    if (q.applicablePathways && q.applicablePathways.length > 0 && options?.clinicalPathways) {
+      const matchesPathway = q.applicablePathways.some(p => options.clinicalPathways!.includes(p));
+      if (!matchesPathway) {
         return false;
       }
     }

@@ -7,6 +7,7 @@ import type {
   FastingSafetyEligibility
 } from './clinical';
 export * from './clinical';
+export * from './assessment';
 
 export type FoodCategory = 
   | 'grain'

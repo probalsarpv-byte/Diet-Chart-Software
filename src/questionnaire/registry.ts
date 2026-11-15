@@ -1,10 +1,10 @@
 // Questionnaire Registry for Functional Nutrition Assessment
 // -------------------------------------------------------
-// 14 Functional Nutrition Domains with adaptive branching,
+// 14 Functional Nutrition Domains + Specialized Population Modules,
 // bilingual (Bangla & English) questions, declarative visibility rules,
-// and quick/comprehensive screening flags.
+// quick/comprehensive screening flags, and clinical pathway routing.
 
-export const registryVersion = "v2.0.0" as const;
+export const registryVersion = "v2.1.0" as const;
 
 export type AssessmentDomainId =
   | 'clinical_history'
@@ -196,13 +196,14 @@ export interface QuestionDefinition {
   required?: boolean;
   clinicalTags?: string[];
   applicablePopulation?: PopulationGroup[];
+  applicablePathways?: string[];
   unit?: string;
   hint_en?: string;
   hint_bn?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Comprehensive Question Bank (Covering all 14 domains)
+// Comprehensive Question Bank (Covering all 14 domains + Pathways)
 // ─────────────────────────────────────────────────────────────────
 export const coreQuestions: QuestionDefinition[] = [
   // ── 1. CLINICAL HISTORY & TIMELINE ──────────────────────────────
@@ -268,6 +269,16 @@ export const coreQuestions: QuestionDefinition[] = [
     ],
     clinicalTags: ["family_history"]
   },
+  {
+    id: "recent_infections_antibiotics",
+    label: "Recent Antibiotic or Infection History",
+    label_en: "Have you taken antibiotics or had a serious infection in the last 6 months?",
+    label_bn: "গত ৬ মাসে অ্যান্টিবায়োটিক সেবন করেছেন বা গুরুতর সংক্রমণে ভুগেছেন কি?",
+    domain: "clinical_history",
+    answerType: "yesno",
+    isHighValueScreening: true,
+    clinicalTags: ["antibiotic_exposure", "dysbiosis_risk"]
+  },
 
   // ── 2. ANTHROPOMETRICS & BODY COMPOSITION ────────────────────────
   {
@@ -325,6 +336,23 @@ export const coreQuestions: QuestionDefinition[] = [
 
   // ── 3. METABOLIC & GLYCEMIC REGULATION ───────────────────────────
   {
+    id: "diagnosed_diabetes_prediabetes",
+    label: "Diabetes or Prediabetes Diagnosis",
+    label_en: "Have you been diagnosed with Type 2 Diabetes or Prediabetes?",
+    label_bn: "আপনার কি টাইপ ২ ডায়াবেটিস বা প্রি-ডায়াবেটিস শনাক্ত হয়েছে?",
+    domain: "metabolic",
+    answerType: "select",
+    isHighValueScreening: true,
+    options: [
+      { value: "no_normal_glucose", label: "No (Normal glucose)", label_en: "No, normal glucose", label_bn: "না, সুগার স্বাভাবিক" },
+      { value: "prediabetes_impaired_fbs", label: "Prediabetes / Impaired Fasting Glucose", label_en: "Prediabetes", label_bn: "প্রি-ডায়াবেটিস" },
+      { value: "type_2_diabetes_medicated", label: "Type 2 Diabetes (on oral medications)", label_en: "T2D on oral meds", label_bn: "টাইপ ২ ডায়াবেটিস (মুখে খাওয়ার ওষুধে)" },
+      { value: "type_2_diabetes_insulin", label: "Type 2 Diabetes (on insulin)", label_en: "T2D on insulin", label_bn: "টাইপ ২ ডায়াবেটিস (ইনসুলিন নির্ভর)" },
+      { value: "not_tested_recently", label: "Not sure / Not tested recently", label_en: "Not tested recently", label_bn: "নিশ্চিত নই / পরীক্ষা করা হয়নি" }
+    ],
+    clinicalTags: ["diabetes_diagnosis", "glycemic_regulation"]
+  },
+  {
     id: "postprandial_fatigue",
     label: "Post-Meal Energy Crash",
     label_en: "Do you feel intense sleepiness or brain fog within 1-2 hours after high-carb meals?",
@@ -355,451 +383,289 @@ export const coreQuestions: QuestionDefinition[] = [
     label_bn: "খাবার খেতে ১ ঘণ্টা দেরি হলে মাথা ঘোরা, হাত কাঁপা বা অতিরিক্ত রাগ হয় কি?",
     domain: "metabolic",
     answerType: "yesno",
+    isHighValueScreening: true,
     clinicalTags: ["reactive_hypoglycemia_risk", "dysglycemia"]
   },
   {
-    id: "acanthosis_nigricans_skin_tags",
-    label: "Darkened Skin Folds / Skin Tags",
-    label_en: "Do you have velvety hyperpigmentation around the neck/armpits or multiple skin tags?",
-    label_bn: "ঘাড়ের পেছনে বা বগলে কালো পুরু ত্বক (অ্যাকান্থোসিস) বা ছোট ছোট মাংসের আঁচিল আছে কি?",
+    id: "blood_pressure_history",
+    label: "Blood Pressure Status",
+    label_en: "Have you been told you have high blood pressure (Hypertension)?",
+    label_bn: "আপনার কি উচ্চ রক্তচাপ (হাই ব্লাড প্রেশার) আছে?",
     domain: "metabolic",
-    answerType: "yesno",
-    clinicalTags: ["insulin_resistance", "hyperinsulinemia_marker"]
+    answerType: "select",
+    isHighValueScreening: true,
+    options: [
+      { value: "normal_bp", label: "Normal (<120/80 mmHg)", label_en: "Normal BP", label_bn: "স্বাভাবিক রক্তচাপ" },
+      { value: "elevated_unmedicated", label: "Elevated / Borderline (no meds)", label_en: "Borderline elevated", label_bn: "সামান্য বেশি (ওষুধ ছাড়া)" },
+      { value: "hypertension_on_meds", label: "Hypertension (on daily medication)", label_en: "Hypertension on meds", label_bn: "উচ্চ রক্তচাপ (নিয়মিত ওষুধে)" }
+    ],
+    clinicalTags: ["hypertension", "cardiovascular_risk"]
   },
 
   // ── 4. GASTROINTESTINAL FUNCTION ─────────────────────────────────
   {
     id: "bloating_frequency",
-    label: "Abdominal Bloating & Distension",
-    label_en: "How frequently do you experience abdominal bloating or swelling after eating?",
-    label_bn: "খাওয়ার পর পেট ফাঁপা বা পেট ভারী লাগার সমস্যা কতটা ঘন ঘন হয়?",
+    label: "Frequency of Abdominal Bloating",
+    label_en: "How frequently do you experience noticeable abdominal bloating or distension?",
+    label_bn: "কত ঘন ঘন পেটে গ্যাস বা পেট ফাঁপার সমস্যা হয়?",
     domain: "gastrointestinal",
     answerType: "select",
     isHighValueScreening: true,
     options: [
-      { value: "none", label: "None / Rare", label_en: "Rarely or never", label_bn: "কদাচিৎ বা হয় না" },
-      { value: "mild_late_day", label: "Mild bloating towards the evening", label_en: "Mild, mostly evening", label_bn: "হালকা পেট ফাঁপা (বিশেষ করে সন্ধ্যায়)" },
-      { value: "severe_post_meal", label: "Severe distension within 30-60 mins of eating", label_en: "Severe distension within 60 mins", label_bn: "খাওয়ার ৩০-৬০ মিনিটের মধ্যেই পেট ফুলে ঢোল হওয়া" }
+      { value: "none", label: "Rarely or never", label_en: "Never / Rarely", label_bn: "কখনোই না" },
+      { value: "mild_occasional", label: "Occasional (1-2 times/week)", label_en: "Occasional mild", label_bn: "মাঝে মাঝে হালকা" },
+      { value: "moderate_daily", label: "Daily mild-to-moderate", label_en: "Daily moderate", label_bn: "প্রতিদিন মাঝারি ধরনের" },
+      { value: "severe_post_meal", label: "Severe bloating after almost every meal", label_en: "Severe after meals", label_bn: "প্রায় প্রতিবার খাওয়ার পরেই তীব্র পেট ফাঁপা" }
     ],
-    clinicalTags: ["bloating", "gi_distension"]
+    clinicalTags: ["bloating", "dyspepsia"]
   },
   {
     id: "bloating_trigger_foods",
-    label: "Foods Triggering Bloating",
-    label_en: "Which specific foods trigger immediate gas or bloating?",
-    label_bn: "কোন কোন খাবার খেলে দ্রুত গ্যাস বা পেট ফাঁপা হয়?",
+    label: "Foods that Provoke Bloating",
+    label_en: "Which foods consistently trigger abdominal bloating or discomfort?",
+    label_bn: "কোন কোন খাবার খেলে পেট বেশি ফাঁপে বা অস্বস্তি বাড়ে?",
     domain: "gastrointestinal",
     answerType: "multiselect",
     visibility: {
-      condition: { field: "bloating_frequency", operator: "notEquals", value: "none" }
+      condition: {
+        OR: [
+          { field: "bloating_frequency", operator: "equals", value: "moderate_daily" },
+          { field: "bloating_frequency", operator: "equals", value: "severe_post_meal" }
+        ]
+      }
     },
     options: [
-      { value: "dairy_milk", label: "Cow's milk / Sweets / Dairy", label_en: "Milk / Dairy products", label_bn: "গরুর দুধ, মিষ্টি বা দুগ্ধজাত খাবার" },
-      { value: "lentils_dal", label: "Lentils / Chickpeas / Legumes", label_en: "Lentils / Dal / Chickpeas", label_bn: "মসুর ডাল, ছোলা বা যেকোনো ডাল" },
-      { value: "wheat_gluten", label: "Wheat bread / Roti / Bakery", label_en: "Wheat flour, bread, biscuits", label_bn: "আটার রুটি, পাউরুটি, বিস্কুট" },
-      { value: "onions_garlic", label: "Raw onion / Garlic / Spices", label_en: "Onions, garlic, rich gravy", label_bn: "কাঁচা পেঁয়াজ, রসুন বা অতিরিক্ত তেল-মসলা" },
-      { value: "cruciferous_veg", label: "Cabbage / Cauliflower / Radish", label_en: "Cabbage, cauliflower", label_bn: "বাঁধাকপি, ফুলকপি বা মূলা" },
-      { value: "fried_oily", label: "Singara, Puri, Fried snacks", label_en: "Deep-fried street snacks", label_bn: "সিঙ্গারা, পুরি, পেঁয়াজু বা ভাজাপোড়া" }
+      { value: "milk_dairy", label: "Milk, sweet doi, or dairy foods", label_en: "Cow milk / Dairy", label_bn: "দুধ বা দুগ্ধজাত খাবার" },
+      { value: "wheat_ruti", label: "Wheat roti, paratha, or bakery bread", label_en: "Wheat roti / Bread", label_bn: "আটার রুটি, পরোটা বা পাউরুটি" },
+      { value: "lentils_dal", label: "Masoor, chana, or thick dal", label_en: "Lentils / Dal", label_bn: "মসুর বা ছোলার ডাল" },
+      { value: "raw_salad", label: "Raw cucumber, tomato, or onion salad", label_en: "Raw salad / Cucumber", label_bn: "কাঁচা শসা, টমেটো বা পেঁয়াজ সালাদ" },
+      { value: "fried_foods", label: "Singara, puri, or oily street snacks", label_en: "Fried oily foods", label_bn: "তেলে ভাজা খাবার" }
     ],
-    clinicalTags: ["food_intolerance_triggers", "fodmap_sensitivity"]
+    clinicalTags: ["food_intolerance_triggers"]
   },
   {
-    id: "acid_reflux_heartburn",
-    label: "Acid Reflux / Sour Burping",
-    label_en: "Do you have acid reflux, retrosternal burning, or sour fluid rising into the throat?",
-    label_bn: "বুক জ্বালাপোড়া, টক ঢেকুর বা গলায় টক পানি উঠে আসার সমস্যা আছে কি?",
+    id: "acid_reflux_frequency",
+    label: "Acid Reflux & Heartburn",
+    label_en: "Do you experience acid regurgitation, sour taste in mouth, or burning in the chest?",
+    label_bn: "বুকজ্বালা, টক ঢেকুর বা গলায় এসিড উঠে আসার সমস্যা হয় কি?",
     domain: "gastrointestinal",
     answerType: "select",
     isHighValueScreening: true,
     options: [
-      { value: "never", label: "Never", label_en: "Never", label_bn: "কখনোই না" },
-      { value: "occasional_weekly", label: "Occasional (1-2x per week)", label_en: "1-2 times weekly", label_bn: "মাঝে মাঝে (সপ্তাহে ১-২ বার)" },
-      { value: "frequent_nightly", label: "Severe / Wakes up at night choking", label_en: "Frequent / nocturnal choking", label_bn: "নিয়মিত বা রাতে শোয়ার পর দম বন্ধ ভাব" }
+      { value: "none", label: "Never", label_en: "Never", label_bn: "কখনোই না" },
+      { value: "occasional_after_heavy", label: "Occasional (after heavy or spicy meals)", label_en: "Occasional after heavy meals", label_bn: "মাঝে মাঝে (ভারী বা ঝাল খাবারের পর)" },
+      { value: "frequent_3_plus", label: "Frequent (3 or more times per week)", label_en: "Frequent (>= 3x/week)", label_bn: "নিয়মিত (সপ্তাহে ৩ বা তার বেশি দিন)" },
+      { value: "daily_medicated", label: "Daily (requires regular antacids / PPIs)", label_en: "Daily (needs PPI)", label_bn: "প্রতিদিন (গ্যাসের ওষুধ ছাড়া চলে না)" }
     ],
-    clinicalTags: ["acid_reflux", "gerd_pattern"]
+    clinicalTags: ["gerd", "acid_reflux", "ppi_indication"]
   },
   {
-    id: "early_satiety_epigastric_heaviness",
-    label: "Early Satiety / Hypochlorhydria Sensation",
-    label_en: "Do you feel full after only a few bites, or feels like food sits in the stomach like a stone for hours?",
-    label_bn: "অল্প খেলেই পেট ভরে যাওয়া অথবা পেটে খাবার পাথরের মতো দীর্ঘক্ষণ জমে থাকার অনুভূতি হয় কি?",
-    domain: "gastrointestinal",
-    answerType: "yesno",
-    clinicalTags: ["early_satiety", "hypochlorhydria_pattern"]
-  },
-  {
-    id: "gi_red_flags_blood",
-    label: "GI Bleeding / Black Tarry Stools",
-    label_en: "Have you noticed bright red blood in stool, black tarry stools, or coffee-ground vomiting?",
-    label_bn: "মলে তাজা রক্ত, আলকাতরার মতো কালো পায়খানা বা কফির গুঁড়োর মতো বমি হয়েছে কি?",
+    id: "early_satiety",
+    label: "Early Satiety (Fullness after few bites)",
+    label_en: "Do you feel uncomfortably full after eating only a small fraction of a normal meal?",
+    label_bn: "সামান্য কয়েক লোকমা খাওয়ার পরেই কি অস্বাভাবিক পেট ভরা মনে হয়?",
     domain: "gastrointestinal",
     answerType: "yesno",
     isHighValueScreening: true,
-    clinicalTags: ["gi_bleeding", "red_flag_bleeding"]
+    clinicalTags: ["early_satiety", "delayed_gastric_emptying", "malnutrition_risk"]
   },
 
   // ── 5. MICROBIOME & GUT ECOLOGY ──────────────────────────────────
   {
     id: "bristol_stool_form",
-    label: "Bristol Stool Form",
-    label_en: "Predominant stool consistency based on the Bristol Stool Chart",
-    label_bn: "আপনার সাধারণ মলের ধরন বা কনসিস্টেন্সি (ব্রিস্টল স্কেল)",
+    label: "Bristol Stool Consistency",
+    label_en: "What is your most typical stool form over the past 2 weeks?",
+    label_bn: "গত দুই সপ্তাহে আপনার পায়খানার স্বভাবজাত আকার বা ধরন কেমন?",
     domain: "microbiome",
     answerType: "select",
     isHighValueScreening: true,
     options: [
-      { value: "type_1_hard_lumps", label: "Type 1: Hard separate lumps (severe constipation)", label_en: "Type 1: Separate hard lumps", label_bn: "টাইপ ১: শক্ত গোল গোল ছাগলের লাদির মতো (তীব্র কোষ্ঠকাঠিন্য)" },
-      { value: "type_2_lumpy_sausage", label: "Type 2: Lumpy sausage (mild constipation)", label_en: "Type 2: Lumpy sausage shape", label_bn: "টাইপ ২: শক্ত খণ্ড খণ্ড জোড়া লাগা মল" },
-      { value: "type_3_cracked_sausage", label: "Type 3: Sausage with surface cracks (normal)", label_en: "Type 3: Sausage with surface cracks", label_bn: "টাইপ ৩: স্বাভাবিক মসৃণ কিন্তু কিছুটা ফাটলযুক্ত" },
-      { value: "type_4_smooth_snake", label: "Type 4: Smooth soft snake (optimal healthy)", label_en: "Type 4: Smooth, soft, ideal sausage", label_bn: "টাইপ ৪: মসৃণ ও নরম কলার মতো (উত্তম সুস্থ মল)" },
-      { value: "type_5_soft_blobs", label: "Type 5: Soft blobs with clear-cut edges", label_en: "Type 5: Soft blobs, lacking fiber", label_bn: "টাইপ ৫: নরম টুকরো টুকরো মল" },
-      { value: "type_6_mushy_fluffy", label: "Type 6: Fluffy mushy pieces with ragged edges", label_en: "Type 6: Mushy stool (mild diarrhea)", label_bn: "টাইপ ৬: নরম পেস্টের মতো পাতলা পায়খানা" },
-      { value: "type_7_watery_liquid", label: "Type 7: Entirely liquid, watery diarrhea", label_en: "Type 7: Watery diarrhea", label_bn: "টাইপ ৭: সম্পূর্ণ পানির মতো পাতলা পায়খানা" }
+      { value: "bristol_1_separate_hard", label: "Type 1: Separate hard lumps, like nuts (Severe constipation)", label_en: "Type 1: Hard lumps", label_bn: "টাইপ ১: ছাগলের লাদির মতো শক্ত গুটি গুটি (তীব্র কোষ্ঠকাঠিন্য)" },
+      { value: "bristol_2_lumpy_sausage", label: "Type 2: Sausage-shaped but lumpy", label_en: "Type 2: Lumpy sausage", label_bn: "টাইপ ২: শক্ত দড়ির মতো তবে খসখসে" },
+      { value: "bristol_3_cracked_sausage", label: "Type 3: Like a sausage with cracks on its surface (Normal)", label_en: "Type 3: Sausage with cracks", label_bn: "টাইপ ৩: স্বাভাবিক মসৃণ তবে হালকা ফাটা" },
+      { value: "bristol_4_smooth_snake", label: "Type 4: Like a sausage or snake, smooth and soft (Ideal)", label_en: "Type 4: Smooth and soft (Ideal)", label_bn: "টাইপ ৪: একদম স্বাভাবিক, নরম ও মসৃণ (আদর্শ)" },
+      { value: "bristol_5_soft_blobs", label: "Type 5: Soft blobs with clear-cut edges (Lacking fiber)", label_en: "Type 5: Soft blobs", label_bn: "টাইপ ৫: নরম টুকরো টুকরো তবে স্পষ্ট কিনারাযুক্ত" },
+      { value: "bristol_6_mushy_fluffy", label: "Type 6: Fluffy pieces with ragged edges, a mushy stool", label_en: "Type 6: Mushy stool", label_bn: "টাইপ ৬: নরম পেস্টের মতো পাতলা পায়খানা" },
+      { value: "bristol_7_watery_liquid", label: "Type 7: Entirely liquid, no solid pieces (Diarrhea)", label_en: "Type 7: Watery diarrhea", label_bn: "টাইপ ৭: সম্পূর্ণ পানির মতো পাতলা (ডায়রিয়া)" }
     ],
-    clinicalTags: ["bristol_stool_score", "motility_status"]
+    clinicalTags: ["bristol_stool", "gut_motility", "microbiome_health"]
   },
   {
     id: "bowel_movement_frequency",
     label: "Bowel Evacuation Frequency",
-    label_en: "How often do you have a complete bowel movement?",
-    label_bn: "সাধারণত কত ঘন ঘন পেট পরিষ্কার হয়?",
+    label_en: "How many times do you typically pass stool?",
+    label_bn: "সাধারণত কত ঘন ঘন পায়খানা হয়?",
     domain: "microbiome",
     answerType: "select",
+    isHighValueScreening: true,
     options: [
-      { value: "less_than_3_per_week", label: "Less than 3 times per week (Constipated)", label_en: "< 3 times/week", label_bn: "সপ্তাহে ৩ বারেরও কম (কোষ্ঠকাঠিন্য)" },
-      { value: "once_every_1_2_days", label: "Once every 1 to 2 days", label_en: "Once every 1-2 days", label_bn: "প্রতি ১ বা ২ দিনে একবার" },
-      { value: "once_to_twice_daily", label: "1-2 times daily (Optimal)", label_en: "1-2 times daily", label_bn: "প্রতিদিন ১ থেকে ২ বার (আদর্শ)" },
-      { value: "three_or_more_daily", label: "3 or more times daily with urgency", label_en: "3+ times daily with urgency", label_bn: "দিনে ৩ বা ততোধিকবার বেগ সহকারে" }
+      { value: "less_than_3_weekly", label: "Less than 3 times per week (Constipation)", label_en: "< 3 times / week", label_bn: "সপ্তাহে ৩ বারের কম (কোষ্ঠকাঠিন্য)" },
+      { value: "once_every_1_2_days", label: "Once every 1 to 2 days (Standard)", label_en: "1x per 1-2 days", label_bn: "১ থেকে ২ দিনে একবার" },
+      { value: "once_or_twice_daily", label: "1 to 2 times daily (Optimal)", label_en: "1-2x daily (Optimal)", label_bn: "প্রতিদিন ১ থেকে ২ বার (আদর্শ)" },
+      { value: "three_or_more_daily", label: "3 or more times daily (Hyper-motile / Loose)", label_en: ">= 3x daily", label_bn: "প্রতিদিন ৩ বার বা তার বেশি" }
     ],
     clinicalTags: ["bowel_frequency"]
   },
   {
     id: "antibiotic_history_past_year",
-    label: "Antibiotic Exposure (Past 12 Months)",
-    label_en: "How many courses of oral antibiotics have you taken in the past year?",
-    label_bn: "গত এক বছরে আপনি মোট কয়টি অ্যান্টিবায়োটিক কোর্স সেবন করেছেন?",
+    label: "Antibiotic Exposure in Past Year",
+    label_en: "How many courses of oral antibiotics have you completed in the past 12 months?",
+    label_bn: "গত ১২ মাসে কতবার অ্যান্টিবায়োটিক কোর্স সেবন করেছেন?",
     domain: "microbiome",
     answerType: "select",
+    isHighValueScreening: true,
     options: [
-      { value: "none", label: "None", label_en: "0 courses", label_bn: "একটিও না" },
-      { value: "one_course", label: "1 short course", label_en: "1 short course", label_bn: "১টি কোর্স" },
-      { value: "multiple_courses", label: "2 to 3 courses", label_en: "2-3 courses", label_bn: "২ থেকে ৩টি কোর্স" },
-      { value: "frequent_heavy", label: "4+ courses or long-term therapy", label_en: "4 or more courses", label_bn: "৪ বা তার অধিক কোর্স" }
+      { value: "none", label: "None in past year", label_en: "0 courses", label_bn: "একবারও না" },
+      { value: "one_course", label: "1 course", label_en: "1 course", label_bn: "১ বার" },
+      { value: "two_to_three_courses", label: "2 to 3 courses", label_en: "2-3 courses", label_bn: "২ থেকে ৩ বার" },
+      { value: "four_plus_frequent", label: "4 or more courses (High dysbiosis risk)", label_en: ">= 4 courses", label_bn: "৪ বার বা তার বেশি" }
     ],
     clinicalTags: ["antibiotic_exposure", "dysbiosis_risk"]
-  },
-  {
-    id: "undigested_food_in_stool",
-    label: "Undigested Food Fragments in Stool",
-    label_en: "Do you regularly notice visible undigested vegetable or food particles in stool?",
-    label_bn: "মলে নিয়মিতভাবে অপাচিত খাবার বা শাকসবজির অক্ষত অংশ দেখা যায় কি?",
-    domain: "microbiome",
-    answerType: "yesno",
-    clinicalTags: ["maldigestion", "pancreatic_or_stomach_acid_insufficiency"]
   },
 
   // ── 6. IMMUNE & INFLAMMATORY FUNCTION ────────────────────────────
   {
-    id: "chronic_joint_muscle_pain",
-    label: "Joint Stiffness or Body Aches",
-    label_en: "Do you suffer from morning joint stiffness or migratory muscle aches?",
-    label_bn: "সকালে ঘুম থেকে ওঠার পর হাত-পায়ের জয়েন্টে শক্ত ভাব বা শরীরে দীর্ঘস্থায়ী ব্যথা থাকে কি?",
-    domain: "immune_inflammatory",
-    answerType: "select",
-    isHighValueScreening: true,
-    options: [
-      { value: "none", label: "No pain", label_en: "No aches", label_bn: "কোনো ব্যথা নেই" },
-      { value: "mild_weather_related", label: "Mild aches with cold/humidity", label_en: "Mild occasional aches", label_bn: "মাঝে মাঝে হালকা ব্যথা (শীত বা বৃষ্টিতে)" },
-      { value: "persistent_stiffness", label: "Daily joint stiffness >30 minutes", label_en: "Daily stiffness >30 mins", label_bn: "প্রতিদিন ৩০ মিনিটের বেশি জয়েন্ট শক্ত থাকা" }
-    ],
-    clinicalTags: ["joint_pain", "inflammatory_burden"]
-  },
-  {
-    id: "eczema_hives_allergies",
-    label: "Allergic Symptoms (Skin / Sinus)",
-    label_en: "Do you experience frequent hives, eczema, sneezing attacks, or itching after eating?",
-    label_bn: "প্রায়শই ত্বকে চুলকানি, আমবাত (হাইভস), একজিমা বা খাবার পর হাঁচি-সর্দি হয় কি?",
+    id: "joint_stiffness_pain",
+    label: "Joint Aches & Morning Stiffness",
+    label_en: "Do you wake up with joint stiffness or pain that takes more than 30 minutes to ease?",
+    label_bn: "সকালে ঘুম থেকে ওঠার পর হাত-পায়ের গাঁটে ব্যথা বা শক্ত ভাব ৩০ মিনিটের বেশি থাকে কি?",
     domain: "immune_inflammatory",
     answerType: "yesno",
-    clinicalTags: ["atopy", "histamine_reactivity", "allergy_pattern"]
+    isHighValueScreening: true,
+    clinicalTags: ["joint_pain", "systemic_inflammation", "arthritis_risk"]
   },
   {
-    id: "known_autoimmune_diagnoses",
-    label: "Known Autoimmune Conditions",
-    label_en: "Have you been medically diagnosed with an autoimmune disease?",
-    label_bn: "চিকিৎসক কর্তৃক নিশ্চিতকৃত কোনো অটোইমিউন রোগ আছে কি?",
+    id: "skin_reactions_eczema_acne",
+    label: "Chronic Skin Conditions",
+    label_en: "Do you suffer from recurrent eczema, psoriasis, hives (urticaria), or cystic acne?",
+    label_bn: "একজিমা, সোরিয়াসিস, অ্যালার্জি বা ত্বকে লালচে চুলকানির সমস্যা আছে কি?",
     domain: "immune_inflammatory",
-    answerType: "multiselect",
+    answerType: "select",
     options: [
-      { value: "none", label: "None diagnosed", label_en: "None", label_bn: "নেই" },
-      { value: "hashimotos", label: "Hashimoto's Thyroiditis", label_en: "Hashimoto's", label_bn: "হাশিমোটোস থাইরয়েডাইটিস" },
-      { value: "rheumatoid_arthritis", label: "Rheumatoid Arthritis", label_en: "Rheumatoid Arthritis", label_bn: "রিউমাটয়েড আর্থ্রাইটিস" },
-      { value: "psoriasis_vitiligo", label: "Psoriasis / Vitiligo", label_en: "Psoriasis or Vitiligo", label_bn: "সোরিয়াসিস বা শ্বেতী" },
-      { value: "sle_lupus", label: "Systemic Lupus (SLE)", label_en: "SLE", label_bn: "লুপাস (এসএলই)" },
-      { value: "ankylosing_spondylitis", label: "Ankylosing Spondylitis", label_en: "Ankylosing Spondylitis", label_bn: "অ্যাঙ্কাইলোজিং স্পন্ডিলাইটিস" }
+      { value: "none", label: "Clear skin / No chronic rashes", label_en: "Clear skin", label_bn: "ত্বক স্বাভাবিক / কোনো সমস্যা নেই" },
+      { value: "occasional_hives", label: "Occasional allergy / hives with certain foods", label_en: "Occasional hives", label_bn: "মাঝে মাঝে নির্দিষ্ট খাবারে এলার্জি বা চুলকানি" },
+      { value: "chronic_inflammatory_skin", label: "Chronic persistent rash, eczema, or psoriasis", label_en: "Chronic eczema/psoriasis", label_bn: "দীর্ঘস্থায়ী একজিমা, সোরিয়াসিস বা চুলকানি" }
     ],
-    clinicalTags: ["autoimmune_diagnosis"]
+    clinicalTags: ["skin_inflammation", "gut_skin_axis"]
   },
 
-  // ── 7. ENDOCRINE & HORMONAL BALANCE ──────────────────────────────
+  // ── 7. ENDOCRINE & HORMONAL HEALTH ───────────────────────────────
   {
-    id: "cold_intolerance_dry_skin",
-    label: "Cold Intolerance & Dry Skin/Hair",
-    label_en: "Do you feel excessively cold when others feel comfortable, with brittle nails or thinning hair?",
-    label_bn: "অন্যদের তুলনায় আপনার কি অস্বাভাবিক বেশি শীত লাগে, ত্বক খসখসে বা চুল পড়ে যাচ্ছে?",
-    domain: "endocrine_hormonal",
-    answerType: "yesno",
-    isHighValueScreening: true,
-    clinicalTags: ["hypothyroid_pattern", "metabolic_sluggishness"]
-  },
-  {
-    id: "menstrual_regularity_female",
-    label: "Menstrual Cycle Regularity (Females)",
-    label_en: "Is your menstrual cycle regular (24-35 days) or irregular / absent?",
-    label_bn: "মাসিক চক্র কি নিয়মিত (২৪-৩৫ দিন পরপর) হয় নাকি অনিয়মিত/দেরিতে হয়?",
+    id: "thyroid_condition_diagnosed",
+    label: "Thyroid Health Diagnosis",
+    label_en: "Have you been diagnosed with Hypothyroidism, Hashimoto's, or Goiter?",
+    label_bn: "আপনার কি হাইপোথাইরয়েড বা থাইরয়েডের কোনো সমস্যা আছে?",
     domain: "endocrine_hormonal",
     answerType: "select",
-    applicablePopulation: ["adult_standard", "adolescent"],
+    isHighValueScreening: true,
     options: [
-      { value: "regular", label: "Regular (24-35 days)", label_en: "Regular monthly cycle", label_bn: "নিয়মিত (২৪-৩৫ দিন)" },
-      { value: "irregular_delayed", label: "Irregular / delayed (>35 to 60 days)", label_en: "Irregular / Delayed cycles", label_bn: "অনিয়মিত বা দেরিতে (৩৫-৬০ দিন)" },
-      { value: "amenorrhea_missing", label: "Missing >3 months or absent", label_en: "Absent >3 months", label_bn: "৩ মাসের বেশি সময় বন্ধ থাকা" },
-      { value: "menopause_achieved", label: "Post-menopausal (>1 year without period)", label_en: "Post-menopausal", label_bn: "স্থায়ী মেনোপজ সম্পন্ন" }
+      { value: "no_normal_thyroid", label: "No (Normal thyroid)", label_en: "No, normal thyroid", label_bn: "না, থাইরয়েড স্বাভাবিক" },
+      { value: "hypothyroid_medicated", label: "Hypothyroidism (taking Levothyroxine/Thyrox)", label_en: "Hypothyroid on Thyrox", label_bn: "হাইপোথাইরয়েড (নিয়মিত থাইরক্সিন ওষুধ খাচ্ছেন)" },
+      { value: "hypothyroid_unmedicated", label: "Elevated TSH but not taking medication", label_en: "Subclinical hypothyroid", label_bn: "টিএসএইচ বেশি তবে ওষুধ খাচ্ছেন না" },
+      { value: "hyperthyroid", label: "Hyperthyroidism (overactive thyroid)", label_en: "Hyperthyroid", label_bn: "হাইপারথাইরয়েড (অতিরিক্ত সক্রিয় থাইরয়েড)" }
     ],
-    clinicalTags: ["menstrual_cycle", "pcos_suspect"]
+    clinicalTags: ["thyroid_diagnosis", "hypothyroidism"]
   },
   {
-    id: "excess_facial_hair_acne",
-    label: "Hirsutism / Persistent Adult Acne",
-    label_en: "Females: Do you have excess coarse facial hair (chin/upper lip) or severe cystic acne?",
-    label_bn: "মহিলাদের ক্ষেত্রে: চিবুক বা ঠোঁটের ওপর অস্বাভাবিক লোম অথবা তীব্র সিস্টিক ব্রণ আছে কি?",
+    id: "thyroid_medication_timing",
+    label: "Levothyroxine Administration Timing",
+    label_en: "Do you take your thyroid hormone on an empty stomach with plain water at least 30-60 min before food?",
+    label_bn: "থাইরয়েডের ওষুধ কি সকালে খালি পেটে খাওয়ার অন্তত ৩০-৬০ মিনিট আগে শুধু পানি দিয়ে খান?",
     domain: "endocrine_hormonal",
     answerType: "yesno",
-    applicablePopulation: ["adult_standard", "adolescent"],
-    clinicalTags: ["androgen_excess", "pcos_marker"]
+    visibility: {
+      condition: { field: "thyroid_condition_diagnosed", operator: "equals", value: "hypothyroid_medicated" }
+    },
+    clinicalTags: ["levothyroxine_timing", "drug_food_interaction"]
+  },
+  {
+    id: "menstrual_regularity",
+    label: "Menstrual Cycle Regularity (Females)",
+    label_en: "Are your menstrual cycles regular (24 to 35 days) with normal flow?",
+    label_bn: "মাসিক চক্র কি নিয়মিত (২৪ থেকে ৩৫ দিন অন্তর) এবং স্বাভাবিক?",
+    domain: "endocrine_hormonal",
+    answerType: "select",
+    options: [
+      { value: "regular_cycles", label: "Regular (every 26-32 days)", label_en: "Regular cycles", label_bn: "নিয়মিত (২৬-৩২ দিন অন্তর)" },
+      { value: "irregular_infrequent", label: "Irregular or delayed (>35 days, PCOS signs)", label_en: "Irregular / Delayed", label_bn: "অনিয়মিত বা দেরিতে (৩৫ দিনের বেশি, পিসিওএস)" },
+      { value: "heavy_painful", label: "Regular but excessively heavy or painful", label_en: "Heavy / Painful flow", label_bn: "নিয়মিত তবে অতিরিক্ত রক্তপাত বা তীব্র ব্যথা" },
+      { value: "menopausal", label: "Post-menopausal (no periods for >12 months)", label_en: "Post-menopausal", label_bn: "মেনোপজ হয়েছে (১ বছরের বেশি বন্ধ)" },
+      { value: "not_applicable_male", label: "Not applicable (Male)", label_en: "Not applicable (Male)", label_bn: "প্রযোজ্য নয় (পুরুষ)" }
+    ],
+    clinicalTags: ["menstrual_cycle", "pcos_risk"]
   },
 
   // ── 8. HEPATIC & BIOTRANSFORMATION ───────────────────────────────
   {
-    id: "chemical_perfume_sensitivity",
-    label: "Chemical, Perfume & Odor Sensitivity",
-    label_en: "Do perfumes, vehicle exhaust, or chemical sprays easily trigger headaches or nausea?",
-    label_bn: "সুগন্ধি, গাড়ির ধোঁয়া বা কীটনাশকের গন্ধে কি সহজেই মাথাব্যথা বা বমি বমি ভাব হয়?",
-    domain: "hepatic_biotransformation",
-    answerType: "yesno",
-    clinicalTags: ["biotransformation_sensitivity", "chemical_intolerance"]
-  },
-  {
-    id: "alcohol_caffeine_tolerance",
-    label: "Caffeine & Stimulant Metabolism",
-    label_en: "Does a small cup of tea/coffee late in the day cause palpitations, anxiety, or insomnia?",
-    label_bn: "বিকেল বা সন্ধ্যায় চা/কফি খেলে কি বুক ধড়ফড়, উদ্বেগ বা রাতে একদম ঘুম না হওয়ার সমস্যা হয়?",
+    id: "fatty_liver_diagnosis",
+    label: "Fatty Liver Disease Diagnosis",
+    label_en: "Have you had an ultrasound showing fatty liver (Grade 1, 2, or 3)?",
+    label_bn: "আল্ট্রাসনোগ্রামে কি ফ্যাটি লিভার ধরা পড়েছে?",
     domain: "hepatic_biotransformation",
     answerType: "select",
+    isHighValueScreening: true,
     options: [
-      { value: "normal_tolerance", label: "Normal tolerance", label_en: "Tolerates normally", label_bn: "স্বাভাবিক সহ্যক্ষমতা" },
-      { value: "sensitive_palpitations", label: "Very sensitive (causes jitters/insomnia)", label_en: "Very slow metabolizer", label_bn: "অতিরিক্ত সংবেদনশীল (বুক ধড়ফড় ও অনিদ্রা)" },
-      { value: "never_consumes", label: "Never consumes caffeinated beverages", label_en: "Does not consume", label_bn: "চা বা কফি পান করি না" }
+      { value: "no_or_normal", label: "No / Normal liver ultrasound", label_en: "No / Normal liver", label_bn: "না / লিভার স্বাভাবিক" },
+      { value: "grade_1_fatty_liver", label: "Grade 1 Fatty Liver (Mild steatosis)", label_en: "Grade 1 Fatty Liver", label_bn: "গ্রেড ১ ফ্যাটি লিভার (হালকা)" },
+      { value: "grade_2_3_fatty_liver", label: "Grade 2 or 3 Fatty Liver (Moderate-Severe steatosis)", label_en: "Grade 2/3 Fatty Liver", label_bn: "গ্রেড ২ বা ৩ ফ্যাটি লিভার (মাঝারি-তীব্র)" },
+      { value: "never_tested", label: "Never had an abdominal ultrasound", label_en: "Never tested", label_bn: "কখনো আল্ট্রাসনোগ্রাম করা হয়নি" }
     ],
-    clinicalTags: ["caffeine_clearance", "cyp1a2_metabolism"]
-  },
-  {
-    id: "fatty_food_nausea_gallbladder",
-    label: "Nausea After Fatty / Oily Meals",
-    label_en: "Do fatty foods or rich biryani cause right upper quadrant fullness, burping, or nausea?",
-    label_bn: "তৈলাক্ত বা চর্বিযুক্ত খাবার (যেমন কাচ্চি/বিরিয়ানি) খাওয়ার পর পেটের ডানপাশে ভারী লাগা বা বমি ভাব হয় কি?",
-    domain: "hepatic_biotransformation",
-    answerType: "yesno",
-    clinicalTags: ["biliary_stasis", "fat_malabsorption"]
+    clinicalTags: ["fatty_liver", "hepatic_steatosis"]
   },
 
   // ── 9. MITOCHONDRIAL & ENERGY FUNCTION ───────────────────────────
   {
-    id: "chronic_fatigue_pattern",
-    label: "Daytime Fatigue Severity",
-    label_en: "How would you rate your overall daily energy and physical vitality?",
-    label_bn: "সারাদিনের শারীরিক ক্লান্তি ও কর্মক্ষমতার মাত্রা কেমন?",
+    id: "morning_fatigue_level",
+    label: "Morning Awakening Energy",
+    label_en: "Do you wake up feeling unrefreshed, exhausted, or needing caffeine immediately to function?",
+    label_bn: "সকালে ঘুম থেকে ওঠার পর শরীর কি ক্লান্ত লাগে এবং চা/কফি ছাড়া স্বাভাবিক হওয়া কঠিন হয়?",
     domain: "mitochondrial_energy",
-    answerType: "select",
+    answerType: "yesno",
     isHighValueScreening: true,
-    options: [
-      { value: "high_energy", label: "High / Vibrant (Energy 8-10/10)", label_en: "High & Vibrant", label_bn: "উচ্চ ও সতেজ (৮-১০/১০)" },
-      { value: "moderate_fluctuating", label: "Moderate with afternoon dips (5-7/10)", label_en: "Moderate, afternoon dips", label_bn: "মাঝারি, দুপুরে ক্লান্তি নামে (৫-৭/১০)" },
-      { value: "severe_exhaustion", label: "Persistent exhaustion even after waking (1-4/10)", label_en: "Severe chronic exhaustion", label_bn: "তীব্র অবসাদ, ঘুমানোর পরও ক্লান্তি কাটে না (১-৪/১০)" }
-    ],
-    clinicalTags: ["fatigue", "mitochondrial_burnout"]
-  },
-  {
-    id: "exercise_recovery_capacity",
-    label: "Post-Exertional Recovery",
-    label_en: "How do you feel for 24 hours after moderate physical exertion or walking?",
-    label_bn: "হাঁটাহাঁটি বা শারীরিক পরিশ্রম করার পরদিন শরীর কেমন লাগে?",
-    domain: "mitochondrial_energy",
-    answerType: "select",
-    options: [
-      { value: "energized_refreshed", label: "Refreshed and energized", label_en: "Refreshed & good recovery", label_bn: "সতেজ ও ঝরঝরে বোধ হয়" },
-      { value: "delayed_soreness", label: "Normal muscle soreness", label_en: "Typical mild soreness", label_bn: "স্বাভাবিক মাংসপেশির ক্লান্তি" },
-      { value: "drained_for_days", label: "Completely wiped out for 1-2 days", label_en: "Crashing exhaustion for days", label_bn: "১-২ দিন শরীর একদম ভেঙে পড়ে ও বিছানায় থাকতে হয়" }
-    ],
-    clinicalTags: ["post_exertional_malaise"]
+    clinicalTags: ["unrefreshed_sleep", "mitochondrial_fatigue", "adrenal_fatigue"]
   },
 
   // ── 10. SLEEP & CIRCADIAN RHYTHM ─────────────────────────────────
   {
     id: "sleep_duration_hours",
-    label: "Average Nightly Sleep",
-    label_en: "How many hours of actual sleep do you get on average per night?",
-    label_bn: "প্রতি রাতে গড়ে কত ঘণ্টা নিশ্ছিদ্র ঘুম হয়?",
+    label: "Average Nightly Sleep Duration",
+    label_en: "How many hours of actual sleep do you get per night on average?",
+    label_bn: "রাতে গড়ে সাধারণত কত ঘণ্টা ঘুম হয়?",
     domain: "sleep_circadian",
     answerType: "number",
     unit: "hours",
     isHighValueScreening: true,
-    clinicalTags: ["sleep_hours", "sleep_restriction"]
+    clinicalTags: ["sleep_duration"]
   },
   {
-    id: "sleep_quality_and_awakenings",
-    label: "Sleep Disruption & Awakenings",
-    label_en: "Do you wake up multiple times during the night or have difficulty falling asleep?",
-    label_bn: "রাতে ঘন ঘন ঘুম ভেঙে যায় অথবা ঘুম আসতে ১ ঘণ্টার বেশি সময় লাগে কি?",
-    domain: "sleep_circadian",
-    answerType: "select",
-    options: [
-      { value: "sound_uninterrupted", label: "Sound sleep, falls asleep within 20 mins", label_en: "Sound sleep", label_bn: "গভীর ঘুম, ২০ মিনিটের মধ্যে ঘুমিয়ে পড়ি" },
-      { value: "sleep_onset_delay", label: "Takes >45 mins to fall asleep (racing mind)", label_en: "Sleep latency >45 mins", label_bn: "ঘুম আসতে অনেক দেরি হয় (মাথায় চিন্তা ঘুরপাক খায়)" },
-      { value: "nocturnal_awakenings", label: "Wakes at 2-4 AM and cannot get back to sleep", label_en: "Wakes 2-4 AM with difficulty", label_bn: "রাত ২টা থেকে ৪টার মধ্যে ঘুম ভাঙে এবং আর ঘুম আসে না" },
-      { value: "sleep_apnea_snoring", label: "Loud snoring, choking, or gasping during sleep", label_en: "Loud snoring / gasping", label_bn: "বিকট নাক ডাকা বা ঘুমের মধ্যে দম বন্ধ হয়ে চমকে ওঠা" }
-    ],
-    clinicalTags: ["sleep_fragmentation", "circadian_disruption"]
-  },
-  {
-    id: "screen_use_before_bed",
-    label: "Late-Night Screen Exposure",
-    label_en: "Do you use smartphones/tablets in bed in the dark within 1 hour of sleep?",
-    label_bn: "ঘুমানোর পূর্বে অন্ধকারে বিছানায় শুয়ে স্মার্টফোন বা ল্যাপটপের উজ্জ্বল স্ক্রিন ব্যবহার করেন কি?",
+    id: "shift_work_schedule",
+    label: "Shift Work or Night Duty",
+    label_en: "Do you regularly work night shifts, rotating hours, or stay awake past 1:00 AM?",
+    label_bn: "আপনি কি নিয়মিত নাইট শিফটে কাজ করেন বা রাত ১টার পর ঘুমাতে যান?",
     domain: "sleep_circadian",
     answerType: "yesno",
-    clinicalTags: ["blue_light_exposure", "melatonin_suppression"]
+    isHighValueScreening: true,
+    clinicalTags: ["shift_worker", "circadian_disruption"]
   },
 
-  // ── 11. STRESS & NEUROBEHAVIORAL FUNCTION ────────────────────────
+  // ── 11. STRESS & NEUROBEHAVIORAL ─────────────────────────────────
   {
     id: "perceived_stress_level",
-    label: "Perceived Daily Stress Burden",
-    label_en: "How would you rate your ongoing daily mental/emotional stress level?",
-    label_bn: "আপনার বর্তমান মানসিক চাপ বা উদ্বেগের মাত্রা কেমন?",
+    label: "Perceived Daily Stress Level",
+    label_en: "How would you rate your everyday baseline mental stress level?",
+    label_bn: "আপনার দৈনন্দিন মানসিক চাপের মাত্রা কেমন?",
     domain: "stress_neurobehavioral",
     answerType: "select",
     isHighValueScreening: true,
     options: [
-      { value: "low_manageable", label: "Low / Well managed", label_en: "Low / Managed", label_bn: "কম / সহজে নিয়ন্ত্রণযোগ্য" },
-      { value: "moderate_daily", label: "Moderate routine work/family stress", label_en: "Moderate daily stress", label_bn: "মাঝারি পারিবারিক বা কর্মক্ষেত্রের চাপ" },
-      { value: "high_overwhelming", label: "Severe / Constantly overwhelmed & anxious", label_en: "Severe / Chronic overwhelm", label_bn: "তীব্র উদ্বেগ, দুশ্চিন্তা ও অস্থিরতা" }
+      { value: "low_manageable", label: "Low / Well managed", label_en: "Low / Calm", label_bn: "কম / নিয়ন্ত্রিত" },
+      { value: "moderate_routine", label: "Moderate routine stress", label_en: "Moderate", label_bn: "মাঝারি ধরনের স্বাভাবিক চাপ" },
+      { value: "high_overwhelming", label: "High / Chronic overwhelming stress", label_en: "High / Overwhelming", label_bn: "অতিরিক্ত ও দীর্ঘস্থায়ী তীব্র মানসিক চাপ" }
     ],
-    clinicalTags: ["stress_burden", "hpa_axis_activation"]
-  },
-  {
-    id: "stress_eating_pattern",
-    label: "Stress-Induced / Emotional Eating",
-    label_en: "Do you find yourself eating snacks, sweets, or fast food when stressed or sad?",
-    label_bn: "মানসিক চাপ, রাগ বা একাকিত্বের সময় কি অতিরিক্ত খাওয়া বা মিষ্টি খোঁজার প্রবণতা হয়?",
-    domain: "stress_neurobehavioral",
-    answerType: "yesno",
-    clinicalTags: ["emotional_eating"]
-  },
-  {
-    id: "brain_fog_poor_concentration",
-    label: "Brain Fog & Poor Memory",
-    label_en: "Do you experience mental fog, forgetfulness, or difficulty concentrating on work?",
-    label_bn: "মাথা ঘোলাটে লাগা (ব্রেন ফগ), মনোযোগ ধরে রাখতে কষ্ট বা ভুলে যাওয়ার প্রবণতা আছে কি?",
-    domain: "stress_neurobehavioral",
-    answerType: "yesno",
-    clinicalTags: ["brain_fog", "neuroinflammation_indicator"]
+    clinicalTags: ["stress_level", "hpa_axis"]
   },
 
-  // ── 12. DIETARY & NUTRITIONAL ASSESSMENT ─────────────────────────
-  {
-    id: "daily_vegetable_intake_servings",
-    label: "Daily Vegetable & Greens Consumption",
-    label_en: "How many palm-sized servings of fresh cooked vegetables or leafy greens (shak) daily?",
-    label_bn: "প্রতিদিন গড়ে কত বাটি তাজা শাকসবজি খান?",
-    domain: "dietary_nutrition",
-    answerType: "select",
-    isHighValueScreening: true,
-    options: [
-      { value: "rare_less_than_1", label: "< 1 serving per day", label_en: "< 1 serving/day", label_bn: "১ বাটিরও কম" },
-      { value: "one_to_two", label: "1 to 2 servings daily", label_en: "1-2 servings/day", label_bn: "১ থেকে ২ বাটি" },
-      { value: "three_or_more", label: "3 or more servings daily (Optimal)", label_en: "3+ servings/day", label_bn: "৩ বা ততোধিক বাটি (আদর্শ)" }
-    ],
-    clinicalTags: ["fiber_intake", "vegetable_adequacy"]
-  },
-  {
-    id: "daily_protein_food_frequency",
-    label: "Protein Food Ingestion Frequency",
-    label_en: "How many meals per day contain a dedicated palm-sized protein source (fish, egg, chicken, dal)?",
-    label_bn: "দিনে কয়টি খাবারে পর্যাপ্ত প্রোটিন (মাছ, ডিম, দেশি মুরগি বা ডাল) থাকে?",
-    domain: "dietary_nutrition",
-    answerType: "select",
-    isHighValueScreening: true,
-    options: [
-      { value: "less_than_one", label: "Less than 1 meal with protein", label_en: "< 1 meal with protein", label_bn: "১ বেলারও কম (প্রধানত ভাত/রুটি নির্ভর)" },
-      { value: "one_meal", label: "Only 1 meal (usually dinner)", label_en: "1 meal daily", label_bn: "দিনে মাত্র ১ বার" },
-      { value: "two_meals", label: "2 meals containing protein", label_en: "2 meals daily", label_bn: "দিনে ২ বার" },
-      { value: "every_meal_3_plus", label: "Every main meal (3x daily - Optimal)", label_en: "All 3 main meals", label_bn: "প্রতিটি মূল খাবারে (দিনে ৩ বার - আদর্শ)" }
-    ],
-    clinicalTags: ["protein_adequacy"]
-  },
-  {
-    id: "cooking_oil_type_used",
-    label: "Primary Cooking Oil at Home",
-    label_en: "What primary cooking fat or oil is used in your household cooking?",
-    label_bn: "বাড়ির দৈনন্দিন রান্নায় প্রধানত কোন তেল ব্যবহৃত হয়?",
-    domain: "dietary_nutrition",
-    answerType: "select",
-    options: [
-      { value: "refined_soybean_oil", label: "Refined Soybean Oil (commercial bottle)", label_en: "Refined Soybean Oil", label_bn: "বাণিজ্যিক পরিশোধিত সয়াবিন তেল" },
-      { value: "palm_oil_loose", label: "Loose / Super Palm Oil", label_en: "Loose Palm Oil", label_bn: "খোলা বা পাম অয়েল" },
-      { value: "pure_mustard_oil", label: "Cold-pressed / Ghani Mustard Oil (Kachi Ghani)", label_en: "Cold-pressed Mustard Oil", label_bn: "ঘানির খাঁটি সরিষার তেল" },
-      { value: "rice_bran_oil", label: "Rice Bran Oil", label_en: "Rice Bran Oil", label_bn: "রাইস ব্রান অয়েল" },
-      { value: "pure_ghee_coconut", label: "Pure Desi Cow Ghee / Virgin Coconut Oil", label_en: "Desi Ghee / Virgin Coconut Oil", label_bn: "খাঁটি গাওয়া ঘি বা নারকেল তেল" }
-    ],
-    clinicalTags: ["dietary_fats", "omega6_omega3_ratio"]
-  },
-  {
-    id: "daily_fluid_water_liters",
-    label: "Daily Pure Water Intake",
-    label_en: "How many liters of pure drinking water do you consume each day?",
-    label_bn: "প্রতিদিন গড়ে কত লিটার বিশুদ্ধ খাবার পানি পান করেন?",
-    domain: "dietary_nutrition",
-    answerType: "select",
-    options: [
-      { value: "less_than_1_liter", label: "< 1 Liter (Severely low)", label_en: "< 1 Liter", label_bn: "১ লিটারের কম (মারাত্মক কম)" },
-      { value: "one_to_two_liters", label: "1.0 - 2.0 Liters", label_en: "1.0 - 2.0 Liters", label_bn: "১.০ থেকে ২.০ লিটার" },
-      { value: "two_to_three_liters", label: "2.0 - 3.0 Liters (Optimal)", label_en: "2.0 - 3.0 Liters", label_bn: "২.০ থেকে ৩.০ লিটার (আদর্শ)" },
-      { value: "over_3_liters", label: "> 3 Liters", label_en: "> 3 Liters", label_bn: "৩ লিটারের বেশি" }
-    ],
-    clinicalTags: ["hydration_status"]
-  },
-
-  // ── 13. MEDICATIONS, SUPPLEMENTS & ALLERGIES ─────────────────────
-  {
-    id: "regular_nsaid_painkiller_use",
-    label: "Frequent Painkiller / NSAID Intake",
-    label_en: "Do you take pain medications (Naproxen, Ibuprofen, Diclofenac) regularly for headache or joint pain?",
-    label_bn: "মাথাব্যথা বা শরীর ব্যথার জন্য কি নিয়মিত পেইনকিলার (ন্যাপরোক্সেন, ডাইক্লোফেনাক ইত্যাদি) খান?",
-    domain: "medication_supplements",
-    answerType: "yesno",
-    clinicalTags: ["nsaid_use", "gastric_mucosa_damage_risk"]
-  },
-  {
-    id: "daily_ppi_antacid_dependence",
-    label: "Daily PPI / Gastric Medicine Dependence",
-    label_en: "Have you been taking daily acid-blocking medications (Omeprazole, Esomeprazole, Rabeprazole) for >3 months?",
-    label_bn: "গত ৩ মাসের বেশি সময় ধরে কি প্রতিদিন গ্যাস্ট্রিকের ওষুধ (পিপিআই) সেবন করছেন?",
-    domain: "medication_supplements",
-    answerType: "yesno",
-    isHighValueScreening: true,
-    clinicalTags: ["ppi_dependence", "b12_magnesium_depletion_risk"]
-  },
+  // ── 12. MEDICATIONS, SUPPLEMENTS & ALLERGIES ─────────────────────
   {
     id: "confirmed_food_allergies_list",
     label: "Confirmed Food Allergies",
@@ -818,6 +684,86 @@ export const coreQuestions: QuestionDefinition[] = [
       { value: "eggplant_brinjal", label: "Eggplant (Begun)", label_en: "Eggplant", label_bn: "বেগুন" }
     ],
     clinicalTags: ["confirmed_allergy"]
+  },
+  {
+    id: "regular_ppi_antacid_use",
+    label: "Regular Antacid / PPI Gastric Medicine Use",
+    label_en: "Do you take Omeprazole, Esomeprazole, or Pantoprazole almost every day?",
+    label_bn: "আপনি কি প্রায় প্রতিদিন গ্যাসের ওষুধ (যেমন ওমিপ্রাজল, ইসোমিপ্রাজল) খান?",
+    domain: "medication_supplements",
+    answerType: "yesno",
+    isHighValueScreening: true,
+    clinicalTags: ["ppi_dependence", "b12_magnesium_depletion_risk"]
+  },
+
+  // ── 13. MANDATORY CLINICAL SAFETY SCREENING ──────────────────────
+  {
+    id: "safety_insulin_active",
+    label: "Active Insulin Therapy",
+    label_en: "Are you currently taking injectable insulin for diabetes management?",
+    label_bn: "আপনি কি বর্তমানে ইনজেকশনের মাধ্যমে ইনসুলিন নিচ্ছেন?",
+    domain: "medication_supplements",
+    answerType: "yesno",
+    isHighValueScreening: true,
+    required: true,
+    clinicalTags: ["insulin_safety", "hypoglycemia_risk"]
+  },
+  {
+    id: "safety_sulfonylurea_active",
+    label: "Active Sulfonylurea Therapy",
+    label_en: "Are you taking Glimepiride, Gliclazide, or Glipizide (medicines causing hypoglycemia)?",
+    label_bn: "আপনি কি গ্লাইমেপিরাইড বা গ্লিক্লাজাইড জাতীয় সুগার কমানোর ওষুধ খাচ্ছেন?",
+    domain: "medication_supplements",
+    answerType: "yesno",
+    isHighValueScreening: true,
+    required: true,
+    clinicalTags: ["sulfonylurea_safety", "hypoglycemia_risk"]
+  },
+  {
+    id: "safety_prescribed_fluid_limit",
+    label: "Prescribed Fluid Restriction",
+    label_en: "Has a doctor placed you on a strict daily fluid restriction (e.g. for dialysis or heart failure)?",
+    label_bn: "ডাক্তার কি কিডনি বা হার্টের কারণে আপনাকে নির্দিষ্ট পরিমাণ পানি পানের নির্দেশ দিয়েছেন?",
+    domain: "clinical_history",
+    answerType: "select",
+    isHighValueScreening: true,
+    required: true,
+    options: [
+      { value: "no_restriction", label: "No restriction (Drink freely)", label_en: "No restriction", label_bn: "কোনো বিধিনিষেধ নেই" },
+      { value: "restricted_1000ml", label: "Strict <= 1000 mL / day", label_en: "<= 1000 mL/day", label_bn: "কঠোরভাবে ১ লিটারের কম" },
+      { value: "restricted_1500ml", label: "Strict <= 1500 mL / day", label_en: "<= 1500 mL/day", label_bn: "দেড় লিটারের কম (১৫০০ মিলি)" },
+      { value: "restricted_2000ml", label: "Strict <= 2000 mL / day", label_en: "<= 2000 mL/day", label_bn: "২ লিটারের কম (২০০০ মিলি)" }
+    ],
+    clinicalTags: ["fluid_restriction", "renal_cardiac_safety"]
+  },
+  {
+    id: "safety_hospital_feeding_route",
+    label: "Feeding Route Status",
+    label_en: "What is your current feeding route?",
+    label_bn: "আপনার বর্তমান খাদ্য গ্রহণের মাধ্যম কোনটি?",
+    domain: "clinical_history",
+    answerType: "select",
+    isHighValueScreening: true,
+    required: true,
+    options: [
+      { value: "oral_standard", label: "Oral standard (Eats normally by mouth)", label_en: "Oral standard", label_bn: "মুখে স্বাভাবিক খাবার খান" },
+      { value: "oral_modified_texture", label: "Oral texture modified (Pureed/Soft/Liquid)", label_en: "Texture modified", label_bn: "নরম বা তরল ব্লেন্ড করা খাবার" },
+      { value: "npo_nil_per_os", label: "Strict NPO (Nothing by mouth prescribed)", label_en: "Strict NPO", label_bn: "সম্পূর্ণ মুখে খাওয়া নিষিদ্ধ (NPO)" },
+      { value: "enteral_tube", label: "Enteral tube (NG Tube or PEG/PEJ)", label_en: "Enteral tube", label_bn: "নাকের বা পেটের নালীর মাধ্যমে (টিউব ফিডিং)" },
+      { value: "parenteral_tpn", label: "Parenteral (Intravenous TPN/PPN)", label_en: "Parenteral TPN", label_bn: "শিরার মাধ্যমে স্যালাইন পুষ্টি (TPN)" }
+    ],
+    clinicalTags: ["feeding_route", "hospital_safety"]
+  },
+  {
+    id: "safety_dysphagia_choking_risk",
+    label: "Swallowing Difficulty / Choking Risk",
+    label_en: "Do you experience coughing, choking, or difficulty swallowing foods or liquids (Dysphagia)?",
+    label_bn: "খাবার বা পানি গিলতে গেলে কি কাশি, গলায় আটকানো বা বিষম খাওয়ার সমস্যা হয়?",
+    domain: "gastrointestinal",
+    answerType: "yesno",
+    isHighValueScreening: true,
+    required: true,
+    clinicalTags: ["dysphagia", "aspiration_risk"]
   },
 
   // ── 14. ENVIRONMENTAL & LIFESTYLE ────────────────────────────────
@@ -852,16 +798,17 @@ export const coreQuestions: QuestionDefinition[] = [
     clinicalTags: ["water_quality"]
   },
 
-  // ── SPECIAL POPULATION MODULE: PREGNANCY & LACTATION ──────────────
+  // ── SPECIAL POPULATION MODULE: PREGNANCY ─────────────────────────
   {
     id: "pregnancy_gestational_week",
     label: "Gestational Week (Pregnancy)",
-    label_en: "Current week of pregnancy",
+    label_en: "Current week of pregnancy (completed weeks)",
     label_bn: "গর্ভাবস্থার বর্তমান সপ্তাহ",
     domain: "clinical_history",
     subdomain: "pregnancy",
     answerType: "number",
     applicablePopulation: ["pregnancy"],
+    isHighValueScreening: true,
     clinicalTags: ["pregnancy_week"]
   },
   {
@@ -873,6 +820,7 @@ export const coreQuestions: QuestionDefinition[] = [
     subdomain: "pregnancy",
     answerType: "yesno",
     applicablePopulation: ["pregnancy"],
+    isHighValueScreening: true,
     clinicalTags: ["preeclampsia_risk", "red_flag_pregnancy"]
   },
 
@@ -886,12 +834,71 @@ export const coreQuestions: QuestionDefinition[] = [
     subdomain: "pediatric",
     answerType: "select",
     applicablePopulation: ["pediatric"],
+    isHighValueScreening: true,
     options: [
       { value: "normal_growth", label: "Growing normally", label_en: "Normal growth curve", label_bn: "স্বাভাবিক বৃদ্ধি হচ্ছে" },
       { value: "underweight_stunting", label: "Underweight / Stunted growth concern", label_en: "Underweight concern", label_bn: "বয়সের তুলনায় কম ওজন বা কম উচ্চতা" },
       { value: "rapid_childhood_weight", label: "Accelerated rapid weight gain", label_en: "Accelerated weight gain", label_bn: "অস্বাভাবিক দ্রুত ওজন বৃদ্ধি" }
     ],
     clinicalTags: ["pediatric_growth"]
+  },
+  {
+    id: "pediatric_feeding_difficulty",
+    label: "Child Feeding Habits & Appetite",
+    label_en: "Does the child experience extreme food refusal, sensory aversion, or feeding fatigue?",
+    label_bn: "শিশু কি খাবার খেতে তীব্র অনীহা বা অতিরিক্ত কষ্ট প্রকাশ করে?",
+    domain: "gastrointestinal",
+    subdomain: "pediatric",
+    answerType: "select",
+    applicablePopulation: ["pediatric"],
+    options: [
+      { value: "good_appetite", label: "Good appetite, eats varied foods", label_en: "Good appetite", label_bn: "ভালো রুচি ও স্বাভাবিক খাওয়া" },
+      { value: "picky_eating_moderate", label: "Picky eating (eats only 3-4 specific foods)", label_en: "Picky eating", label_bn: "নির্দিষ্ট কয়েকটি খাবার ছাড়া খেতে চায় না" },
+      { value: "severe_feeding_refusal", label: "Severe feeding refusal / weight loss", label_en: "Severe refusal", label_bn: "মারাত্মক খাওয়ানোর কষ্ট ও ওজন হ্রাস" }
+    ],
+    clinicalTags: ["pediatric_feeding"]
+  },
+
+  // ── SPECIAL POPULATION: ONCOLOGY ─────────────────────────────────
+  {
+    id: "oncology_treatment_phase",
+    label: "Oncology Treatment Stage",
+    label_en: "Current phase of cancer therapy",
+    label_bn: "ক্যান্সার চিকিৎসার বর্তমান পর্যায়",
+    domain: "clinical_history",
+    subdomain: "oncology",
+    answerType: "select",
+    applicablePopulation: ["oncology"],
+    applicablePathways: ["oncology"],
+    isHighValueScreening: true,
+    options: [
+      { value: "active_chemotherapy", label: "Active Chemotherapy", label_en: "Active Chemotherapy", label_bn: "বর্তমানে কেমোথেরাপি চলছে" },
+      { value: "active_radiotherapy", label: "Active Radiotherapy", label_en: "Active Radiotherapy", label_bn: "বর্তমানে রেডিওথেরাপি চলছে" },
+      { value: "post_surgical_recovery", label: "Post-surgical recovery", label_en: "Post-surgical recovery", label_bn: "অস্ত্রোপচারের পর পুনরুদ্ধার পর্ব" },
+      { value: "remission_surveillance", label: "Remission / Long-term surveillance", label_en: "Remission / Surveillance", label_bn: "রেমিশন / পর্যবেক্ষণ পর্যায়" }
+    ],
+    clinicalTags: ["oncology_treatment"]
+  },
+
+  // ── SPECIAL POPULATION: RENAL (CKD) ──────────────────────────────
+  {
+    id: "renal_dialysis_status",
+    label: "Dialysis Status",
+    label_en: "Are you currently receiving regular hemodialysis or peritoneal dialysis?",
+    label_bn: "আপনি কি নিয়মিত হেমোডায়ালাইসিস নিচ্ছেন?",
+    domain: "clinical_history",
+    subdomain: "renal",
+    answerType: "select",
+    applicablePopulation: ["renal"],
+    applicablePathways: ["renal"],
+    isHighValueScreening: true,
+    options: [
+      { value: "not_on_dialysis", label: "No (Non-dialysis CKD)", label_en: "Non-dialysis CKD", label_bn: "না (ডায়ালাইসিস ছাড়া সিকেডি)" },
+      { value: "hemodialysis_twice_weekly", label: "Hemodialysis (2x per week)", label_en: "Hemodialysis 2x/week", label_bn: "হেমোডায়ালাইসিস (সপ্তাহে ২ বার)" },
+      { value: "hemodialysis_thrice_weekly", label: "Hemodialysis (3x per week)", label_en: "Hemodialysis 3x/week", label_bn: "হেমোডায়ালাইসিস (সপ্তাহে ৩ বার)" },
+      { value: "peritoneal_dialysis", label: "Peritoneal Dialysis (CAPD)", label_en: "Peritoneal Dialysis", label_bn: "পেরিটনিয়াল ডায়ালাইসিস" }
+    ],
+    clinicalTags: ["dialysis_status", "ckd_management"]
   }
 ];
 
