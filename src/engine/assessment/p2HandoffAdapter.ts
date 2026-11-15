@@ -62,27 +62,39 @@ export function buildP2ClinicalObservations(
   // 1. Dietary Frequency Findings
   const ffq = assessment.dietary_frequency;
   if (ffq?.summary) {
-    if (ffq.summary.weekly_plant_diversity_score < 10) {
+    if (ffq.summary.completeness_status === 'minimal') {
       addObs(
-        'low_plant_diversity',
-        'Low Plant Diversity (<10 distinct plant groups/week)',
-        'কম উদ্ভিজ্জ খাদ্য বৈচিত্র্য (সপ্তাহে ১০টির কম উদ্ভিজ্জ খাদ্য)',
+        'incomplete_ffq_survey',
+        'Incomplete 7-Day FFQ Data (Uncertain Dietary Adequacy)',
+        'অসম্পূর্ণ খাদ্য ফ্রিকোয়েন্সি তথ্য (পর্যাপ্ততা অনিশ্চিত)',
         ['assimilation'],
-        'moderate',
-        ['low_food_group_variety', 'low_fiber_diet', 'gut_dysbiosis_risk'],
+        'mild',
+        ['incomplete_ffq_data', 'dietary_uncertainty'],
         'ffq_7day_summary'
       );
-    }
-    if (ffq.summary.daily_fruit_veg_servings_est < 2.0) {
-      addObs(
-        'low_fruit_veg',
-        'Inadequate Fruit and Vegetable Intake (<2 servings/day)',
-        'অপ্রতুল ফল ও শাকসবজি গ্রহণ (দৈনিক ২ সার্ভিংয়ের কম)',
-        ['assimilation', 'defense_repair'],
-        'moderate',
-        ['low_vegetable_intake', 'low_fruit_intake', 'low_fiber_diet'],
-        'ffq_7day_summary'
-      );
+    } else {
+      if (ffq.summary.weekly_plant_diversity_score < 5) {
+        addObs(
+          'low_plant_diversity',
+          'Low Plant Food Group Diversity (<5 distinct plant food groups/week)',
+          'কম উদ্ভিজ্জ খাদ্য বৈচিত্র্য (সপ্তাহে ৫টির কম উদ্ভিজ্জ খাদ্য গ্রুপ)',
+          ['assimilation'],
+          'moderate',
+          ['low_food_group_variety', 'low_fiber_diet', 'gut_dysbiosis_risk'],
+          'ffq_7day_summary'
+        );
+      }
+      if (ffq.summary.daily_fruit_veg_servings_est < 2.0) {
+        addObs(
+          'low_fruit_veg',
+          'Inadequate Fruit and Vegetable Intake (<2 servings/day)',
+          'অপ্রতুল ফল ও শাকসবজি গ্রহণ (দৈনিক ২ সার্ভিংয়ের কম)',
+          ['assimilation', 'defense_repair'],
+          'moderate',
+          ['low_vegetable_intake', 'low_fruit_intake', 'low_fiber_diet'],
+          'ffq_7day_summary'
+        );
+      }
     }
     if (ffq.summary.ultra_processed_burden === 'high' || ffq.summary.ultra_processed_burden === 'very_high') {
       addObs(

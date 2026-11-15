@@ -147,6 +147,10 @@ export interface AssessmentContextProps {
 
   completionStatus: AssessmentCompletionStatus;
   exportClinicalAssessment: () => ClinicalAssessment;
+  visitId: string;
+  assessmentId: string;
+  clinicianSafetyAcknowledged: boolean;
+  setClinicianSafetyAcknowledged: (acknowledged: boolean) => void;
 }
 
 const AssessmentContext = createContext<AssessmentContextProps | undefined>(undefined);
@@ -154,12 +158,15 @@ const AssessmentContext = createContext<AssessmentContextProps | undefined>(unde
 export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
   const { patient, updatePatient } = usePractice();
   const patientId = patient?.id || "default_patient";
-  const visitId = "current_visit";
+  const visitDateClean = patient?.visit_date ? patient.visit_date.replace(/[^0-9]/g, '') : 'initial';
+  const visitId = patient?.id ? `visit_${patient.id}_${visitDateClean}` : 'current_visit';
+  const stableAssessmentId = useMemo(() => `asmt_${patientId}_${visitId}`, [patientId, visitId]);
 
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
   const [mode, setModeState] = useState<AssessmentMode>('quick');
   const [currentStep, setCurrentStep] = useState<AssessmentStepId>('step_category');
   const [activeDomain, setActiveDomain] = useState<AssessmentDomainId>('clinical_history');
+  const [clinicianSafetyAcknowledged, setClinicianSafetyAcknowledged] = useState<boolean>(false);
 
   const [functionalAnswers, setFunctionalAnswers] = useState<Record<string, any>>({});
   const [ffqItems, setFfqItems] = useState<Record<string, FFQItemResponse>>({});
@@ -508,10 +515,11 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       clinical_safety_completed: missingCritical.length === 0,
       mandatory_sections_completed: missingCritical.length === 0 && completionPercentage >= 60,
       laboratory_data_available: hasTestedLabs,
-      requires_clinical_review: missingCritical.length > 0,
-      unanswered_critical_questions: missingCritical
+      requires_clinical_review: missingCritical.length > 0 || !clinicianSafetyAcknowledged,
+      unanswered_critical_questions: missingCritical,
+      is_provisional: missingCritical.length > 0 || !clinicianSafetyAcknowledged
     };
-  }, [functionalAnswers, labEntries, completionPercentage]);
+  }, [functionalAnswers, labEntries, completionPercentage, clinicianSafetyAcknowledged]);
 
   // Legacy data adapter
   const legacyData: AssessmentData = useMemo(() => ({
@@ -542,7 +550,7 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
     return {
       patient_id: patientId,
       visit_id: visitId,
-      assessment_id: `asmt_${patientId}_${Date.now()}`,
+      assessment_id: stableAssessmentId,
       assessment_date: new Date().toISOString(),
       mode,
       questionnaire_version: registryVersion,
@@ -562,11 +570,13 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       },
       labs: labData,
       completion: completionStatus,
-      safety_warnings_acknowledged: true
+      safety_warnings_acknowledged: clinicianSafetyAcknowledged
     };
   }, [
     patientId,
     visitId,
+    stableAssessmentId,
+    clinicianSafetyAcknowledged,
     mode,
     patient,
     functionalAnswers,
@@ -632,7 +642,11 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
         updatePregnancyGestational,
 
         completionStatus,
-        exportClinicalAssessment
+        exportClinicalAssessment,
+        visitId,
+        assessmentId: stableAssessmentId,
+        clinicianSafetyAcknowledged,
+        setClinicianSafetyAcknowledged
       }}
     >
       {children}

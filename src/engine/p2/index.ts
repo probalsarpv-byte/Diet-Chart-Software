@@ -21,6 +21,13 @@ import { aggregateEvidence } from './evidenceAggregator';
 import { computeFunctionalMatrix } from './functionalMatrixEngine';
 import { generateHypotheses as generateRuleHypotheses } from './hypothesisEngine';
 import { CLINICAL_RULES } from './clinicalRuleRegistry';
+import { generateLabRecommendations } from './labRecommendationEngine';
+import { interpretAyurvedicAssessment } from './ayurvedicInterpretationEngine';
+import { analyzeMasanumasikaPregnancy } from './masanumasikaPregnancyAnalysis';
+import { analyzeDietaryPattern } from './dietaryPatternAnalysis';
+import { analyzeMetabolicHealth, analyzeGutHealth } from './metabolicAndGutEngines';
+import { buildClinicalHealthAssessmentReport } from './clinicalReportBuilder';
+import { constructP3PlanningContext } from './p3PlanningHandoff';
 
 // ─── P2 Engine Input ──────────────────────────────────────────────
 export interface P2EngineInput {
@@ -555,23 +562,30 @@ export function runP2Analysis(
   let observations: ClinicalObservation[];
   let approvals: ClinicianApprovalRecord[] = previousApprovals || [];
 
+  let rawAnswers: Record<string, any> = {};
+
   if ('id' in inputOrPatient && 'gender' in inputOrPatient && 'age' in inputOrPatient) {
     // Called as runP2Analysis(patient, assessmentAnswers, previousApprovals)
     patient = inputOrPatient as PatientProfile;
-    observations = aggregateEvidence(patient, assessmentAnswers || {});
+    rawAnswers = assessmentAnswers || {};
+    observations = aggregateEvidence(patient, rawAnswers);
   } else {
     // Called as runP2Analysis(P2EngineInput)
     const input = inputOrPatient as P2EngineInput;
     patient = input.patient;
+    rawAnswers = input.assessmentAnswers || {};
     if (input.observations && input.observations.length > 0) {
       observations = input.observations;
     } else {
-      observations = aggregateEvidence(patient, input.assessmentAnswers || {});
+      observations = aggregateEvidence(patient, rawAnswers);
     }
     if (input.previousApprovals) {
       approvals = input.previousApprovals;
     }
   }
+
+  const visitDateClean = patient.visit_date.replace(/[^0-9]/g, '');
+  const visitId = `visit_${patient.id}_${visitDateClean}`;
 
   const domainFindings = computeFunctionalMatrix(observations);
   const redFlags = detectRedFlags(observations, patient);
@@ -589,9 +603,46 @@ export function runP2Analysis(
     return h;
   });
 
+  // Execute Phase P2 Enhanced Analytics
+  const labRecommendations = generateLabRecommendations(patient, observations, finalHypotheses);
+  const ayurvedicInterpretation = interpretAyurvedicAssessment(patient, observations, rawAnswers);
+  const masanumasikaAnalysis = analyzeMasanumasikaPregnancy(patient, rawAnswers);
+  const dietaryPatternAnalysis = analyzeDietaryPattern(patient, observations, rawAnswers);
+  const metabolicHealthAnalysis = analyzeMetabolicHealth(patient, observations, rawAnswers);
+  const gutHealthAnalysis = analyzeGutHealth(patient, observations, rawAnswers);
+
+  const report = buildClinicalHealthAssessmentReport({
+    patient,
+    domainFindings,
+    hypotheses: finalHypotheses,
+    redFlags,
+    priorities,
+    timelineEvents,
+    labRecommendations,
+    ayurvedicInterpretation,
+    masanumasikaAnalysis,
+    dietaryPatternAnalysis,
+    metabolicHealthAnalysis,
+    gutHealthAnalysis,
+    approvalHistory: approvals,
+    reportMode: 'comprehensive',
+  });
+
+  const p3PlanningContext = constructP3PlanningContext({
+    patient,
+    priorities,
+    redFlags,
+    interventionGoals,
+    dietaryPatternAnalysis,
+    ayurvedicInterpretation,
+    masanumasikaAnalysis,
+    metabolicHealthAnalysis,
+    approvals,
+  });
+
   const dietPlanningContext: DietPlanningContext = {
     patientId: patient.id,
-    visitId: `visit_${patient.visit_date}`,
+    visitId,
     generatedAt: new Date().toISOString(),
     confirmedAllergies: patient.confirmed_allergies,
     hardRestrictions: [],
@@ -607,7 +658,7 @@ export function runP2Analysis(
 
   return {
     patientId: patient.id,
-    visitId: `visit_${patient.visit_date}`,
+    visitId,
     analysisVersion: '2.0.0',
     generatedAt: new Date().toISOString(),
     observations,
@@ -620,5 +671,15 @@ export function runP2Analysis(
     approvalHistory: approvals,
     dietPlanningContext,
     missingHighValueData: missingData,
+
+    // Enhanced P2 Analytics
+    labRecommendations,
+    ayurvedicInterpretation,
+    masanumasikaAnalysis,
+    dietaryPatternAnalysis,
+    metabolicHealthAnalysis,
+    gutHealthAnalysis,
+    report,
+    p3PlanningContext,
   };
 }

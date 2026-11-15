@@ -337,9 +337,14 @@ export function analyzeDietaryFrequency(
   let totalProteinWeeklyServings = 0;
   let totalUltraProcessedWeeklyServings = 0;
   let totalAddedSugarWeeklyFrequency = 0;
-  let answeredCount = 0;
+  let explicitlyAnsweredCount = 0;
+  let confirmedZeroCount = 0;
+  let notSureCount = 0;
 
   const plantGroupIds: FFQFoodGroupId[] = [
+    'whole_grains_oats',
+    'roti_handmade_atta',
+    'other_grains_khichuri_poha',
     'lentils_dal_soup',
     'legumes_chickpeas_chola',
     'leafy_greens_shak',
@@ -347,7 +352,8 @@ export function analyzeDietaryFrequency(
     'raw_salad_cucumber',
     'fresh_fruits_seasonal',
     'nuts_seeds_chia_almonds',
-    'whole_grains_oats'
+    'fermented_foods_pantabhaat',
+    'tea_herbal_without_sugar'
   ];
 
   const proteinGroupIds: FFQFoodGroupId[] = [
@@ -371,38 +377,45 @@ export function analyzeDietaryFrequency(
   ];
 
   for (const def of FFQ_FOOD_DEFINITIONS) {
+    const isProvided = items[def.id] !== undefined;
     const resp = items[def.id] || {
       food_group_id: def.id,
-      frequency: '0_times',
+      frequency: 'not_sure',
       portion_size: 'medium'
     };
 
     safeItems[def.id] = resp;
 
-    if (resp.frequency && resp.frequency !== '0_times' && resp.frequency !== 'not_sure') {
-      answeredCount++;
-      const baseFreq = FREQUENCY_NUMERIC_ESTIMATES[resp.frequency];
-      const portMult = PORTION_MULTIPLIERS[resp.portion_size || 'medium'];
-      const effectiveServings = baseFreq * portMult;
+    if (isProvided) {
+      explicitlyAnsweredCount++;
+      if (resp.frequency === '0_times') {
+        confirmedZeroCount++;
+      } else if (resp.frequency === 'not_sure') {
+        notSureCount++;
+      } else if (resp.frequency) {
+        const baseFreq = FREQUENCY_NUMERIC_ESTIMATES[resp.frequency];
+        const portMult = PORTION_MULTIPLIERS[resp.portion_size || 'medium'];
+        const effectiveServings = baseFreq * portMult;
 
-      if (plantGroupIds.includes(def.id) && baseFreq >= 1) {
-        totalPlantGroupsPresent++;
-      }
+        if (plantGroupIds.includes(def.id) && baseFreq >= 1) {
+          totalPlantGroupsPresent++;
+        }
 
-      if (def.id === 'leafy_greens_shak' || def.id === 'other_vegetables_curry' || def.id === 'raw_salad_cucumber' || def.id === 'fresh_fruits_seasonal') {
-        totalVegFruitWeeklyServings += effectiveServings;
-      }
+        if (def.id === 'leafy_greens_shak' || def.id === 'other_vegetables_curry' || def.id === 'raw_salad_cucumber' || def.id === 'fresh_fruits_seasonal') {
+          totalVegFruitWeeklyServings += effectiveServings;
+        }
 
-      if (proteinGroupIds.includes(def.id)) {
-        totalProteinWeeklyServings += effectiveServings;
-      }
+        if (proteinGroupIds.includes(def.id)) {
+          totalProteinWeeklyServings += effectiveServings;
+        }
 
-      if (ultraProcessedIds.includes(def.id)) {
-        totalUltraProcessedWeeklyServings += effectiveServings;
-      }
+        if (ultraProcessedIds.includes(def.id)) {
+          totalUltraProcessedWeeklyServings += effectiveServings;
+        }
 
-      if (def.id === 'sweets_mishti_dessert' || def.id === 'sugar_sweetened_beverages' || def.id === 'tea_coffee_with_sugar') {
-        totalAddedSugarWeeklyFrequency += baseFreq;
+        if (def.id === 'sweets_mishti_dessert' || def.id === 'sugar_sweetened_beverages' || def.id === 'tea_coffee_with_sugar') {
+          totalAddedSugarWeeklyFrequency += baseFreq;
+        }
       }
     }
   }
@@ -435,8 +448,8 @@ export function analyzeDietaryFrequency(
 
   // Completeness status
   let completeness: 'complete' | 'partial' | 'minimal' = 'minimal';
-  if (answeredCount >= 18) completeness = 'complete';
-  else if (answeredCount >= 8) completeness = 'partial';
+  if (explicitlyAnsweredCount >= 20) completeness = 'complete';
+  else if (explicitlyAnsweredCount >= 8) completeness = 'partial';
 
   return {
     items: safeItems,

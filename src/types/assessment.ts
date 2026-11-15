@@ -412,6 +412,7 @@ export interface AssessmentCompletionStatus {
   laboratory_data_available: boolean;
   requires_clinical_review: boolean;
   unanswered_critical_questions: string[];
+  is_provisional?: boolean;
 }
 
 export interface ClinicalAssessment {

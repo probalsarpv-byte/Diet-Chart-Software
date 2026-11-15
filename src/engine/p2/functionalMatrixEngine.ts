@@ -68,8 +68,10 @@ const PERTINENT_NEGATIVE_TAGS: Record<FunctionalDomain, string[]> = {
   structural_integrity: ['adequate_protein_intake', 'adequate_muscle_mass', 'active_lifestyle'],
 };
 
-function burdenFromCount(count: number): DomainFinding['overallBurden'] {
-  if (count === 0) return 'none';
+function burdenFromCount(count: number, pertinentNegativeCount: number): DomainFinding['overallBurden'] {
+  if (count === 0) {
+    return pertinentNegativeCount > 0 ? 'none' : 'insufficient_data';
+  }
   if (count <= 2) return 'mild';
   if (count <= 4) return 'moderate';
   return 'significant';
@@ -156,7 +158,7 @@ export function computeFunctionalMatrix(observations: ClinicalObservation[]): Do
       potentialConfounders: confounders,
       clinicalReviewFlags: reviewFlags,
       furtherAssessmentSuggestions: DOMAIN_FURTHER_SUGGESTIONS[domain],
-      overallBurden: burdenFromCount(relevantObs.length),
+      overallBurden: burdenFromCount(relevantObs.length, pertinentNegatives.length),
     } satisfies DomainFinding;
   });
 }
