@@ -5,7 +5,7 @@
 // Independent, versioned clinical approval governance.
 // Single Authoritative Handoff Contract for Phase P3.
 
-import { PatientProfile } from '../../types';
+import { PatientProfile, AllergyReconciliationRecord, MedicationReconciliationSummary } from '../../types';
 import { ClinicalAssessment } from '../../types/assessment';
 import {
   P3NutritionPlanningContext,
@@ -41,6 +41,8 @@ export interface ConstructP3Params {
   approvalTimestamp?: string;
   analysisInvalidatedAt?: string;
   invalidationReason?: string;
+  visitId?: string;
+  assessmentId?: string;
 }
 
 function parseNutrientPrescription(
@@ -122,11 +124,49 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
     approvalTimestamp,
     analysisInvalidatedAt,
     invalidationReason,
+    visitId: explicitVisitId,
+    assessmentId: explicitAssessmentId,
   } = params;
 
   const visitDateClean = patient.visit_date.replace(/[^0-9]/g, '');
-  const visitId = `visit_${patient.id}_${visitDateClean}`;
-  const assessmentId = `asmt_${patient.id}_${visitId}`;
+  const visitId =
+    explicitVisitId ||
+    assessment?.visit_id ||
+    patient.current_visit_id ||
+    `visit_${patient.id}_${visitDateClean}`;
+  const assessmentId =
+    explicitAssessmentId ||
+    assessment?.assessment_id ||
+    `asmt_${patient.id}_${visitId}`;
+
+  const allergyReconciliation: AllergyReconciliationRecord =
+    patient.allergy_reconciliation ||
+    assessment?.allergy_reconciliation || {
+      status: patient.confirmed_allergies && patient.confirmed_allergies.length > 0
+        ? 'allergies_confirmed'
+        : 'not_assessed',
+      reconciled_allergies: patient.confirmed_allergies || [],
+      allergies_present: Boolean(patient.confirmed_allergies && patient.confirmed_allergies.length > 0),
+      recorded_date: patient.visit_date,
+    };
+
+  const medicationReconciliation: MedicationReconciliationSummary =
+    patient.medication_reconciliation ||
+    assessment?.medication_reconciliation || {
+      overall_status: patient.active_medications && patient.active_medications.length > 0 ? 'partially_reconciled' : 'not_reconciled',
+      total_active_medications: patient.active_medications ? patient.active_medications.length : 0,
+      reconciled_count: 0,
+      unreconciled_count: patient.active_medications ? patient.active_medications.length : 0,
+      reconciled_medications: (patient.active_medications || []).map(m => ({
+        id: `med_${m}`,
+        name: m,
+        dose: '',
+        frequency: '',
+        timing: 'unspecified' as const,
+        verification_status: 'patient_reported_unverified' as const,
+        is_reconciled: false,
+      })),
+    };
 
   // ─── 1. Feeding Route & Hospital Safety Evaluation ───────────────
   const rawRoute = patient.feeding_status?.route || 'oral_standard';
@@ -188,9 +228,9 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
     confirmedConditions.some((c: string) => /^(ckd|chronic_kidney|end_stage_renal|renal_failure)$/i.test(c.trim()));
 
   // Suspected Renal Abnormality: Enrolling in renal pathway or having abnormal labs is screening, NOT confirmed CKD!
+  // CLINICAL INTEGRITY RULE: Legacy 'hypertension_ckd' alone MUST NEVER imply renal abnormality or CKD!
   const hasSuspectedRenalAbnormality =
     isRenalPathway ||
-    Boolean(patient.selected_conditions?.includes('hypertension_ckd') && !hasConfirmedCkdDiagnosis) ||
     (Boolean(patientLabs?.creatinine && patientLabs.creatinine > 1.5) ||
      Boolean(patientLabs?.egfr && patientLabs.egfr < 60));
 
@@ -364,30 +404,55 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
   let tdee = Math.round(bmr * activityMultiplier);
 
   // Pregnancy adjustments
+  // Clinical integrity rule: No fabricated trimester 2 or arbitrary +340 kcal surplus; preserve unknown gestational age.
+  // Surplus ONLY when gestational age or trimester is verified: Trimester 2 (+340 kcal) or Trimester 3 (+450 kcal).
+  let pregnancyEnergySurplus = 0;
   if (patient.population_group === 'pregnancy') {
-    const trimester = patient.trimester || 2;
-    if (trimester === 2) tdee += 340;
-    else if (trimester === 3) tdee += 450;
+    const trimester = patient.trimester;
+    if (trimester === 2) {
+      pregnancyEnergySurplus = 340;
+    } else if (trimester === 3) {
+      pregnancyEnergySurplus = 450;
+    }
+    tdee += pregnancyEnergySurplus;
   }
 
-  // Oncology and Underweight considerations
+  // Oncology and Underweight considerations:
+  // CLINICAL INTEGRITY RULE: No universal +300 kcal surplus for all oncology patients.
+  // Surplus indicated ONLY for documented underweight/cachexia restoration (BMI < 18.5 or underweight pathway)
+  // or explicit clinician prescription.
   const isOncology = patient.clinical_pathways?.includes('oncology');
   const isUnderweight =
     patient.clinical_pathways?.includes('underweight_restoration') ||
-    (patient.calculated?.bmi && patient.calculated.bmi < 18.5);
+    (patient.calculated?.bmi !== undefined && patient.calculated.bmi < 18.5);
 
-  if (isOncology || isUnderweight) {
+  const hasExplicitEnergySurplusPrescription = Boolean((patient as any).prescribed_energy_surplus_kcal);
+  const prescribedSurplus = (patient as any).prescribed_energy_surplus_kcal || 0;
+
+  if (isUnderweight) {
     tdee += 300;
+  } else if (hasExplicitEnergySurplusPrescription) {
+    tdee += prescribedSurplus;
   }
 
   // Baseline protein calculation
   let proteinTarget = Math.round(patient.weight_kg * 1.0);
+  let proteinClassification: 'estimated_target' | 'clinical_recommendation' | 'verified_clinical_prescription' = 'estimated_target';
+  let isProteinRequirementVerified = false;
+
   if (prescribedProteinCap_g) {
     proteinTarget = prescribedProteinCap_g;
+    proteinClassification = 'verified_clinical_prescription';
+    isProteinRequirementVerified = true;
   } else if (patient.population_group === 'pregnancy') {
     proteinTarget = Math.round(patient.weight_kg * 1.2) + 15;
-  } else if (isOncology || isUnderweight) {
+    proteinClassification = 'clinical_recommendation';
+  } else if (isUnderweight) {
     proteinTarget = Math.round(patient.weight_kg * 1.3);
+    proteinClassification = 'clinical_recommendation';
+  } else if (isOncology) {
+    proteinTarget = Math.round(patient.weight_kg * 1.2);
+    proteinClassification = 'clinical_recommendation';
   }
 
   // ─── 5. Nutritional Targets Array ────────────────────────────────
@@ -400,6 +465,8 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
       rationale_en: 'Estimated daily energy target based on validated anthropometric equations',
       rationale_bn: 'বৈধ সমীকরণ অনুযায়ী দৈনিক শক্তির লক্ষ্যমাত্রা',
       source: 'anthropometric_calculation',
+      targetClassification: 'estimated_target',
+      isVerifiedRequirement: false,
     },
     {
       nutrient: 'protein',
@@ -413,6 +480,8 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
         ? `চিকিৎসক নির্ধারিত প্রোটিন সীমা: ${prescribedProteinCap_g} গ্রাম`
         : 'নিরাপদ ক্লিনিক্যাল প্রোটিন চাহিদা',
       source: prescribedProteinCap_g ? 'clinician_set' : 'condition_adjustment',
+      targetClassification: proteinClassification,
+      isVerifiedRequirement: isProteinRequirementVerified,
     },
   ];
 
@@ -424,6 +493,8 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
       rationale_en: `Clinician-prescribed sodium restriction: max ${prescribedSodiumLimit_mg} mg/day`,
       rationale_bn: `চিকিৎসক নির্ধারিত সোডিয়াম সীমা: দৈনিক অনূর্ধ্ব ${prescribedSodiumLimit_mg} মিলিগ্রাম`,
       source: 'clinician_set',
+      targetClassification: 'verified_clinical_prescription',
+      isVerifiedRequirement: true,
     });
   }
   if (prescribedPotassiumLimit_mg !== undefined) {
@@ -434,6 +505,8 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
       rationale_en: `Clinician-prescribed potassium restriction: max ${prescribedPotassiumLimit_mg} mg/day`,
       rationale_bn: `চিকিৎসক নির্ধারিত পটাশিয়াম সীমা: দৈনিক অনূর্ধ্ব ${prescribedPotassiumLimit_mg} মিলিগ্রাম`,
       source: 'clinician_set',
+      targetClassification: 'verified_clinical_prescription',
+      isVerifiedRequirement: true,
     });
   }
   if (prescribedFluidLimit_mL !== undefined) {
@@ -444,6 +517,8 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
       rationale_en: `Clinician-prescribed fluid restriction: max ${prescribedFluidLimit_mL} mL/day`,
       rationale_bn: `চিকিৎসক নির্ধারিত তরল সীমা: দৈনিক অনূর্ধ্ব ${prescribedFluidLimit_mL} মিলি`,
       source: 'clinician_set',
+      targetClassification: 'verified_clinical_prescription',
+      isVerifiedRequirement: true,
     });
   }
 
@@ -550,6 +625,8 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
     invalidationReason,
 
     confirmedAllergies: patient.confirmed_allergies,
+    allergyReconciliation,
+    medicationReconciliation,
     feedingRoute,
     hardRestrictions,
     prescriptions,

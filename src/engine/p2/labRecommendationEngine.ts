@@ -176,7 +176,19 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     associatedDomain: 'biotransformation',
     matchedLabKey: 'uric_acid',
     triggerCondition: (patient) => {
-      const hasRenal = patient.selected_conditions.includes('hypertension_ckd') ||
+      const isRenalPathway = Boolean(patient.clinical_pathways?.includes('renal'));
+      const confirmedConditions: string[] = (patient as any).confirmed_conditions || [];
+      const hasConfirmedCkd = confirmedConditions.some((c: string) => /^(ckd|chronic_kidney|end_stage_renal|renal_failure)$/i.test(c.trim()));
+      const patientLabs = patient.labs as any;
+      const hasAbnormalRenalLab = Boolean(
+        (patientLabs?.creatinine && patientLabs.creatinine > 1.5) ||
+        (patientLabs?.egfr && patientLabs.egfr < 60)
+      );
+
+      const hasRenal =
+        isRenalPathway ||
+        hasConfirmedCkd ||
+        hasAbnormalRenalLab ||
         patient.selected_conditions.includes('uric_acid_gout') ||
         (patient.labs.uric_acid && patient.labs.uric_acid > 6.5);
       return { shouldRecommend: true, elevatedPriority: hasRenal ? 'high_priority' : 'routine_consideration' };

@@ -307,7 +307,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
 
       const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-      const visitId = `visit_${patient.id}_${visitDateClean}`;
+      const visitId = patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
       const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
       try {
         if (typeof window !== 'undefined') {
@@ -318,13 +318,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
-  }, [patient?.id, patient?.visit_date]);
+  }, [patient?.id, patient?.visit_date, patient?.current_visit_id]);
 
   // Load patient-isolated P2 analysis from LocalStorage
   useEffect(() => {
     if (!patient?.id) return;
     const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-    const visitId = `visit_${patient.id}_${visitDateClean}`;
+    const visitId = patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
     const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
     try {
       const saved = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
@@ -339,7 +339,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const initial = runP2Analysis(patient);
       setP2AnalysisResult(initial);
     }
-  }, [patient?.id, patient?.visit_date]);
+  }, [patient?.id, patient?.visit_date, patient?.current_visit_id]);
 
   const executeP2Analysis = useCallback((assessmentOrAnswers?: ClinicalAssessment | Record<string, any>) => {
     if (!patient?.id) return null;
@@ -357,6 +357,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         asmt = currentClinicalAssessment;
       }
 
+      const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
+      const visitId = patient.current_visit_id || asmt?.visit_id || `visit_${patient.id}_${visitDateClean}`;
+      const assessmentId = asmt?.assessment_id;
+
       const result = runP2Analysis({
         patient,
         assessment: asmt,
@@ -366,11 +370,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         approvedByClinicianId: p2AnalysisResult?.report?.approvedBy,
         approvalTimestamp: p2AnalysisResult?.report?.approvalDate,
         clinicianNotes: p2AnalysisResult?.report?.clinicianNotes,
+        visitId,
+        assessmentId,
       });
 
       setP2AnalysisResult(result);
-      const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-      const visitId = `visit_${patient.id}_${visitDateClean}`;
       const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
       try {
         if (typeof window !== 'undefined') {
@@ -422,7 +426,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setP2AnalysisResult(updatedResult);
     const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-    const visitId = `visit_${patient.id}_${visitDateClean}`;
+    const visitId = patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
     const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
     try {
       if (typeof window !== 'undefined') {
@@ -461,9 +465,19 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     // Require complete safety screening: allergies, medication reconciliation, feeding route, population risks, restrictions
-    if (currentClinicalAssessment && !currentClinicalAssessment.completion.clinical_safety_completed) {
-      console.warn('Rejected P2 approval: Clinical safety assessment is incomplete. Critical safety screening must be resolved.');
-      return false;
+    if (currentClinicalAssessment) {
+      if (!currentClinicalAssessment.completion.clinical_safety_completed) {
+        console.warn('Rejected P2 approval: Clinical safety assessment is incomplete. Critical safety screening must be resolved.');
+        return false;
+      }
+      if (!currentClinicalAssessment.completion.allergies_reconciled) {
+        console.warn('Rejected P2 approval: Allergy history is not explicitly reconciled.');
+        return false;
+      }
+      if (!currentClinicalAssessment.completion.medication_reconciliation_completed) {
+        console.warn('Rejected P2 approval: Complete medication reconciliation (dose, frequency, timing, verification) is required.');
+        return false;
+      }
     }
 
     // Check if any prescribed nutrient restrictions are marked Yes but missing confirmed limits
@@ -514,7 +528,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // Report successful approval only after a valid clinician review and successful persistence.
     // If saving fails, return false and do not claim approval succeeded or mutate state.
     const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-    const visitId = `visit_${patient.id}_${visitDateClean}`;
+    const visitId = patient.current_visit_id || currentClinicalAssessment?.visit_id || `visit_${patient.id}_${visitDateClean}`;
     const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
     try {
       if (typeof window !== 'undefined' && window.localStorage) {

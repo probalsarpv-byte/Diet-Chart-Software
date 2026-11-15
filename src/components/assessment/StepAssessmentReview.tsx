@@ -180,15 +180,21 @@ export const StepAssessmentReview: React.FC = () => {
 
           <div className="text-xs space-y-1">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">{bn ? 'নিশ্চিত অ্যালার্জি:' : 'Confirmed Allergies:'}</span>
-              <span className="font-bold text-rose-500">
-                {patient.confirmed_allergies.length > 0 ? patient.confirmed_allergies.join(', ') : 'None'}
+              <span className="text-muted-foreground">{bn ? 'অ্যালার্জি রিকনসিলিয়েশন:' : 'Allergy Verification:'}</span>
+              <span className={`font-bold ${completionStatus.allergies_reconciled ? 'text-emerald-600' : 'text-amber-500'}`}>
+                {completionStatus.allergy_status === 'allergies_confirmed'
+                  ? (patient.confirmed_allergies.length > 0 ? patient.confirmed_allergies.join(', ') : 'Allergies documented')
+                  : completionStatus.allergy_status === 'none_confirmed'
+                  ? (bn ? 'কোনো অ্যালার্জি নেই (NKDA)' : 'No Known Allergies (NKDA)')
+                  : (bn ? 'অযাচাইকৃত' : 'Unverified / Pending')}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">{bn ? 'সক্রিয় ওষুধসমূহ:' : 'Active Medications:'}</span>
-              <span className="font-semibold text-foreground truncate max-w-[160px]">
-                {patient.active_medications.length > 0 ? patient.active_medications.join(', ') : 'None'}
+              <span className="text-muted-foreground">{bn ? 'ওষুধ রিকনসিলিয়েশন:' : 'Med Reconciliation:'}</span>
+              <span className={`font-semibold ${completionStatus.medication_reconciliation_completed ? 'text-emerald-600' : 'text-amber-500'} truncate max-w-[160px]`}>
+                {completionStatus.medication_reconciliation_completed
+                  ? (patient.active_medications.length > 0 ? `${patient.active_medications.length} active (Reconciled)` : 'No meds verified')
+                  : (bn ? 'অসম্পূর্ণ' : 'Incomplete details')}
               </span>
             </div>
             <div className="flex justify-between">

@@ -7,7 +7,12 @@
  * Laboratory intake, and P2 Clinical Intelligence handoff.
  */
 
-import { PopulationGroup } from './index';
+import {
+  PopulationGroup,
+  AllergyReconciliationRecord,
+  AllergyReconciliationStatus,
+  MedicationReconciliationSummary,
+} from './index';
 import { ClinicalPathway, FeedingStatus, DoshaProfile, AyurvedicAssessmentContext } from './clinical';
 
 // ── 1. Assessment Modes & Navigation Steps ──────────────────────────
@@ -416,7 +421,10 @@ export interface AssessmentCompletionStatus {
 
   // Comprehensive safety screening details
   allergies_reconciled?: boolean;
+  allergy_status?: AllergyReconciliationStatus;
   medication_reconciliation_completed?: boolean;
+  medication_status?: 'fully_reconciled' | 'partially_reconciled' | 'unreconciled' | 'no_medications';
+  unreconciled_medication_elements?: string[];
   feeding_route_verified?: boolean;
   population_risks_resolved?: boolean;
   prescribed_restrictions_clarified?: boolean;
@@ -432,6 +440,8 @@ export interface ClinicalAssessment {
   primary_population: PopulationGroup;
   clinical_pathways: ClinicalPathway[];
   feeding_status: FeedingStatus;
+  allergy_reconciliation?: AllergyReconciliationRecord;
+  medication_reconciliation?: MedicationReconciliationSummary;
   
   // Structured Sub-Assessments
   functional_answers: Record<string, any>;

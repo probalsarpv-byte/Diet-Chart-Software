@@ -44,6 +44,8 @@ export interface P2EngineInput {
   clinicianNotes?: string;
   analysisInvalidatedAt?: string;
   invalidationReason?: string;
+  visitId?: string;
+  assessmentId?: string;
 }
 
 // ─── Helper: Determine population applicability ───────────────────
@@ -630,7 +632,15 @@ export function runP2Analysis(
   }
 
   const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-  const visitId = `visit_${patient.id}_${visitDateClean}`;
+  const visitId =
+    ('visitId' in (inputOrPatient as any) && (inputOrPatient as P2EngineInput).visitId) ||
+    assessment?.visit_id ||
+    patient.current_visit_id ||
+    `visit_${patient.id}_${visitDateClean}`;
+  const assessmentId =
+    ('assessmentId' in (inputOrPatient as any) && (inputOrPatient as P2EngineInput).assessmentId) ||
+    assessment?.assessment_id ||
+    `asmt_${patient.id}_${visitId}`;
 
   const domainFindings = computeFunctionalMatrix(observations);
   const redFlags = detectRedFlags(observations, patient);
@@ -678,6 +688,7 @@ export function runP2Analysis(
     clinicianNotes,
     analysisInvalidatedAt,
     invalidationReason,
+    visitId,
   });
 
   const p3PlanningContext = constructP3PlanningContext({
@@ -698,6 +709,8 @@ export function runP2Analysis(
     approvalTimestamp,
     analysisInvalidatedAt,
     invalidationReason,
+    visitId,
+    assessmentId,
   });
 
   // UNIFIED P2-to-P3 SAFETY CONTRACT:

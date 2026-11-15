@@ -10,7 +10,7 @@ import React, {
   useRef,
   ReactNode
 } from "react";
-import { AssessmentData } from "../types/index";
+import { AssessmentData, AllergyReconciliationStatus, MedicationReconciliationOverallStatus } from "../types/index";
 import {
   registryVersion,
   AssessmentDomainId,
@@ -159,7 +159,7 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
   const { patient, updatePatient } = usePractice();
   const patientId = patient?.id || "default_patient";
   const visitDateClean = patient?.visit_date ? patient.visit_date.replace(/[^0-9]/g, '') : 'initial';
-  const visitId = patient?.id ? `visit_${patient.id}_${visitDateClean}` : 'current_visit';
+  const visitId = patient?.current_visit_id || (patient?.id ? `visit_${patient.id}_${visitDateClean}` : 'current_visit');
   const stableAssessmentId = useMemo(() => `asmt_${patientId}_${visitId}`, [patientId, visitId]);
 
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
@@ -508,12 +508,72 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
     );
 
     // 1. Allergies Reconciled Check
-    const allergiesReconciled = Array.isArray(patient?.confirmed_allergies);
+    // CLINICAL INTEGRITY RULE:
+    // A populated or empty array alone must not prove that allergy history was verified.
+    // Explicit states: 'allergies_confirmed', 'none_confirmed', 'unknown', 'not_assessed'.
+    // Only 'allergies_confirmed' (with list) or 'none_confirmed' (NKDA verified) satisfy reconciliation.
+    let allergyStatus: AllergyReconciliationStatus = 'not_assessed';
+    if (patient?.allergy_reconciliation?.status) {
+      allergyStatus = patient.allergy_reconciliation.status;
+    } else if (functionalAnswers['safety_allergy_reconciliation_status']) {
+      allergyStatus = functionalAnswers['safety_allergy_reconciliation_status'];
+    } else if (patient?.confirmed_allergies && patient.confirmed_allergies.length > 0) {
+      allergyStatus = 'allergies_confirmed';
+    }
+
+    const allergiesReconciled =
+      allergyStatus === 'allergies_confirmed' || allergyStatus === 'none_confirmed';
 
     // 2. Medication Reconciliation Check
+    // CLINICAL INTEGRITY RULE:
+    // Validate medication identity, dose, frequency, administration timing, verification status,
+    // and relevant safety information. Insulin and sulfonylurea screening alone must not satisfy
+    // the complete medication reconciliation gate.
+    const activeMeds = patient?.active_medications || [];
+    const medSummary = patient?.medication_reconciliation;
+    const unreconciledMedElements: string[] = [];
+
+    // Insulin & sulfonylurea screening required
+    if (functionalAnswers['safety_insulin_active'] === undefined) {
+      unreconciledMedElements.push('safety_insulin_active');
+    }
+    if (functionalAnswers['safety_sulfonylurea_active'] === undefined) {
+      unreconciledMedElements.push('safety_sulfonylurea_active');
+    }
+
+    let medicationStatus: MedicationReconciliationOverallStatus = 'not_reconciled';
+    if (medSummary?.overall_status) {
+      medicationStatus = medSummary.overall_status;
+    } else if (functionalAnswers['safety_medication_reconciliation_status']) {
+      medicationStatus = functionalAnswers['safety_medication_reconciliation_status'];
+    } else if (activeMeds.length === 0 && (functionalAnswers['safety_no_medications_confirmed'] === true || functionalAnswers['safety_no_medications_confirmed'] === 'yes')) {
+      medicationStatus = 'no_medications_confirmed';
+    }
+
+    let activeMedsReconciled = false;
+    if (activeMeds.length === 0) {
+      activeMedsReconciled = medicationStatus === 'no_medications_confirmed';
+      if (!activeMedsReconciled) {
+        unreconciledMedElements.push('no_medications_unconfirmed');
+      }
+    } else {
+      if (medSummary && medSummary.reconciled_medications && medSummary.reconciled_medications.length >= activeMeds.length) {
+        let allValid = true;
+        for (const med of medSummary.reconciled_medications) {
+          if (!med.name || !med.dose || !med.frequency || !med.timing || med.timing === 'unspecified' || !med.verification_status) {
+            allValid = false;
+            unreconciledMedElements.push(`med_${med.name || 'unnamed'}_missing_timing_or_dose`);
+          }
+        }
+        activeMedsReconciled = allValid && medicationStatus === 'complete';
+      } else {
+        activeMedsReconciled = false;
+        unreconciledMedElements.push('active_medications_missing_detailed_reconciliation');
+      }
+    }
+
     const medicationReconciliationCompleted =
-      functionalAnswers['safety_insulin_active'] !== undefined &&
-      functionalAnswers['safety_sulfonylurea_active'] !== undefined;
+      unreconciledMedElements.length === 0 && activeMedsReconciled;
 
     // 3. Feeding Route & Swallowing Safety
     const feedingRouteVerified =
@@ -580,10 +640,13 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       mandatory_sections_completed,
       laboratory_data_available: hasTestedLabs,
       requires_clinical_review: is_provisional || !clinicianSafetyAcknowledged,
-      unanswered_critical_questions: missingCritical,
+      unanswered_critical_questions: Array.from(new Set([...missingCritical, ...unreconciledMedElements])),
       is_provisional,
       allergies_reconciled: allergiesReconciled,
+      allergy_status: allergyStatus,
       medication_reconciliation_completed: medicationReconciliationCompleted,
+      medication_status: medicationStatus,
+      unreconciled_medication_elements: unreconciledMedElements,
       feeding_route_verified: feedingRouteVerified,
       population_risks_resolved: populationRisksResolved,
       prescribed_restrictions_clarified: prescribedRestrictionsClarified,
@@ -593,6 +656,9 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
     labEntries,
     clinicianSafetyAcknowledged,
     patient?.confirmed_allergies,
+    patient?.allergy_reconciliation,
+    patient?.active_medications,
+    patient?.medication_reconciliation,
     patient?.feeding_status?.route,
     patient?.population_group,
     populationData.pregnancy?.gestational_age_weeks
@@ -647,6 +713,19 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       },
       labs: labData,
       completion: completionStatus,
+      allergy_reconciliation: patient?.allergy_reconciliation || {
+        status: completionStatus.allergy_status || 'not_assessed',
+        reconciled_allergies: patient?.confirmed_allergies || [],
+        allergies_present: Boolean(patient?.confirmed_allergies && patient.confirmed_allergies.length > 0),
+        recorded_date: patient?.visit_date,
+      },
+      medication_reconciliation: patient?.medication_reconciliation || {
+        overall_status: completionStatus.medication_status || 'not_reconciled',
+        total_active_medications: patient?.active_medications?.length || 0,
+        reconciled_count: completionStatus.medication_reconciliation_completed ? (patient?.active_medications?.length || 0) : 0,
+        unreconciled_count: completionStatus.medication_reconciliation_completed ? 0 : (patient?.active_medications?.length || 0),
+        reconciled_medications: [],
+      },
       safety_warnings_acknowledged: clinicianSafetyAcknowledged
     };
   }, [

@@ -297,7 +297,18 @@ function getPatientPopulations(patient: PatientProfile): PopulationApplicability
   if (patient.population_group === 'geriatric') pops.push('geriatric');
   if (patient.population_group === 'adult_standard') pops.push('adult');
   if (patient.age < 18) pops.push('adolescent');
-  if (patient.selected_conditions.includes('hypertension_ckd')) pops.push('renal');
+  const isRenalPathway = Boolean(patient.clinical_pathways?.includes('renal'));
+  const confirmedConditions: string[] = (patient as any).confirmed_conditions || [];
+  const hasConfirmedCkd = confirmedConditions.some((c: string) => /^(ckd|chronic_kidney|end_stage_renal|renal_failure)$/i.test(c.trim()));
+  const patientLabs = patient.labs as any;
+  const hasAbnormalRenalLab = Boolean(
+    (patientLabs?.creatinine && patientLabs.creatinine > 1.5) ||
+    (patientLabs?.egfr && patientLabs.egfr < 60)
+  );
+
+  if (isRenalPathway || hasConfirmedCkd || hasAbnormalRenalLab) {
+    pops.push('renal');
+  }
   return pops;
 }
 

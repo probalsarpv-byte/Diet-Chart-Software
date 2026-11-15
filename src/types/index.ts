@@ -261,6 +261,61 @@ export interface GutAndAyurvedicProfile {
   digestive_fire_agni: AgniType;
 }
 
+// ─── Allergy Reconciliation Types ────────────────────────────────
+export type AllergyReconciliationStatus =
+  | 'allergies_confirmed'      // Specific allergies identified and confirmed
+  | 'none_confirmed'           // Explicitly verified zero known allergies
+  | 'unknown'                  // Patient / family uncertain
+  | 'not_assessed';            // Allergy history not yet evaluated
+
+export interface AllergyReconciliationRecord {
+  status: AllergyReconciliationStatus;
+  reconciled: boolean;
+  reconciled_by?: string;
+  reconciled_at?: string;
+  confirmed_allergies: string[];
+  clinical_notes?: string;
+}
+
+// ─── Complete Medication Reconciliation Types ────────────────────
+export type MedicationVerificationStatus =
+  | 'verified_active'
+  | 'discontinued'
+  | 'unverified'
+  | 'patient_reported';
+
+export interface ReconciledMedicationRecord {
+  id: string;
+  medication_name: string;
+  generic_name?: string;
+  dose: string;
+  frequency: string;
+  timing: string;
+  route?: string;
+  indication?: string;
+  verification_status: MedicationVerificationStatus;
+  verified_by?: string;
+  verified_at?: string;
+  relevant_safety_notes?: string[];
+  depletions?: string[];
+  food_interactions?: string[];
+}
+
+export type MedicationReconciliationOverallStatus =
+  | 'fully_reconciled'
+  | 'partially_reconciled'
+  | 'unreconciled'
+  | 'no_medications';
+
+export interface MedicationReconciliationSummary {
+  status: MedicationReconciliationOverallStatus;
+  reconciled_records: ReconciledMedicationRecord[];
+  verified_no_medications: boolean;
+  reconciled_by?: string;
+  reconciled_at?: string;
+  missing_elements: string[];
+}
+
 export interface PatientProfile {
   schema_version: number;
   id: string;
@@ -270,6 +325,7 @@ export interface PatientProfile {
   phone: string;
   email?: string;
   visit_date: string;
+  current_visit_id?: string;
   current_phase: 1 | 2 | 3 | 4;
   height_cm: number;
   weight_kg: number;
@@ -289,10 +345,13 @@ export interface PatientProfile {
   bmr_floor_strategy: BmrFloorStrategy;
   custom_calorie_floor?: number;
   confirmed_allergies: string[]; // e.g. ['peanut', 'egg', 'shrimp', 'gluten', 'dairy']
+  allergy_reconciliation?: AllergyReconciliationRecord;
   clinician_disallowed_foods: string[]; // food IDs or keywords explicitly forbidden by clinician
   clinician_disallowed_tags: string[]; // tags explicitly blocked by clinician
   selected_conditions: ClinicalConditionId[];
+  confirmed_conditions?: string[]; // verified clinical diagnoses from licensed provider
   active_medications: string[]; // medicine IDs or generic names
+  medication_reconciliation?: MedicationReconciliationSummary;
   gut_profile: GutAndAyurvedicProfile;
   labs: FunctionalLabs;
   calculated: CalculatedAnthropometrics;

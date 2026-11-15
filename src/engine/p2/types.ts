@@ -2,6 +2,7 @@
 // All types for the Root-Cause Intelligence system
 
 import { ClinicalAssessment } from '../../types/assessment';
+import { AllergyReconciliationRecord, MedicationReconciliationSummary } from '../../types';
 
 export type FunctionalDomain =
   | 'assimilation'
@@ -240,7 +241,9 @@ export interface NutritionalTarget {
   unit: string;
   rationale_en: string;
   rationale_bn: string;
-  source: 'anthropometric_calculation' | 'condition_adjustment' | 'lab_finding' | 'clinician_set';
+  source: 'anthropometric_calculation' | 'condition_adjustment' | 'lab_finding' | 'clinician_set' | 'estimated_target' | 'clinical_recommendation' | 'verified_clinical_prescription';
+  targetClassification?: 'estimated_target' | 'clinical_recommendation' | 'verified_clinical_prescription';
+  isVerifiedRequirement?: boolean;
 }
 
 // ─── Documented Prescribed Nutrient Restriction (Validated & Traceable) ───
@@ -427,6 +430,8 @@ export interface P3NutritionPlanningContext {
   invalidationReason?: string;
   
   confirmedAllergies: string[];
+  allergyReconciliation?: AllergyReconciliationRecord;
+  medicationReconciliation?: MedicationReconciliationSummary;
   feedingRoute: { route: string; oral_intake_permitted: boolean; requires_specialist_support: boolean };
   hardRestrictions: SafetyConstraint[];
   

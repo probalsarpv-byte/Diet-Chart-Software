@@ -42,6 +42,8 @@ export function buildClinicalHealthAssessmentReport(params: {
   clinicianNotes?: string;
   analysisInvalidatedAt?: string;
   invalidationReason?: string;
+  visitId?: string;
+  reportId?: string;
 }): ClinicalHealthAssessmentReport {
   const {
     patient,
@@ -64,11 +66,13 @@ export function buildClinicalHealthAssessmentReport(params: {
     clinicianNotes: explicitClinicianNotes,
     analysisInvalidatedAt,
     invalidationReason,
+    visitId: explicitVisitId,
+    reportId: explicitReportId,
   } = params;
 
   const visitDateClean = patient.visit_date.replace(/[^0-9]/g, '');
-  const visitId = `visit_${patient.id}_${visitDateClean}`;
-  const reportId = `rpt_${patient.id}_${visitDateClean}_v1`;
+  const visitId = explicitVisitId || patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
+  const reportId = explicitReportId || `rpt_${patient.id}_${visitId}_v1`;
 
   // Section A: Patient Info
   const sectionA_patientInfo = {
