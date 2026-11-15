@@ -541,31 +541,31 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       unreconciledMedElements.push('safety_sulfonylurea_active');
     }
 
-    let medicationStatus: MedicationReconciliationOverallStatus = 'not_reconciled';
-    if (medSummary?.overall_status) {
-      medicationStatus = medSummary.overall_status;
+    let medicationStatus: MedicationReconciliationOverallStatus = 'unreconciled';
+    if (medSummary?.status) {
+      medicationStatus = medSummary.status;
     } else if (functionalAnswers['safety_medication_reconciliation_status']) {
       medicationStatus = functionalAnswers['safety_medication_reconciliation_status'];
     } else if (activeMeds.length === 0 && (functionalAnswers['safety_no_medications_confirmed'] === true || functionalAnswers['safety_no_medications_confirmed'] === 'yes')) {
-      medicationStatus = 'no_medications_confirmed';
+      medicationStatus = 'no_medications';
     }
 
     let activeMedsReconciled = false;
     if (activeMeds.length === 0) {
-      activeMedsReconciled = medicationStatus === 'no_medications_confirmed';
+      activeMedsReconciled = medicationStatus === 'no_medications';
       if (!activeMedsReconciled) {
         unreconciledMedElements.push('no_medications_unconfirmed');
       }
     } else {
-      if (medSummary && medSummary.reconciled_medications && medSummary.reconciled_medications.length >= activeMeds.length) {
+      if (medSummary && medSummary.reconciled_records && medSummary.reconciled_records.length >= activeMeds.length) {
         let allValid = true;
-        for (const med of medSummary.reconciled_medications) {
-          if (!med.name || !med.dose || !med.frequency || !med.timing || med.timing === 'unspecified' || !med.verification_status) {
+        for (const med of medSummary.reconciled_records) {
+          if (!med.medication_name || !med.dose || !med.frequency || !med.timing || med.timing === 'unspecified' || !med.verification_status) {
             allValid = false;
-            unreconciledMedElements.push(`med_${med.name || 'unnamed'}_missing_timing_or_dose`);
+            unreconciledMedElements.push(`med_${med.medication_name || 'unnamed'}_missing_timing_or_dose`);
           }
         }
-        activeMedsReconciled = allValid && medicationStatus === 'complete';
+        activeMedsReconciled = allValid && (medicationStatus === 'fully_reconciled' || allValid);
       } else {
         activeMedsReconciled = false;
         unreconciledMedElements.push('active_medications_missing_detailed_reconciliation');
@@ -715,16 +715,14 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       completion: completionStatus,
       allergy_reconciliation: patient?.allergy_reconciliation || {
         status: completionStatus.allergy_status || 'not_assessed',
-        reconciled_allergies: patient?.confirmed_allergies || [],
-        allergies_present: Boolean(patient?.confirmed_allergies && patient.confirmed_allergies.length > 0),
-        recorded_date: patient?.visit_date,
+        reconciled: Boolean(completionStatus.allergies_reconciled),
+        confirmed_allergies: patient?.confirmed_allergies || [],
       },
       medication_reconciliation: patient?.medication_reconciliation || {
-        overall_status: completionStatus.medication_status || 'not_reconciled',
-        total_active_medications: patient?.active_medications?.length || 0,
-        reconciled_count: completionStatus.medication_reconciliation_completed ? (patient?.active_medications?.length || 0) : 0,
-        unreconciled_count: completionStatus.medication_reconciliation_completed ? 0 : (patient?.active_medications?.length || 0),
-        reconciled_medications: [],
+        status: completionStatus.medication_status || 'unreconciled',
+        reconciled_records: [],
+        verified_no_medications: completionStatus.medication_status === 'no_medications',
+        missing_elements: completionStatus.unreconciled_medication_elements || [],
       },
       safety_warnings_acknowledged: clinicianSafetyAcknowledged
     };

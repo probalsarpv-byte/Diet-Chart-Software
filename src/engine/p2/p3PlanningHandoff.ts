@@ -145,27 +145,26 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
       status: patient.confirmed_allergies && patient.confirmed_allergies.length > 0
         ? 'allergies_confirmed'
         : 'not_assessed',
-      reconciled_allergies: patient.confirmed_allergies || [],
-      allergies_present: Boolean(patient.confirmed_allergies && patient.confirmed_allergies.length > 0),
-      recorded_date: patient.visit_date,
+      reconciled: Boolean(patient.confirmed_allergies && patient.confirmed_allergies.length > 0),
+      confirmed_allergies: patient.confirmed_allergies || [],
     };
 
   const medicationReconciliation: MedicationReconciliationSummary =
     patient.medication_reconciliation ||
     assessment?.medication_reconciliation || {
-      overall_status: patient.active_medications && patient.active_medications.length > 0 ? 'partially_reconciled' : 'not_reconciled',
-      total_active_medications: patient.active_medications ? patient.active_medications.length : 0,
-      reconciled_count: 0,
-      unreconciled_count: patient.active_medications ? patient.active_medications.length : 0,
-      reconciled_medications: (patient.active_medications || []).map(m => ({
+      status: patient.active_medications && patient.active_medications.length > 0 ? 'unreconciled' : 'unreconciled',
+      verified_no_medications: false,
+      reconciled_records: (patient.active_medications || []).map(m => ({
         id: `med_${m}`,
-        name: m,
+        medication_name: m,
         dose: '',
         frequency: '',
-        timing: 'unspecified' as const,
-        verification_status: 'patient_reported_unverified' as const,
-        is_reconciled: false,
+        timing: 'unspecified',
+        verification_status: 'unverified' as const,
       })),
+      missing_elements: (patient.active_medications && patient.active_medications.length > 0)
+        ? ['dose', 'frequency', 'timing', 'verification_status']
+        : ['unreconciled'],
     };
 
   // ─── 1. Feeding Route & Hospital Safety Evaluation ───────────────

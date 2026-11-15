@@ -963,6 +963,304 @@ console.log("\nGate 12: P2 Last Clinical Safety Fix Regression Suite");
   );
 }
 
+// =====================================================================
+// GATE 13: P2 FINAL INTEGRITY PATCH VALIDATION
+// =====================================================================
+console.log("\nGate 13: P2 Final Integrity Patch Validation");
+{
+  // 13.1: Separation of hypertension-only cases from suspected and confirmed renal disease
+  const htOnlyPatient = makeSyntheticPatient({
+    selected_conditions: ['hypertension_ckd'], // Legacy code used for hypertension
+    clinical_pathways: ['cardiovascular'], // NOT renal!
+    labs: { creatinine: 0.9, uric_acid: 4.8 } as any, // completely normal renal labs
+    ...({ confirmed_conditions: [] } as any),
+  });
+  const res13_1 = runP2Analysis(htOnlyPatient, {});
+  assert(
+    res13_1.p3PlanningContext.hasSuspectedRenalAbnormality === false,
+    "13.1: Hypertension patient with normal labs has hasSuspectedRenalAbnormality === false (never implied by hypertension_ckd alone)"
+  );
+  assert(
+    res13_1.p3PlanningContext.hasConfirmedCkdDiagnosis === false,
+    "13.1: Hypertension patient has hasConfirmedCkdDiagnosis === false"
+  );
+  // Verify renal lab panel recommendation is NOT elevated to high_priority for hypertension alone
+  const renalLabRec = res13_1.labRecommendations.find(l => l.id === 'lab_renal_panel');
+  assert(
+    !renalLabRec || renalLabRec.priority !== 'high_priority',
+    "13.1: Renal lab panel is not elevated to high_priority for hypertension-only case"
+  );
+
+  // Compare with actual renal patient (creatinine 1.8)
+  const abnormalRenalPatient = makeSyntheticPatient({
+    selected_conditions: ['hypertension_ckd'],
+    labs: { creatinine: 1.8 } as any,
+  });
+  const res13_1_renal = runP2Analysis(abnormalRenalPatient, {});
+  assert(
+    res13_1_renal.p3PlanningContext.hasSuspectedRenalAbnormality === true,
+    "13.1: Abnormal creatinine (1.8 mg/dL) correctly triggers hasSuspectedRenalAbnormality === true"
+  );
+
+  // 13.2: Explicit allergy reconciliation states
+  // Empty array [] alone must NOT satisfy allergy reconciliation without explicit 'none_confirmed' status
+  const unassessedAllergyPatient = makeSyntheticPatient({
+    confirmed_allergies: [],
+    allergy_reconciliation: {
+      status: 'not_assessed',
+      reconciled: false,
+      confirmed_allergies: [],
+    },
+  });
+  const res13_2_unassessed = runP2Analysis(unassessedAllergyPatient, {});
+  assert(
+    res13_2_unassessed.p3PlanningContext.allergyReconciliation?.status === 'not_assessed' &&
+    res13_2_unassessed.p3PlanningContext.allergyReconciliation?.reconciled === false,
+    "13.2: Empty allergy array with 'not_assessed' status is NOT considered reconciled"
+  );
+
+  const unknownAllergyPatient = makeSyntheticPatient({
+    confirmed_allergies: [],
+    allergy_reconciliation: {
+      status: 'unknown',
+      reconciled: false,
+      confirmed_allergies: [],
+    },
+  });
+  const res13_2_unknown = runP2Analysis(unknownAllergyPatient, {});
+  assert(
+    res13_2_unknown.p3PlanningContext.allergyReconciliation?.status === 'unknown' &&
+    res13_2_unknown.p3PlanningContext.allergyReconciliation?.reconciled === false,
+    "13.2: 'unknown' allergy status is NOT considered reconciled"
+  );
+
+  const nkdaPatient = makeSyntheticPatient({
+    confirmed_allergies: [],
+    allergy_reconciliation: {
+      status: 'none_confirmed',
+      reconciled: true,
+      confirmed_allergies: [],
+    },
+  });
+  const res13_2_nkda = runP2Analysis(nkdaPatient, {});
+  assert(
+    res13_2_nkda.p3PlanningContext.allergyReconciliation?.status === 'none_confirmed' &&
+    res13_2_nkda.p3PlanningContext.allergyReconciliation?.reconciled === true,
+    "13.2: 'none_confirmed' (NKDA verified) is successfully reconciled"
+  );
+
+  const confirmedAllergyPatient = makeSyntheticPatient({
+    confirmed_allergies: ['peanut', 'shrimp'],
+    allergy_reconciliation: {
+      status: 'allergies_confirmed',
+      reconciled: true,
+      confirmed_allergies: ['peanut', 'shrimp'],
+    },
+  });
+  const res13_2_confirmed = runP2Analysis(confirmedAllergyPatient, {});
+  assert(
+    res13_2_confirmed.p3PlanningContext.allergyReconciliation?.status === 'allergies_confirmed' &&
+    res13_2_confirmed.p3PlanningContext.allergyReconciliation?.reconciled === true &&
+    res13_2_confirmed.p3PlanningContext.hardRestrictions.some(r => r.type === 'confirmed_allergy'),
+    "13.2: 'allergies_confirmed' is successfully reconciled and generates hard exclusion constraints"
+  );
+
+  // 13.3: Complete medication reconciliation
+  // Active medications without complete dose/frequency/timing must fail complete reconciliation
+  const incompleteMedPatient = makeSyntheticPatient({
+    active_medications: ['Metformin', 'Amlodipine'],
+    medication_reconciliation: {
+      status: 'unreconciled',
+      verified_no_medications: false,
+      reconciled_records: [
+        {
+          id: 'med_1',
+          medication_name: 'Metformin',
+          dose: '', // missing dose!
+          frequency: '', // missing freq!
+          timing: 'unspecified',
+          verification_status: 'unverified',
+        },
+      ],
+      missing_elements: ['dose', 'frequency', 'timing', 'Amlodipine_record_missing'],
+    },
+  });
+  const res13_3_incomplete = runP2Analysis(incompleteMedPatient, {
+    safety_insulin_active: 'no',
+    safety_sulfonylurea_active: 'no',
+  });
+  assert(
+    res13_3_incomplete.p3PlanningContext.medicationReconciliation?.status === 'unreconciled' &&
+    res13_3_incomplete.p3PlanningContext.medicationReconciliation?.missing_elements.length > 0,
+    "13.3: Active meds missing dose/timing fail reconciliation even when insulin/sulfonylurea screening is answered"
+  );
+
+  // Complete medication reconciliation
+  const completeMedPatient = makeSyntheticPatient({
+    active_medications: ['Metformin', 'Amlodipine'],
+    medication_reconciliation: {
+      status: 'fully_reconciled',
+      verified_no_medications: false,
+      reconciled_records: [
+        {
+          id: 'med_1',
+          medication_name: 'Metformin',
+          dose: '500mg',
+          frequency: 'twice daily',
+          timing: 'with_meal',
+          verification_status: 'verified_active',
+        },
+        {
+          id: 'med_2',
+          medication_name: 'Amlodipine',
+          dose: '5mg',
+          frequency: 'once daily',
+          timing: 'morning',
+          verification_status: 'verified_active',
+        },
+      ],
+      missing_elements: [],
+    },
+  });
+  const res13_3_complete = runP2Analysis(completeMedPatient, {});
+  assert(
+    res13_3_complete.p3PlanningContext.medicationReconciliation?.status === 'fully_reconciled' &&
+    res13_3_complete.p3PlanningContext.medicationReconciliation?.reconciled_records.length === 2,
+    "13.3: Fully reconciled active medications have complete dose, frequency, timing, and verification status"
+  );
+
+  // 13.4: Stable unique visit IDs independent of visit dates (same patient, same date, 2 consultations)
+  const patientVisitMorning = makeSyntheticPatient({
+    id: 'pat_same_day_001',
+    visit_date: '2026-11-15',
+    current_visit_id: 'visit_pat_same_day_001_morning_session',
+  } as any);
+
+  const patientVisitAfternoon = makeSyntheticPatient({
+    id: 'pat_same_day_001',
+    visit_date: '2026-11-15',
+    current_visit_id: 'visit_pat_same_day_001_afternoon_session',
+  } as any);
+
+  const res13_4_morning = runP2Analysis(patientVisitMorning, {});
+  const res13_4_afternoon = runP2Analysis(patientVisitAfternoon, {});
+
+  assert(
+    res13_4_morning.visitId === 'visit_pat_same_day_001_morning_session',
+    "13.4: Morning session receives its own stable visit ID"
+  );
+  assert(
+    res13_4_afternoon.visitId === 'visit_pat_same_day_001_afternoon_session',
+    "13.4: Afternoon session receives its own stable visit ID"
+  );
+  assert(
+    res13_4_morning.visitId !== res13_4_afternoon.visitId,
+    "13.4: Two consultations for the same patient on the same date have distinct unique visit IDs"
+  );
+  assert(
+    res13_4_morning.report.visitId !== res13_4_afternoon.report.visitId,
+    "13.4: Reports have distinct visit IDs and do not collide"
+  );
+  assert(
+    res13_4_morning.p3PlanningContext.visitId !== res13_4_afternoon.p3PlanningContext.visitId,
+    "13.4: P3 planning handoff contracts have distinct visit IDs"
+  );
+  // Verify localStorage keys would be distinct
+  const keyMorning = `shuddho_p2_analysis_${patientVisitMorning.id}_${res13_4_morning.visitId}`;
+  const keyAfternoon = `shuddho_p2_analysis_${patientVisitAfternoon.id}_${res13_4_afternoon.visitId}`;
+  assert(
+    keyMorning !== keyAfternoon,
+    "13.4: Distinct storage keys prevent collision or state overwrite for same-day multiple visits"
+  );
+
+  // 13.5: Energy and protein targets for special populations
+  // 13.5a: Pregnancy without verified gestational age / trimester
+  const pregnantUnverifiedPatient = makeSyntheticPatient({
+    population_group: 'pregnancy',
+    weight_kg: 60,
+    height_cm: 160,
+    age: 28,
+    trimester: undefined, // UNVERIFIED!
+  });
+  const res13_5_preg_unverified = runP2Analysis(pregnantUnverifiedPatient, {});
+  // Calculate baseline TDEE for 60kg, 160cm, 28y female sedentary
+  // bmr = 10*60 + 6.25*160 - 5*28 - 161 = 600 + 1000 - 140 - 161 = 1299
+  // sedentary tdee = round(1299 * 1.2) = 1559
+  assert(
+    res13_5_preg_unverified.p3PlanningContext.energyTargetCalories === 1559,
+    "13.5a: Pregnancy with unverified gestational age does NOT add fabricated +340 kcal trimester 2 surplus"
+  );
+
+  // 13.5b: Pregnancy with verified Trimester 2
+  const pregnantTri2Patient = makeSyntheticPatient({
+    population_group: 'pregnancy',
+    weight_kg: 60,
+    height_cm: 160,
+    age: 28,
+    trimester: 2, // VERIFIED!
+  });
+  const res13_5_preg_tri2 = runP2Analysis(pregnantTri2Patient, {});
+  assert(
+    res13_5_preg_tri2.p3PlanningContext.energyTargetCalories === 1559 + 340,
+    "13.5b: Pregnancy with verified Trimester 2 correctly adds +340 kcal surplus"
+  );
+
+  // 13.5c: Oncology with normal BMI (no universal surplus)
+  const oncologyNormalBmiPatient = makeSyntheticPatient({
+    clinical_pathways: ['oncology'],
+    weight_kg: 65,
+    height_cm: 165,
+    age: 50,
+    calculated: { bmi: 23.9 } as any, // Normal weight!
+  });
+  const res13_5_onco_normal = runP2Analysis(oncologyNormalBmiPatient, {});
+  // female 65kg, 165cm, 50y: bmr = 650 + 1031.25 - 250 - 161 = 1270.25 -> 1270; tdee = round(1270 * 1.2) = 1524
+  assert(
+    res13_5_onco_normal.p3PlanningContext.energyTargetCalories === 1524,
+    "13.5c: Oncology patient with normal BMI does NOT receive universal +300 kcal surplus"
+  );
+
+  // 13.5d: Oncology with underweight (BMI < 18.5) receives restoration surplus
+  const oncologyUnderweightPatient = makeSyntheticPatient({
+    clinical_pathways: ['oncology'],
+    weight_kg: 42,
+    height_cm: 165,
+    age: 50,
+    calculated: { bmi: 15.4 } as any, // Underweight / cachexia
+  });
+  const res13_5_onco_underweight = runP2Analysis(oncologyUnderweightPatient, {});
+  // bmr = 420 + 1031.25 - 250 - 161 = 1040.25 -> 1040; tdee = round(1040 * 1.2) = 1248 + 300 = 1548
+  assert(
+    res13_5_onco_underweight.p3PlanningContext.energyTargetCalories === 1248 + 300,
+    "13.5d: Oncology patient with underweight (BMI < 18.5) receives +300 kcal restoration surplus"
+  );
+
+  // 13.5e: Target classifications: estimated vs verified clinical prescriptions
+  const targetEnergy = res13_5_onco_normal.p3PlanningContext.nutritionalTargets.find(t => t.nutrient === 'energy');
+  assert(
+    targetEnergy?.targetClassification === 'estimated_target' && targetEnergy?.isVerifiedRequirement === false,
+    "13.5e: Energy target is classified as 'estimated_target' and NOT a verified requirement"
+  );
+
+  const prescribedPatient = makeSyntheticPatient({
+    prescribed_protein_cap_g: 50,
+    prescribed_sodium_limit_mg: 1800,
+  } as any);
+  const res13_5_rx = runP2Analysis(prescribedPatient, {});
+  const targetRxProtein = res13_5_rx.p3PlanningContext.nutritionalTargets.find(t => t.nutrient === 'protein');
+  const targetRxSodium = res13_5_rx.p3PlanningContext.nutritionalTargets.find(t => t.nutrient === 'sodium');
+  assert(
+    targetRxProtein?.targetClassification === 'verified_clinical_prescription' &&
+    targetRxProtein?.isVerifiedRequirement === true,
+    "13.5e: Prescribed protein cap is classified as 'verified_clinical_prescription' with isVerifiedRequirement === true"
+  );
+  assert(
+    targetRxSodium?.targetClassification === 'verified_clinical_prescription' &&
+    targetRxSodium?.isVerifiedRequirement === true,
+    "13.5e: Prescribed sodium limit is classified as 'verified_clinical_prescription' with isVerifiedRequirement === true"
+  );
+}
+
 console.log("\n=====================================================================");
 console.log(`FINAL INTEGRATION GATE RESULTS: ${passed} PASSED, ${failed} FAILED`);
 console.log("=====================================================================");
@@ -970,5 +1268,5 @@ console.log("===================================================================
 if (failed > 0) {
   process.exit(1);
 } else {
-  console.log("ALL 12 P2 FINAL CORRECTION & INTEGRATION GATES VERIFIED CLEANLY!");
+  console.log("ALL 13 P2 FINAL CORRECTION & INTEGRATION GATES VERIFIED CLEANLY!");
 }
