@@ -37,6 +37,7 @@ import { buildAutoScaledDietChart, getCookedDisplay, generateExchangesForFood } 
 import { advanceToNextPhase, recordFollowUpVisit, TransitionOptions } from '@/engine/phaseProgression';
 import { runP2Analysis } from '@/engine/p2';
 import { P2AnalysisResult, ClinicianDecision } from '@/engine/p2/types';
+import { ClinicalAssessment } from '@/types/assessment';
 
 const CURRENT_SCHEMA_VERSION = 2;
 
@@ -112,9 +113,11 @@ export interface PracticeContextType {
   // Phase P2 Clinical Intelligence
   p2AnalysisResult: P2AnalysisResult | null;
   isAnalyzingP2: boolean;
-  executeP2Analysis: (answers?: Record<string, any>) => P2AnalysisResult | null;
+  currentClinicalAssessment: ClinicalAssessment | null;
+  executeP2Analysis: (assessmentOrAnswers?: ClinicalAssessment | Record<string, any>) => P2AnalysisResult | null;
   updateHypothesisDecision: (hypothesisId: string, decision: ClinicianDecision, note?: string) => void;
-  approveP2Analysis: (clinicianId: string, notes?: string) => void;
+  approveP2Analysis: (clinicianId: string, notes?: string) => boolean;
+  invalidateP2Approval: (reason?: string) => void;
 }
 
 const PracticeContext = createContext<PracticeContextType | undefined>(undefined);
@@ -269,7 +272,53 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Phase P2 Clinical Intelligence State
   const [p2AnalysisResult, setP2AnalysisResult] = useState<P2AnalysisResult | null>(null);
+  const [currentClinicalAssessment, setCurrentClinicalAssessment] = useState<ClinicalAssessment | null>(null);
   const [isAnalyzingP2, setIsAnalyzingP2] = useState<boolean>(false);
+
+  // Invalidate P2 overall approval when underlying clinical data changes
+  const invalidateP2Approval = useCallback((reason = 'Patient clinical data modified after sign-off') => {
+    setP2AnalysisResult(prev => {
+      if (!prev || !prev.report?.isApproved) return prev;
+      const invalidTimestamp = new Date().toISOString();
+      const updated: P2AnalysisResult = {
+        ...prev,
+        analysisInvalidatedAt: invalidTimestamp,
+        report: {
+          ...prev.report,
+          isApproved: false,
+          approvedBy: undefined,
+          approvalDate: undefined,
+          analysisInvalidatedAt: invalidTimestamp,
+          invalidationReason: reason,
+          sectionN_clinicianReview: {
+            ...prev.report.sectionN_clinicianReview,
+            status: 'pending',
+            notes: `Prior approval invalidated on ${invalidTimestamp}: ${reason}. Re-evaluation required.`,
+          },
+        },
+        p3PlanningContext: {
+          ...prev.p3PlanningContext,
+          clinicalAssessmentApproved: false,
+          approvedByClinicianId: undefined,
+          approvalTimestamp: undefined,
+          analysisInvalidatedAt: invalidTimestamp,
+          invalidationReason: reason,
+        },
+      };
+
+      const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
+      const visitId = `visit_${patient.id}_${visitDateClean}`;
+      const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(storageKey, JSON.stringify(updated));
+        }
+      } catch (err) {
+        console.warn('Failed to persist invalidated P2 analysis:', err);
+      }
+      return updated;
+    });
+  }, [patient?.id, patient?.visit_date]);
 
   // Load patient-isolated P2 analysis from LocalStorage
   useEffect(() => {
@@ -292,11 +341,33 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [patient?.id, patient?.visit_date]);
 
-  const executeP2Analysis = useCallback((answers?: Record<string, any>) => {
+  const executeP2Analysis = useCallback((assessmentOrAnswers?: ClinicalAssessment | Record<string, any>) => {
     if (!patient?.id) return null;
     setIsAnalyzingP2(true);
     try {
-      const result = runP2Analysis(patient, answers, p2AnalysisResult?.approvalHistory);
+      let asmt: ClinicalAssessment | undefined = undefined;
+      let answers: Record<string, any> | undefined = undefined;
+
+      if (assessmentOrAnswers && 'questionnaire_version' in assessmentOrAnswers) {
+        asmt = assessmentOrAnswers as ClinicalAssessment;
+        setCurrentClinicalAssessment(asmt);
+      } else if (assessmentOrAnswers) {
+        answers = assessmentOrAnswers as Record<string, any>;
+      } else if (currentClinicalAssessment) {
+        asmt = currentClinicalAssessment;
+      }
+
+      const result = runP2Analysis({
+        patient,
+        assessment: asmt,
+        assessmentAnswers: answers,
+        previousApprovals: p2AnalysisResult?.approvalHistory,
+        isOverallApproved: Boolean(p2AnalysisResult?.report?.isApproved && !p2AnalysisResult?.analysisInvalidatedAt),
+        approvedByClinicianId: p2AnalysisResult?.report?.approvedBy,
+        approvalTimestamp: p2AnalysisResult?.report?.approvalDate,
+        clinicianNotes: p2AnalysisResult?.report?.clinicianNotes,
+      });
+
       setP2AnalysisResult(result);
       const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
       const visitId = `visit_${patient.id}_${visitDateClean}`;
@@ -312,7 +383,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } finally {
       setIsAnalyzingP2(false);
     }
-  }, [patient, p2AnalysisResult?.approvalHistory]);
+  }, [patient, p2AnalysisResult, currentClinicalAssessment]);
 
   const updateHypothesisDecision = useCallback((hypothesisId: string, decision: ClinicianDecision, note?: string) => {
     if (!p2AnalysisResult) return;
@@ -362,19 +433,41 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [patient, p2AnalysisResult]);
 
-  const approveP2Analysis = useCallback((clinicianId: string, notes?: string) => {
-    if (!p2AnalysisResult) return;
+  const approveP2Analysis = useCallback((clinicianId: string, notes?: string): boolean => {
+    if (!p2AnalysisResult) return false;
+
+    // Strict validation of clinician identity: prohibit generic placeholders
+    const trimmedId = (clinicianId || '').trim();
+    const isPlaceholder = [
+      'clinician',
+      'dr. clinical nutritionist',
+      'doctor',
+      'nutritionist',
+      'admin',
+      'user',
+      'test',
+      'guest'
+    ].includes(trimmedId.toLowerCase());
+
+    if (!trimmedId || trimmedId.length < 3 || isPlaceholder) {
+      console.warn('Rejected P2 approval: Clinician ID must be a non-placeholder registered practitioner identifier.');
+      return false;
+    }
+
+    const timestamp = new Date().toISOString();
     const updatedReport = {
       ...p2AnalysisResult.report,
       isApproved: true,
-      approvedBy: clinicianId,
-      approvalDate: new Date().toISOString(),
+      approvedBy: trimmedId,
+      approvalDate: timestamp,
       clinicianNotes: notes || p2AnalysisResult.report.clinicianNotes,
+      analysisInvalidatedAt: undefined,
+      invalidationReason: undefined,
       sectionN_clinicianReview: {
         ...p2AnalysisResult.report.sectionN_clinicianReview,
         status: 'fully_approved' as const,
-        reviewingNutritionist: clinicianId,
-        reviewDate: new Date().toISOString().split('T')[0],
+        reviewingNutritionist: trimmedId,
+        reviewDate: timestamp.split('T')[0],
         notes: notes || p2AnalysisResult.report.sectionN_clinicianReview.notes,
       },
     };
@@ -382,12 +475,15 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const updatedP3Context = {
       ...p2AnalysisResult.p3PlanningContext,
       clinicalAssessmentApproved: true,
-      approvedByClinicianId: clinicianId,
-      approvalTimestamp: new Date().toISOString(),
+      approvedByClinicianId: trimmedId,
+      approvalTimestamp: timestamp,
+      analysisInvalidatedAt: undefined,
+      invalidationReason: undefined,
     };
 
     const updatedResult: P2AnalysisResult = {
       ...p2AnalysisResult,
+      analysisInvalidatedAt: undefined,
       report: updatedReport,
       p3PlanningContext: updatedP3Context,
     };
@@ -403,6 +499,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } catch (err) {
       console.warn('Failed to persist approved P2 analysis:', err);
     }
+    return true;
   }, [patient, p2AnalysisResult]);
 
   // Pre-index foods in a lookup map for optimal performance
@@ -457,6 +554,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const updateFeedingStatus = useCallback((statusUpdates: Partial<FeedingStatus>) => {
+    invalidateP2Approval('Feeding status modified');
     setPatient(prev => ({
       ...prev,
       feeding_status: {
@@ -468,14 +566,15 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         ...statusUpdates
       }
     }));
-  }, []);
+  }, [invalidateP2Approval]);
 
   const updateClinicalPathways = useCallback((pathways: ClinicalPathway[]) => {
+    invalidateP2Approval('Clinical pathways modified');
     setPatient(prev => ({
       ...prev,
       clinical_pathways: pathways
     }));
-  }, []);
+  }, [invalidateP2Approval]);
 
   // 1. Reactive Traffic Light Conflict Resolver
   const trafficLight = useMemo(() => {
@@ -604,8 +703,9 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, []);
 
-  // Patient Updates with Assessment Dirty State Tracking
+  // Patient Updates with Assessment Dirty State Tracking & P2 Approval Invalidation
   const updatePatient = useCallback((updates: Partial<PatientProfile>) => {
+    invalidateP2Approval('Patient demographics or anthropometrics modified');
     setPatient(prev => {
       const merged = applyCalculations({ ...prev, ...updates });
       return {
@@ -614,9 +714,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         assessment_last_updated_at: new Date().toISOString()
       };
     });
-  }, [applyCalculations]);
+  }, [applyCalculations, invalidateP2Approval]);
 
   const updateLabs = useCallback((labUpdates: Partial<PatientProfile['labs']>) => {
+    invalidateP2Approval('Laboratory biomarkers updated');
     setPatient(prev => {
       const merged = applyCalculations({
         ...prev,
@@ -628,18 +729,20 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         assessment_last_updated_at: new Date().toISOString()
       };
     });
-  }, [applyCalculations]);
+  }, [applyCalculations, invalidateP2Approval]);
 
   const updateGutProfile = useCallback((gutUpdates: Partial<PatientProfile['gut_profile']>) => {
+    invalidateP2Approval('Gastrointestinal profile modified');
     setPatient(prev => ({
       ...prev,
       gut_profile: { ...prev.gut_profile, ...gutUpdates },
       is_diet_plan_dirty: true,
       assessment_last_updated_at: new Date().toISOString()
     }));
-  }, []);
+  }, [invalidateP2Approval]);
 
   const toggleCondition = useCallback((id: ClinicalConditionId) => {
+    invalidateP2Approval(`Clinical condition toggled: ${id}`);
     setPatient(prev => {
       const exists = prev.selected_conditions.includes(id);
       const updatedConditions = exists 
@@ -652,9 +755,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         assessment_last_updated_at: new Date().toISOString()
       };
     });
-  }, [applyCalculations]);
+  }, [applyCalculations, invalidateP2Approval]);
 
   const toggleMedication = useCallback((id: string) => {
+    invalidateP2Approval(`Active medication changed: ${id}`);
     setPatient(prev => {
       const exists = prev.active_medications.includes(id);
       const updated = exists 
@@ -667,11 +771,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         assessment_last_updated_at: new Date().toISOString()
       };
     });
-  }, []);
+  }, [invalidateP2Approval]);
 
   const addConfirmedAllergy = useCallback((allergy: string) => {
     const trimmed = allergy.trim().toLowerCase();
     if (!trimmed) return;
+    invalidateP2Approval(`Confirmed allergy added: ${trimmed}`);
     setPatient(prev => {
       if (prev.confirmed_allergies.includes(trimmed)) return prev;
       return {
@@ -681,20 +786,22 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         assessment_last_updated_at: new Date().toISOString()
       };
     });
-  }, []);
+  }, [invalidateP2Approval]);
 
   const removeConfirmedAllergy = useCallback((allergy: string) => {
+    invalidateP2Approval(`Confirmed allergy removed: ${allergy}`);
     setPatient(prev => ({
       ...prev,
       confirmed_allergies: prev.confirmed_allergies.filter(a => a !== allergy),
       is_diet_plan_dirty: true,
       assessment_last_updated_at: new Date().toISOString()
     }));
-  }, []);
+  }, [invalidateP2Approval]);
 
   const addClinicianDisallowedFood = useCallback((foodIdOrKeyword: string) => {
     const trimmed = foodIdOrKeyword.trim().toLowerCase();
     if (!trimmed) return;
+    invalidateP2Approval(`Disallowed food added: ${trimmed}`);
     setPatient(prev => {
       if (prev.clinician_disallowed_foods.includes(trimmed)) return prev;
       return {
@@ -704,16 +811,17 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         assessment_last_updated_at: new Date().toISOString()
       };
     });
-  }, []);
+  }, [invalidateP2Approval]);
 
   const removeClinicianDisallowedFood = useCallback((foodIdOrKeyword: string) => {
+    invalidateP2Approval(`Disallowed food removed: ${foodIdOrKeyword}`);
     setPatient(prev => ({
       ...prev,
       clinician_disallowed_foods: prev.clinician_disallowed_foods.filter(f => f !== foodIdOrKeyword),
       is_diet_plan_dirty: true,
       assessment_last_updated_at: new Date().toISOString()
     }));
-  }, []);
+  }, [invalidateP2Approval]);
 
   // Candidate Supplement Approval Actions
   const approveCandidateSupplement = useCallback((id: string, dose?: string, notes?: string) => {
@@ -1211,9 +1319,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         createNewPatient,
         p2AnalysisResult,
         isAnalyzingP2,
+        currentClinicalAssessment,
         executeP2Analysis,
         updateHypothesisDecision,
-        approveP2Analysis
+        approveP2Analysis,
+        invalidateP2Approval
       }}
     >
       {children}

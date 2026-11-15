@@ -209,7 +209,10 @@ console.log("\n5. Dietary Pattern & PRAL Acid Load Analysis");
   assert(dp.plantFoodGroupDiversityScore >= 10, "Accurately scores plant food diversity (>= 10 out of 12 groups)");
   assert(dp.plantDiversityRank === 'high', "Classifies plant diversity as 'high'");
   assert(dp.confirmedZeroCount >= 1, "Differentiates confirmed zero intake from missing responses");
-  assert(typeof dp.estimatedPRALScore === 'number', "Calculates numerical PRAL score in mEq/day");
+  assert(
+    dp.pralStatus === 'insufficient_quantitative_data' && (dp.estimatedPRALScore === null || dp.estimatedPRALScore === undefined),
+    "Refuses to generate fabricated numerical PRAL score without quantified nutrient gram data (returns insufficient_quantitative_data)"
+  );
   assert(
     dp.pralCaveat.includes('CLINICAL CAVEAT') && dp.pralCaveat.includes('systemic arterial blood pH'),
     "Includes mandatory caveat stating PRAL reflects renal mineral solute load, not systemic blood pH"
@@ -267,6 +270,7 @@ console.log("\n8. Phase P3 Planning Handoff Contract");
 {
   const patient = makeSyntheticPatient({
     selected_conditions: ['t2d_ir', 'hypertension_ckd'],
+    clinical_pathways: ['renal'],
     confirmed_allergies: ['peanut'],
   });
   const result = runP2Analysis(patient, {});

@@ -20,8 +20,9 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
   onApprove,
 }) => {
   const [reportMode, setReportMode] = useState<'comprehensive' | 'quick'>('comprehensive');
-  const [clinicianId, setClinicianId] = useState('Dr. Clinical Nutritionist');
-  const [approvalNotes, setApprovalNotes] = useState('');
+  const [clinicianId, setClinicianId] = useState(report.approvedBy || '');
+  const [approvalNotes, setApprovalNotes] = useState(report.clinicianNotes || '');
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [isApproved, setIsApproved] = useState(report.isApproved);
 
   const handlePrint = () => {
@@ -31,9 +32,20 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
   };
 
   const handleSignOff = () => {
+    const trimmed = clinicianId.trim();
+    if (!trimmed || trimmed.length < 3) {
+      setApprovalError(lang === 'bn' ? 'চিকিৎসক/নিউট্রিশনিস্টের বৈধ নাম বা আইডি প্রদান আবশ্যক (কমপক্ষে ৩ অক্ষর)।' : 'A valid licensed clinician name or practitioner ID is required (min 3 chars).');
+      return;
+    }
+    const isPlaceholder = ['clinician', 'dr. clinical nutritionist', 'doctor', 'nutritionist', 'admin', 'user', 'test', 'guest'].includes(trimmed.toLowerCase());
+    if (isPlaceholder) {
+      setApprovalError(lang === 'bn' ? 'অনুগ্রহ করে আসল চিকিৎসকের নাম লিখুন (প্লেসহোল্ডার গ্রহণযোগ্য নয়)।' : 'Generic placeholder names are not permitted. Please enter the licensed practitioner name.');
+      return;
+    }
+    setApprovalError(null);
     setIsApproved(true);
     if (onApprove) {
-      onApprove(clinicianId, approvalNotes);
+      onApprove(trimmed, approvalNotes);
     }
   };
 
@@ -275,7 +287,9 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
             <div className="p-3 bg-muted/30 rounded-xl">
               <span className="text-muted-foreground block">Estimated PRAL Score:</span>
               <strong className="text-sm text-foreground">
-                {report.sectionE_dietaryPattern.estimatedPRALScore} mEq/day
+                {typeof report.sectionE_dietaryPattern.estimatedPRALScore === 'number'
+                  ? `${report.sectionE_dietaryPattern.estimatedPRALScore} mEq/day`
+                  : 'Insufficient quantitative data'}
               </strong>
               <div className="text-[11px] text-primary capitalize mt-0.5">
                 {report.sectionE_dietaryPattern.pralInterpretation.replace('_', ' ')}
@@ -582,6 +596,13 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
             <span>✍️ Section N: Clinician Review & Phase P3 Nutrition Planning Handoff</span>
           </div>
 
+          {report.analysisInvalidatedAt && !isApproved && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs">
+              ⚠️ <strong>{lang === 'bn' ? 'অনুমোদন বাতিল হয়েছে:' : 'Prior Approval Invalidated:'}</strong>{' '}
+              {report.invalidationReason || 'Patient assessment or clinical profile was updated after previous clinician sign-off. Please review the updated analysis and re-sign below.'}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="p-4 bg-muted/20 rounded-xl space-y-2">
               <span className="font-semibold text-foreground block">P3 Diet Engine Target Summary:</span>
@@ -595,9 +616,12 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
 
             <div className="p-4 border border-border rounded-xl space-y-3 bg-card">
               <div>
-                <label className="block text-muted-foreground text-[11px] mb-1">Reviewing Nutritionist / Clinician Name:</label>
+                <label className="block text-muted-foreground text-[11px] mb-1">
+                  {lang === 'bn' ? 'চিকিৎসক / ক্লিনিক্যাল নিউট্রিশনিস্টের নাম ও আইডি:' : 'Reviewing Clinician / Nutritionist Name & ID:'}
+                </label>
                 <input
                   type="text"
+                  placeholder={lang === 'bn' ? 'উদা: ডা. ফারহানা আহমেদ, RD-1048' : 'e.g. Dr. Farhana Ahmed, RD-1048'}
                   value={clinicianId}
                   onChange={e => setClinicianId(e.target.value)}
                   className="w-full text-xs p-2 bg-background border border-border rounded-lg"
@@ -615,6 +639,11 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
                   disabled={isApproved}
                 />
               </div>
+              {approvalError && (
+                <div className="text-[11px] text-rose-500 font-semibold">
+                  ⚠️ {approvalError}
+                </div>
+              )}
               {!isApproved ? (
                 <button
                   onClick={handleSignOff}
@@ -624,7 +653,7 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
                 </button>
               ) : (
                 <div className="p-2 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-center font-bold rounded-lg text-xs">
-                  ✓ Officially Approved & Locked for Phase P3 Handoff
+                  ✓ Officially Approved & Locked for Phase P3 Handoff by {clinicianId || report.approvedBy}
                 </div>
               )}
             </div>

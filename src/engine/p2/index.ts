@@ -28,13 +28,22 @@ import { analyzeDietaryPattern } from './dietaryPatternAnalysis';
 import { analyzeMetabolicHealth, analyzeGutHealth } from './metabolicAndGutEngines';
 import { buildClinicalHealthAssessmentReport } from './clinicalReportBuilder';
 import { constructP3PlanningContext } from './p3PlanningHandoff';
+import { ClinicalAssessment } from '../../types/assessment';
+import { buildP2ClinicalObservations, buildFlattenedAnswersForP2 } from '../assessment/p2HandoffAdapter';
 
 // ─── P2 Engine Input ──────────────────────────────────────────────
 export interface P2EngineInput {
   patient: PatientProfile;
+  assessment?: ClinicalAssessment;
   observations?: ClinicalObservation[];
   assessmentAnswers?: Record<string, any>;
   previousApprovals?: ClinicianApprovalRecord[];
+  isOverallApproved?: boolean;
+  approvedByClinicianId?: string;
+  approvalTimestamp?: string;
+  clinicianNotes?: string;
+  analysisInvalidatedAt?: string;
+  invalidationReason?: string;
 }
 
 // ─── Helper: Determine population applicability ───────────────────
@@ -555,36 +564,72 @@ function identifyMissingData(observations: ClinicalObservation[], hypotheses: Cl
 // ─── Main Engine Function ─────────────────────────────────────────
 export function runP2Analysis(
   inputOrPatient: P2EngineInput | PatientProfile,
-  assessmentAnswers?: Record<string, any>,
+  assessmentAnswersOrAssessment?: Record<string, any> | ClinicalAssessment,
   previousApprovals?: ClinicianApprovalRecord[]
 ): P2AnalysisResult {
   let patient: PatientProfile;
   let observations: ClinicalObservation[];
   let approvals: ClinicianApprovalRecord[] = previousApprovals || [];
+  let assessment: ClinicalAssessment | undefined = undefined;
+  let isOverallApproved: boolean = false;
+  let approvedByClinicianId: string | undefined = undefined;
+  let approvalTimestamp: string | undefined = undefined;
+  let clinicianNotes: string | undefined = undefined;
+  let analysisInvalidatedAt: string | undefined = undefined;
+  let invalidationReason: string | undefined = undefined;
 
   let rawAnswers: Record<string, any> = {};
 
   if ('id' in inputOrPatient && 'gender' in inputOrPatient && 'age' in inputOrPatient) {
-    // Called as runP2Analysis(patient, assessmentAnswers, previousApprovals)
+    // Called as runP2Analysis(patient, assessmentAnswersOrAssessment, previousApprovals)
     patient = inputOrPatient as PatientProfile;
-    rawAnswers = assessmentAnswers || {};
-    observations = aggregateEvidence(patient, rawAnswers);
+    if (assessmentAnswersOrAssessment && 'questionnaire_version' in assessmentAnswersOrAssessment) {
+      assessment = assessmentAnswersOrAssessment as ClinicalAssessment;
+      rawAnswers = {
+        ...assessment.functional_answers,
+        ...buildFlattenedAnswersForP2(assessment),
+      };
+    } else {
+      rawAnswers = (assessmentAnswersOrAssessment as Record<string, any>) || {};
+    }
   } else {
     // Called as runP2Analysis(P2EngineInput)
     const input = inputOrPatient as P2EngineInput;
     patient = input.patient;
-    rawAnswers = input.assessmentAnswers || {};
-    if (input.observations && input.observations.length > 0) {
-      observations = input.observations;
+    assessment = input.assessment;
+    if (assessment) {
+      rawAnswers = {
+        ...assessment.functional_answers,
+        ...buildFlattenedAnswersForP2(assessment),
+        ...(input.assessmentAnswers || {}),
+      };
     } else {
-      observations = aggregateEvidence(patient, rawAnswers);
+      rawAnswers = input.assessmentAnswers || {};
     }
     if (input.previousApprovals) {
       approvals = input.previousApprovals;
     }
+    isOverallApproved = Boolean(input.isOverallApproved);
+    approvedByClinicianId = input.approvedByClinicianId;
+    approvalTimestamp = input.approvalTimestamp;
+    clinicianNotes = input.clinicianNotes;
+    analysisInvalidatedAt = input.analysisInvalidatedAt;
+    invalidationReason = input.invalidationReason;
   }
 
-  const visitDateClean = patient.visit_date.replace(/[^0-9]/g, '');
+  // Build and merge observations (or preserve custom observations if provided in input)
+  if ('observations' in (inputOrPatient as any) && (inputOrPatient as P2EngineInput).observations && (inputOrPatient as P2EngineInput).observations!.length > 0) {
+    observations = (inputOrPatient as P2EngineInput).observations!;
+  } else {
+    const baseObs = aggregateEvidence(patient, rawAnswers);
+    const derivedObs = assessment ? buildP2ClinicalObservations(assessment, patient) : [];
+    const obsMap = new Map<string, ClinicalObservation>();
+    baseObs.forEach(o => obsMap.set(o.id, o));
+    derivedObs.forEach(o => obsMap.set(o.id, o));
+    observations = Array.from(obsMap.values());
+  }
+
+  const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
   const visitId = `visit_${patient.id}_${visitDateClean}`;
 
   const domainFindings = computeFunctionalMatrix(observations);
@@ -603,11 +648,11 @@ export function runP2Analysis(
     return h;
   });
 
-  // Execute Phase P2 Enhanced Analytics
+  // Execute Phase P2 Enhanced Analytics with full structured assessment support
   const labRecommendations = generateLabRecommendations(patient, observations, finalHypotheses);
-  const ayurvedicInterpretation = interpretAyurvedicAssessment(patient, observations, rawAnswers);
-  const masanumasikaAnalysis = analyzeMasanumasikaPregnancy(patient, rawAnswers);
-  const dietaryPatternAnalysis = analyzeDietaryPattern(patient, observations, rawAnswers);
+  const ayurvedicInterpretation = interpretAyurvedicAssessment(patient, observations, rawAnswers, assessment?.ayurveda);
+  const masanumasikaAnalysis = analyzeMasanumasikaPregnancy(patient, rawAnswers, assessment?.population_data?.pregnancy);
+  const dietaryPatternAnalysis = analyzeDietaryPattern(patient, observations, rawAnswers, assessment?.dietary_frequency);
   const metabolicHealthAnalysis = analyzeMetabolicHealth(patient, observations, rawAnswers);
   const gutHealthAnalysis = analyzeGutHealth(patient, observations, rawAnswers);
 
@@ -625,7 +670,13 @@ export function runP2Analysis(
     metabolicHealthAnalysis,
     gutHealthAnalysis,
     approvalHistory: approvals,
-    reportMode: 'comprehensive',
+    reportMode: assessment?.mode === 'quick' ? 'quick' : 'comprehensive',
+    isApproved: isOverallApproved,
+    approvedBy: approvedByClinicianId,
+    approvalDate: approvalTimestamp,
+    clinicianNotes,
+    analysisInvalidatedAt,
+    invalidationReason,
   });
 
   const p3PlanningContext = constructP3PlanningContext({
@@ -638,6 +689,11 @@ export function runP2Analysis(
     masanumasikaAnalysis,
     metabolicHealthAnalysis,
     approvals,
+    isOverallApproved,
+    approvedByClinicianId,
+    approvalTimestamp,
+    analysisInvalidatedAt,
+    invalidationReason,
   });
 
   const dietPlanningContext: DietPlanningContext = {
@@ -671,6 +727,7 @@ export function runP2Analysis(
     approvalHistory: approvals,
     dietPlanningContext,
     missingHighValueData: missingData,
+    analysisInvalidatedAt,
 
     // Enhanced P2 Analytics
     labRecommendations,

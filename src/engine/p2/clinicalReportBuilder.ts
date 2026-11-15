@@ -34,6 +34,12 @@ export function buildClinicalHealthAssessmentReport(params: {
   gutHealthAnalysis: GutHealthAnalysisResult;
   approvalHistory?: ClinicianApprovalRecord[];
   reportMode?: 'quick' | 'comprehensive';
+  isApproved?: boolean;
+  approvedBy?: string;
+  approvalDate?: string;
+  clinicianNotes?: string;
+  analysisInvalidatedAt?: string;
+  invalidationReason?: string;
 }): ClinicalHealthAssessmentReport {
   const {
     patient,
@@ -49,6 +55,12 @@ export function buildClinicalHealthAssessmentReport(params: {
     metabolicHealthAnalysis,
     approvalHistory = [],
     reportMode = 'comprehensive',
+    isApproved: explicitApproved,
+    approvedBy: explicitApprovedBy,
+    approvalDate: explicitApprovalDate,
+    clinicianNotes: explicitClinicianNotes,
+    analysisInvalidatedAt,
+    invalidationReason,
   } = params;
 
   const visitDateClean = patient.visit_date.replace(/[^0-9]/g, '');
@@ -234,33 +246,60 @@ export function buildClinicalHealthAssessmentReport(params: {
   };
 
   // Section K: Clinical Safety
-  const route = patient.feeding_status?.route || 'Oral';
-  const isOral = route.toLowerCase() === 'oral';
+  const rawRoute = patient.feeding_status?.route || 'oral_standard';
+  const isOral =
+    patient.feeding_status?.oral_intake_permitted !== undefined
+      ? patient.feeding_status.oral_intake_permitted
+      : rawRoute === 'oral_standard' ||
+        rawRoute === 'oral_nutritional_supplements' ||
+        rawRoute === 'modified_texture_soft' ||
+        rawRoute === 'modified_texture_pureed' ||
+        rawRoute === 'modified_texture_thickened_liquid' ||
+        rawRoute.toLowerCase().includes('oral');
+
   const hardStops: string[] = [];
   if (patient.confirmed_allergies.length > 0) {
     hardStops.push(`Absolute exclusion of confirmed food allergens: ${patient.confirmed_allergies.join(', ')}.`);
   }
   if (!isOral) {
-    hardStops.push(`Non-oral feeding route (${route}): strictly requires dedicated clinical enteral/parenteral specialist prescription.`);
+    hardStops.push(`Non-oral feeding route (${rawRoute}): strictly requires dedicated clinical enteral/parenteral specialist prescription.`);
   }
 
   const sectionK_clinicalSafety = {
     confirmedAllergies: patient.confirmed_allergies,
     hardStops,
     redFlags,
-    feedingRoute: route,
+    feedingRoute: rawRoute,
     hypoglycemiaProtocolRequired: metabolicHealthAnalysis.medicationMealSafetyPriority,
   };
 
   // Section N: Clinician Review
-  const isApproved = approvalHistory.some(a => a.decision === 'accepted');
+  const isPlaceholder = [
+    'clinician',
+    'dr. clinical nutritionist',
+    'doctor',
+    'nutritionist',
+    'admin',
+    'user',
+  ].includes((explicitApprovedBy || '').trim().toLowerCase());
+
+  const hasValidClinician =
+    Boolean(explicitApprovedBy) &&
+    (explicitApprovedBy || '').trim().length >= 3 &&
+    !isPlaceholder;
+
+  const isInvalidated = Boolean(analysisInvalidatedAt);
+  const isApproved = Boolean(explicitApproved && hasValidClinician && !isInvalidated);
+
   const sectionN_clinicianReview: ClinicalHealthAssessmentReport['sectionN_clinicianReview'] = {
-    reviewingNutritionist: 'Clinical Functional Nutritionist',
-    reviewDate: patient.visit_date,
+    reviewingNutritionist: isApproved ? explicitApprovedBy! : 'Pending Clinician Review',
+    reviewDate: isApproved ? (explicitApprovalDate || patient.visit_date) : patient.visit_date,
     status: isApproved ? 'fully_approved' : 'pending',
-    notes: isApproved
+    notes: explicitClinicianNotes || (isApproved
       ? 'Clinical assessment, hypotheses, and priorities reviewed and accepted for Phase P3 nutrition planning.'
-      : 'Provisional assessment generated. Requires supervising clinician sign-off prior to diet chart generation.',
+      : isInvalidated
+      ? `Prior approval invalidated: ${invalidationReason || 'Clinical data modified after sign-off.'}`
+      : 'Provisional assessment generated. Requires supervising clinician sign-off prior to diet chart generation.'),
     revisionNumber: 1,
   };
 
@@ -272,9 +311,11 @@ export function buildClinicalHealthAssessmentReport(params: {
     generatedAt: new Date().toISOString(),
     revision: 1,
     isApproved,
-    approvedBy: isApproved ? 'Clinician' : undefined,
-    approvalDate: isApproved ? patient.visit_date : undefined,
+    approvedBy: isApproved ? explicitApprovedBy : undefined,
+    approvalDate: isApproved ? (explicitApprovalDate || patient.visit_date) : undefined,
     clinicianNotes: sectionN_clinicianReview.notes,
+    analysisInvalidatedAt,
+    invalidationReason,
 
     sectionA_patientInfo,
     sectionB_anthropometrics,

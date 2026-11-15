@@ -1,6 +1,8 @@
 // P2 Clinical Intelligence Engine - Type Definitions
 // All types for the Root-Cause Intelligence system
 
+import { ClinicalAssessment } from '../../types/assessment';
+
 export type FunctionalDomain =
   | 'assimilation'
   | 'defense_repair'
@@ -349,6 +351,7 @@ export interface AyurvedicInterpretationResult {
 // ─── Masanumasika Pregnancy Analysis Models ───────────────────────
 export interface MasanumasikaPregnancyAnalysisResult {
   applicable: boolean;
+  gestationalAgeVerified: boolean;
   gestationalWeeks?: number;
   gestationalDays?: number;
   pregnancyMonth?: number;
@@ -372,17 +375,19 @@ export interface MasanumasikaPregnancyAnalysisResult {
 export interface DietaryPatternAnalysisResult {
   plantFoodGroupDiversityScore: number; // 0-12 plant groups
   plantDiversityRank: 'high' | 'moderate' | 'low' | 'uncertain';
-  estimatedPlantSpeciesCount: number;
+  estimatedPlantSpeciesCount?: number;
   dailyFruitVegServings: number;
   proteinFrequencyRank: 'low' | 'moderate' | 'high';
   ultraProcessedBurden: 'low' | 'moderate' | 'high' | 'very_high';
   addedSugarExposure: 'minimal' | 'moderate' | 'excessive';
   sodiumRiskFlag: boolean;
-  estimatedPRALScore: number; // mEq/day
-  pralInterpretation: 'alkalizing' | 'neutral' | 'acid_forming' | 'uncertain';
+  estimatedPRALScore?: number | null; // mEq/day when quantified nutrient grams provided; otherwise null
+  pralStatus: 'insufficient_quantitative_data' | 'calculated' | 'unavailable';
+  pralInterpretation: 'alkalizing' | 'neutral' | 'acid_forming' | 'uncertain' | 'insufficient_data';
   pralCaveat: string;
   completenessStatus: 'complete' | 'partial' | 'minimal';
   confirmedZeroCount: number;
+  notSureCount: number;
   unansweredCount: number;
 }
 
@@ -421,6 +426,8 @@ export interface P3NutritionPlanningContext {
   clinicalAssessmentApproved: boolean;
   approvalTimestamp?: string;
   approvedByClinicianId?: string;
+  analysisInvalidatedAt?: string;
+  invalidationReason?: string;
   
   confirmedAllergies: string[];
   feedingRoute: { route: string; oral_intake_permitted: boolean; requires_specialist_support: boolean };
@@ -455,6 +462,8 @@ export interface ClinicalHealthAssessmentReport {
   approvedBy?: string;
   approvalDate?: string;
   clinicianNotes?: string;
+  analysisInvalidatedAt?: string;
+  invalidationReason?: string;
   
   sectionA_patientInfo: {
     name: string;

@@ -42,21 +42,29 @@ const SUB_TABS: Array<{ id: SubTab; label_en: string; label_bn: string }> = [
 ];
 
 export const ClinicalIntelligenceTab: React.FC = () => {
-  const { patient, language, approveP2Analysis } = usePractice();
-  const { data: assessmentData } = useAssessment();
+  const {
+    patient,
+    language,
+    approveP2Analysis,
+    p2AnalysisResult,
+    updateHypothesisDecision,
+  } = usePractice();
+  const { exportClinicalAssessment } = useAssessment();
   const lang = language;
   const [subTab, setSubTab] = useState<SubTab>('redflags');
 
-  // Run P2 analysis memoized on patient and assessment changes
+  // Display stored patient-and-visit-specific result; initialize with complete structured assessment if absent
   const analysis = useMemo(() => {
+    if (p2AnalysisResult) return p2AnalysisResult;
     if (!patient?.id) return null;
     try {
-      return runP2Analysis(patient, assessmentData.answers);
+      const assessment = exportClinicalAssessment();
+      return runP2Analysis({ patient, assessment });
     } catch (e) {
       console.error("P2 Analysis error:", e);
       return null;
     }
-  }, [patient, assessmentData.answers]);
+  }, [p2AnalysisResult, patient, exportClinicalAssessment]);
 
   // Local state for clinician decisions (hypotheses & interventions)
   const [hypotheses, setHypotheses] = useState(() => analysis?.hypotheses ?? []);
@@ -73,10 +81,11 @@ export const ClinicalIntelligenceTab: React.FC = () => {
   }, [analysis]);
 
   const handleDecision = useCallback((id: string, decision: ClinicianDecision, note?: string) => {
+    updateHypothesisDecision(id, decision, note);
     setHypotheses(prev => prev.map(h =>
       h.id === id ? { ...h, clinicianDecision: decision, clinicianNote: note ?? h.clinicianNote } : h
     ));
-  }, []);
+  }, [updateHypothesisDecision]);
 
   const handleApprove = useCallback((id: string, status: string, note?: string) => {
     setInterventionGoals(prev => prev.map(g =>

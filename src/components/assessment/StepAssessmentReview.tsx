@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export const StepAssessmentReview: React.FC = () => {
-  const { patient, setActiveTab, language } = usePractice();
+  const { patient, setActiveTab, language, executeP2Analysis } = usePractice();
   const bn = language === 'bn';
   const {
     currentStep,
@@ -45,8 +45,8 @@ export const StepAssessmentReview: React.FC = () => {
     const clinicalAssessment = exportClinicalAssessment();
     markCompleted(true);
 
-    // 2. Prepare full P2 handoff package
-    const handoff = prepareP2Handoff(clinicalAssessment, patient);
+    // 2. Execute real P2 analysis with complete structured assessment into shared P2 state
+    executeP2Analysis(clinicalAssessment);
 
     setHandoffSuccess(true);
 
