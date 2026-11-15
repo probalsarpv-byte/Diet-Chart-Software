@@ -281,6 +281,12 @@ export interface LabRecommendation {
   missingInformationToClarify: string[];
   requiresClinicianApproval: boolean;
   clinicianApproved?: boolean;
+  specimenType?: string;
+  fastingRequirement_en?: string;
+  fastingRequirement_bn?: string;
+  interpretationGuidance_en?: string;
+  interpretationGuidance_bn?: string;
+  isAlreadyRecorded?: boolean;
 }
 
 // ─── Ayurvedic Interpretation Models ─────────────────────────────
@@ -292,6 +298,12 @@ export interface AyurvedicInterpretationResult {
     kapha_score: number;
     dominant_constitution: string;
     is_preliminary: boolean;
+    primaryDosha?: 'Vata' | 'Pitta' | 'Kapha' | 'Vata-Pitta' | 'Pitta-Kapha' | 'Vata-Kapha' | 'Tridoshic' | 'Unassessed';
+    vataPercentage?: number;
+    pittaPercentage?: number;
+    kaphaPercentage?: number;
+    constitutionalTendencies_en?: string[];
+    constitutionalTendencies_bn?: string[];
   };
   vikriti: {
     vata_imbalance: number;
@@ -299,6 +311,9 @@ export interface AyurvedicInterpretationResult {
     kapha_imbalance: number;
     primary_aggravation: string;
     aggravation_severity: 'none' | 'mild' | 'moderate' | 'severe';
+    aggravatedDoshas?: Array<'Vata' | 'Pitta' | 'Kapha'>;
+    primaryAggravation?: 'Vata' | 'Pitta' | 'Kapha' | 'Dual' | 'None';
+    triggeringSymptomIds?: string[];
   };
   agni: {
     type: 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni';
@@ -306,6 +321,11 @@ export interface AyurvedicInterpretationResult {
     clinical_manifestation_bn: string;
     therapeutic_diet_principles_en: string[];
     therapeutic_diet_principles_bn: string[];
+    status?: 'Sama' | 'Vishama' | 'Tikshna' | 'Manda' | 'Unassessed';
+    description_en?: string;
+    description_bn?: string;
+    dietaryAdjustments_en?: string[];
+    dietaryAdjustments_bn?: string[];
   };
   pathya_apathya_handoff: {
     favored_rasas: string[];
@@ -316,7 +336,14 @@ export interface AyurvedicInterpretationResult {
     digestive_tolerance_notes_en: string;
     digestive_tolerance_notes_bn: string;
   };
+  pathyaRecommendations?: {
+    generalPrinciples_en: string[];
+    generalPrinciples_bn: string[];
+    favorableFoods: string[];
+    unfavorableFoods: string[];
+  };
   clinicalSafetyPrimacyNote: string;
+  safetyOverrideNotice?: string;
 }
 
 // ─── Masanumasika Pregnancy Analysis Models ───────────────────────

@@ -68,7 +68,7 @@ export function buildClinicalHealthAssessmentReport(params: {
   };
 
   // Section B: Anthropometrics
-  const bmi = patient.bmi || 0;
+  const bmi = patient.calculated?.bmi || (patient.height_cm ? Math.round((patient.weight_kg / Math.pow(patient.height_cm / 100, 2)) * 10) / 10 : 0);
   let bmiCategory_en = 'Normal weight';
   let bmiCategory_bn = 'স্বাভাবিক ওজন';
   if (bmi < 18.5) {

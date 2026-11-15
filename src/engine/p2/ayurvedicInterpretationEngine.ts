@@ -40,9 +40,10 @@ export function interpretAyurvedicAssessment(
   else if (pDigestion === 'slow_steady_heavy') kaphaPrakritiPoints += 2;
 
   // Heuristics from patient profile if questions unanswered
+  const patientBmi = patient.calculated?.bmi || (patient.height_cm ? patient.weight_kg / Math.pow(patient.height_cm / 100, 2) : 22);
   if (vataPrakritiPoints === 0 && pittaPrakritiPoints === 0 && kaphaPrakritiPoints === 0) {
-    if (patient.bmi && patient.bmi < 19) vataPrakritiPoints += 3;
-    else if (patient.bmi && patient.bmi > 27) kaphaPrakritiPoints += 3;
+    if (patientBmi < 19) vataPrakritiPoints += 3;
+    else if (patientBmi > 27) kaphaPrakritiPoints += 3;
     else pittaPrakritiPoints += 2;
 
     // Baseline distribution for balanced representation
@@ -195,8 +196,24 @@ export function interpretAyurvedicAssessment(
     ? favorableFoods.filter(f => !/milk|ghol|buttermilk|takra|lassi/i.test(f))
     : favorableFoods;
 
+  const agniTypeMap: Record<string, 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni'> = {
+    Sama: 'samagni',
+    Vishama: 'vishamagni',
+    Tikshna: 'tikshnagni',
+    Manda: 'mandagni',
+  };
+
+  const viryaPref: 'sheeta' | 'ushna' | 'neutral' =
+    primaryAggravation === 'Pitta' ? 'sheeta' : primaryAggravation === 'Vata' || primaryAggravation === 'Kapha' ? 'ushna' : 'neutral';
+
   return {
+    frameworkVersion: '2.0.0',
     prakriti: {
+      vata_score: vataPrakritiPoints,
+      pitta_score: pittaPrakritiPoints,
+      kapha_score: kaphaPrakritiPoints,
+      dominant_constitution: primaryDosha,
+      is_preliminary: false,
       primaryDosha,
       vataPercentage,
       pittaPercentage,
@@ -205,19 +222,35 @@ export function interpretAyurvedicAssessment(
       constitutionalTendencies_bn,
     },
     vikriti: {
+      vata_imbalance: vataScore,
+      pitta_imbalance: pittaScore,
+      kapha_imbalance: kaphaScore,
+      primary_aggravation: primaryAggravation,
+      aggravation_severity: (Math.max(vataScore, pittaScore, kaphaScore) >= 4 ? 'severe' : Math.max(vataScore, pittaScore, kaphaScore) >= 2 ? 'moderate' : Math.max(vataScore, pittaScore, kaphaScore) >= 1 ? 'mild' : 'none') as 'none' | 'mild' | 'moderate' | 'severe',
       aggravatedDoshas,
       primaryAggravation,
-      vataScore,
-      pittaScore,
-      kaphaScore,
       triggeringSymptomIds: [...new Set(triggeringSymptomIds)],
     },
     agni: {
+      type: agniTypeMap[agniStatus] || 'samagni',
+      clinical_manifestation_en: agniDesc_en,
+      clinical_manifestation_bn: agniDesc_bn,
+      therapeutic_diet_principles_en: agniAdj_en,
+      therapeutic_diet_principles_bn: agniAdj_bn,
       status: agniStatus,
       description_en: agniDesc_en,
       description_bn: agniDesc_bn,
       dietaryAdjustments_en: agniAdj_en,
       dietaryAdjustments_bn: agniAdj_bn,
+    },
+    pathya_apathya_handoff: {
+      favored_rasas: primaryAggravation === 'Pitta' ? ['madhura', 'tikta', 'kashaya'] : primaryAggravation === 'Vata' ? ['madhura', 'amla', 'lavana'] : ['katu', 'tikta', 'kashaya'],
+      minimized_rasas: primaryAggravation === 'Pitta' ? ['katu', 'amla', 'lavana'] : primaryAggravation === 'Vata' ? ['katu', 'tikta', 'kashaya'] : ['madhura', 'amla', 'lavana'],
+      virya_preference: viryaPref,
+      pathya_foods_bn: finalFavorable,
+      apathya_foods_bn: unfavorableFoods,
+      digestive_tolerance_notes_en: agniDesc_en,
+      digestive_tolerance_notes_bn: agniDesc_bn,
     },
     pathyaRecommendations: {
       generalPrinciples_en,
@@ -225,7 +258,7 @@ export function interpretAyurvedicAssessment(
       favorableFoods: finalFavorable,
       unfavorableFoods,
     },
-    clinicalSafetyPrimacyNotice:
+    clinicalSafetyPrimacyNote:
       'CLINICAL SAFETY PRIMACY: All Ayurvedic concepts in Shuddho software are non-pharmacological, whole-food dietary principles. Confirmed clinical allergies, renal/cardiovascular limits, and medication safety strictly override doshic preferences.',
     safetyOverrideNotice,
   };

@@ -15,7 +15,7 @@ interface LabRule {
   id: string;
   testName_en: string;
   testName_bn: string;
-  panelCategory: LabRecommendation['panelCategory'];
+  category: LabRecommendation['category'];
   basePriority: LabPriority;
   specimenType: string;
   fastingRequirement_en: string;
@@ -40,8 +40,8 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_fasting_glucose',
     testName_en: 'Fasting Blood Glucose (FBG)',
     testName_bn: 'ফাস্টিং ব্লাড গ্লুকোজ (FBG)',
-    panelCategory: 'glycemic',
-    basePriority: 'standard',
+    category: 'metabolic',
+    basePriority: 'routine_consideration',
     specimenType: 'Venous blood (Fluoride/Oxalate tube)',
     fastingRequirement_en: 'Strict 8–10 hours overnight fasting (water permitted)',
     fastingRequirement_bn: 'রাতভর ৮-১০ ঘণ্টা পানি ছাড়া অন্য কিছু না খেয়ে পরীক্ষা',
@@ -56,17 +56,17 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
         /insulin|gliclazide|glimepiride|glipizide|repaglinide/i.test(m)
       );
       if (hasHypoMeds && !hasRecordedLab) {
-        return { shouldRecommend: true, elevatedPriority: 'immediate' };
+        return { shouldRecommend: true, elevatedPriority: 'immediate_clinical_evaluation' };
       }
       const hasIR = hypotheses.some(h => h.cluster === 'metabolic') || patient.selected_conditions.includes('t2d_ir');
-      return { shouldRecommend: true, elevatedPriority: hasIR ? 'high_priority' : 'standard' };
+      return { shouldRecommend: true, elevatedPriority: hasIR ? 'high_priority' : 'routine_consideration' };
     },
   },
   {
     id: 'lab_hba1c',
     testName_en: 'Glycated Hemoglobin (HbA1c)',
     testName_bn: 'হিমোগ্লোবিন এওয়ানসি (HbA1c)',
-    panelCategory: 'glycemic',
+    category: 'metabolic',
     basePriority: 'high_priority',
     specimenType: 'Venous whole blood (EDTA tube)',
     fastingRequirement_en: 'No fasting required (can be drawn anytime)',
@@ -78,18 +78,19 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     associatedDomain: 'energy',
     matchedLabKey: 'hba1c',
     triggerCondition: (patient, obs, hypotheses) => {
+      const bmi = patient.calculated?.bmi || (patient.height_cm ? patient.weight_kg / Math.pow(patient.height_cm / 100, 2) : 22);
       const hasMetabolic = patient.selected_conditions.includes('t2d_ir') ||
         patient.selected_conditions.includes('pcos') ||
         hypotheses.some(h => h.cluster === 'metabolic') ||
-        (patient.bmi !== undefined && patient.bmi >= 25);
-      return { shouldRecommend: true, elevatedPriority: hasMetabolic ? 'high_priority' : 'standard' };
+        bmi >= 25;
+      return { shouldRecommend: true, elevatedPriority: hasMetabolic ? 'high_priority' : 'routine_consideration' };
     },
   },
   {
     id: 'lab_fasting_insulin_homa',
     testName_en: 'Fasting Serum Insulin & HOMA-IR',
     testName_bn: 'ফাস্টিং সিরাম ইনসুলিন ও হোমা-আইআর (HOMA-IR)',
-    panelCategory: 'glycemic',
+    category: 'metabolic',
     basePriority: 'high_priority',
     specimenType: 'Fasting venous blood (Serum separator tube)',
     fastingRequirement_en: 'Strict 10–12 hours overnight fasting',
@@ -100,13 +101,13 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     interpretationGuidance_bn: 'অপটিমাল ইনসুলিন: ২-৬ uIU/mL। HOMA-IR < ১.৪: স্বাভাবিক। ১.৪-১.৯: বর্ডারলাইন। > ১.৯: স্পষ্ট ইনসুলিন রেজিস্ট্যান্স।',
     associatedDomain: 'energy',
     matchedLabKey: 'fasting_insulin',
-    triggerCondition: (patient, obs, hypotheses) => {
+    triggerCondition: (patient, obs) => {
       const irIndications = patient.selected_conditions.includes('pcos') ||
         patient.selected_conditions.includes('fatty_liver') ||
         patient.selected_conditions.includes('t2d_ir') ||
         (patient.waist_cm && patient.height_cm && (patient.waist_cm / patient.height_cm) > 0.5) ||
         obs.some(o => o.tags?.includes('sugar_cravings') || o.tags?.includes('postprandial_fatigue'));
-      return { shouldRecommend: irIndications, elevatedPriority: 'high_priority' };
+      return { shouldRecommend: Boolean(irIndications), elevatedPriority: 'high_priority' };
     },
   },
 
@@ -115,8 +116,8 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_lipid_profile',
     testName_en: 'Comprehensive Fasting Lipid Profile (TC, TG, HDL, LDL, VLDL)',
     testName_bn: 'ফাস্টিং লিপিড প্রোফাইল (কোলেস্টেরল, ট্রাইগ্লিসারাইড, এইচডিএল, এলডিএল)',
-    panelCategory: 'lipid',
-    basePriority: 'standard',
+    category: 'metabolic',
+    basePriority: 'routine_consideration',
     specimenType: 'Venous blood (Serum)',
     fastingRequirement_en: '10–12 hours overnight fasting (avoid heavy fatty meal the prior evening)',
     fastingRequirement_bn: '১০-১২ ঘণ্টার উপবাস (পূর্বের রাতে অতিরিক্ত চর্বিযুক্ত খাবার পরিহার্য)',
@@ -126,11 +127,11 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     interpretationGuidance_bn: 'ট্রাইগ্লিসারাইড < ১৫০ মিগ্রা/ডেসিলিটার, এইচডিএল > ৪০-৫০ মিগ্রা/ডেসিলিটার। TG/HDL অনুপাত ২.০ এর নিচে কাম্য।',
     associatedDomain: 'transport',
     matchedLabKey: 'triglycerides',
-    triggerCondition: (patient, obs) => {
+    triggerCondition: (patient) => {
       const hasCvdRisk = patient.selected_conditions.includes('hypertension_ckd') ||
         patient.selected_conditions.includes('fatty_liver') ||
         (patient.labs.triglycerides && patient.labs.triglycerides > 150);
-      return { shouldRecommend: true, elevatedPriority: hasCvdRisk ? 'high_priority' : 'standard' };
+      return { shouldRecommend: true, elevatedPriority: hasCvdRisk ? 'high_priority' : 'routine_consideration' };
     },
   },
 
@@ -139,8 +140,8 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_liver_function',
     testName_en: 'Liver Function Panel (ALT/SGPT, AST/SGOT, Bilirubin, Alkaline Phosphatase)',
     testName_bn: 'লিভার ফাংশন টেস্ট (ALT, AST, বিলিরুবিন, ক্ষারীয় ফসফেটেস)',
-    panelCategory: 'hepatic',
-    basePriority: 'standard',
+    category: 'hepatic',
+    basePriority: 'routine_consideration',
     specimenType: 'Venous blood (Serum)',
     fastingRequirement_en: '4–8 hours fasting preferred',
     fastingRequirement_bn: '৪-৮ ঘণ্টা সাধারণ উপবাস কাম্য',
@@ -154,7 +155,7 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
       const hasHepatic = patient.selected_conditions.includes('fatty_liver') ||
         patient.active_medications.some(m => /statin|methotrexate|paracetamol|isoniazid/i.test(m)) ||
         obs.some(o => o.tags?.includes('hepatotoxic_medication'));
-      return { shouldRecommend: true, elevatedPriority: hasHepatic ? 'high_priority' : 'standard' };
+      return { shouldRecommend: true, elevatedPriority: hasHepatic ? 'high_priority' : 'routine_consideration' };
     },
   },
 
@@ -163,22 +164,22 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_renal_function',
     testName_en: 'Renal Function Profile (Serum Creatinine, eGFR, Blood Urea Nitrogen, Uric Acid)',
     testName_bn: 'রেনাল ফাংশন প্রোফাইল (সিরাম ক্রিয়েটিনিন, ইজিএফআর, ইউরিক এসিড)',
-    panelCategory: 'renal',
-    basePriority: 'standard',
+    category: 'renal',
+    basePriority: 'routine_consideration',
     specimenType: 'Venous blood (Serum)',
     fastingRequirement_en: 'No strict fasting, but avoid high cooked meat meal 12 hours prior',
     fastingRequirement_bn: 'কঠোর উপবাস দরকার নেই, তবে আগের ১২ ঘণ্টায় অতিরিক্ত মাংস পরিহার করুন',
     clinicalRationale_en: 'Monitors glomerular filtration, clearance of nitrogenous wastes, and purine metabolism for dietary protein and purine tolerance.',
     clinicalRationale_bn: 'কিডনির ছাঁকন ক্ষমতা (eGFR) এবং ইউরিক এসিড মূল্যায়ন, যা খাদ্যতালিকায় প্রোটিনের মাত্রা নির্ধারণে অপরিহার্য।',
-    interpretationGuidance_en: 'Creatinine: 0.6–1.2 mg/dL. eGFR > 90 mL/min/1.73m2 (Stage 1 or normal). Uric acid: 3.5–6.0 mg/dL.',
+    interpretationGuidance_en: 'Creatinine: 0.6–1.2 mg/dL. eGFR > 90 mL/min/1.73m2. Uric acid: 3.5–6.0 mg/dL.',
     interpretationGuidance_bn: 'ক্রিয়েটিনিন: ০.৬-১.২ মিগ্রা/ডেসিলিটার। eGFR ৯০ এর বেশি কাম্য। ইউরিক এসিড ৩.৫-৬.০ মিগ্রা।',
     associatedDomain: 'biotransformation',
-    matchedLabKey: 'creatinine',
-    triggerCondition: (patient, obs) => {
+    matchedLabKey: 'uric_acid',
+    triggerCondition: (patient) => {
       const hasRenal = patient.selected_conditions.includes('hypertension_ckd') ||
         patient.selected_conditions.includes('uric_acid_gout') ||
-        (patient.labs.creatinine && patient.labs.creatinine > 1.2);
-      return { shouldRecommend: true, elevatedPriority: hasRenal ? 'high_priority' : 'standard' };
+        (patient.labs.uric_acid && patient.labs.uric_acid > 6.5);
+      return { shouldRecommend: true, elevatedPriority: hasRenal ? 'high_priority' : 'routine_consideration' };
     },
   },
 
@@ -187,8 +188,8 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_thyroid_profile',
     testName_en: 'Thyroid Function Panel (TSH, Free T4, Free T3)',
     testName_bn: 'থাইরয়েড ফাংশন প্যানেল (TSH, Free T4, Free T3)',
-    panelCategory: 'thyroid',
-    basePriority: 'standard',
+    category: 'thyroid',
+    basePriority: 'routine_consideration',
     specimenType: 'Morning venous blood (Serum)',
     fastingRequirement_en: 'Morning fasting blood sample (before taking morning thyroid medication)',
     fastingRequirement_bn: 'সকালের খালি পেটে রক্ত দেওয়া উত্তম (সকালের থাইরয়েড ওষুধ খাওয়ার পূর্বে)',
@@ -201,7 +202,7 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     triggerCondition: (patient, obs) => {
       const hasThyroid = patient.selected_conditions.includes('hypothyroid') ||
         obs.some(o => o.tags?.includes('abnormal_tsh') || o.tags?.includes('cold_intolerance') || o.tags?.includes('unexplained_weight_gain'));
-      return { shouldRecommend: true, elevatedPriority: hasThyroid ? 'high_priority' : 'standard' };
+      return { shouldRecommend: true, elevatedPriority: hasThyroid ? 'high_priority' : 'routine_consideration' };
     },
   },
 
@@ -210,7 +211,7 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_cbc_ferritin',
     testName_en: 'Complete Blood Count (CBC) with Peripheral Blood Film & Serum Ferritin',
     testName_bn: 'সিবিসি (CBC) ও সিরাম ফেরিটিন (লৌহ সঞ্চয় পরীক্ষা)',
-    panelCategory: 'anemia_iron',
+    category: 'hematology_iron',
     basePriority: 'high_priority',
     specimenType: 'Venous blood (EDTA + Serum)',
     fastingRequirement_en: 'No fasting required',
@@ -226,7 +227,7 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
       const isPreg = patient.population_group === 'pregnancy';
       const hasFatigue = obs.some(o => o.tags?.includes('fatigue') || o.tags?.includes('pallor'));
       const elevated = isPreg || (hasFatigue && isFemale);
-      return { shouldRecommend: true, elevatedPriority: elevated ? 'high_priority' : 'standard' };
+      return { shouldRecommend: true, elevatedPriority: elevated ? 'high_priority' : 'routine_consideration' };
     },
   },
 
@@ -235,8 +236,8 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_vitamin_d3',
     testName_en: 'Serum 25-Hydroxyvitamin D3 [25(OH)D]',
     testName_bn: 'সিরাম ভিটামিন ডি৩ [25(OH)D]',
-    panelCategory: 'micronutrient',
-    basePriority: 'standard',
+    category: 'vitamins_minerals',
+    basePriority: 'routine_consideration',
     specimenType: 'Venous blood (Serum)',
     fastingRequirement_en: 'No fasting required',
     fastingRequirement_bn: 'উপবাসের প্রয়োজন নেই',
@@ -245,18 +246,18 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     interpretationGuidance_en: 'Deficient: < 20 ng/mL. Insufficient: 20–29 ng/mL. Optimal functional target: 40–60 ng/mL.',
     interpretationGuidance_bn: 'ঘাটতি: < ২০ ng/mL। অপর্যাপ্ত: ২০-২৯ ng/mL। কার্যকরী লক্ষ্যমাত্রা: ৪০-৬০ ng/mL।',
     associatedDomain: 'structural_integrity',
-    matchedLabKey: 'vitamin_d',
+    matchedLabKey: 'vitamin_d3',
     triggerCondition: (patient, obs) => {
       const hasSymptoms = obs.some(o => o.tags?.includes('bone_pain') || o.tags?.includes('muscle_weakness') || o.tags?.includes('low_vitamin_d3'));
-      return { shouldRecommend: true, elevatedPriority: hasSymptoms ? 'high_priority' : 'standard' };
+      return { shouldRecommend: true, elevatedPriority: hasSymptoms ? 'high_priority' : 'routine_consideration' };
     },
   },
   {
     id: 'lab_vitamin_b12_folate',
     testName_en: 'Serum Vitamin B12 (Cobalamin) & Red Cell Folate',
     testName_bn: 'সিরাম ভিটামিন বি১২ ও ফোলেট',
-    panelCategory: 'micronutrient',
-    basePriority: 'standard',
+    category: 'vitamins_minerals',
+    basePriority: 'routine_consideration',
     specimenType: 'Fasting venous blood (Serum, protected from light)',
     fastingRequirement_en: 'Overnight fasting preferred',
     fastingRequirement_bn: 'রাতভর খালি পেটে রক্ত দেওয়া উত্তম',
@@ -265,12 +266,13 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     interpretationGuidance_en: 'Optimal functional B12: > 450 pg/mL (conventional lower limit of 200 pg/mL misses neurological B12 deficiency).',
     interpretationGuidance_bn: 'ফাংশনাল নরমাল B12: > ৪৫০ pg/mL। ২০০-৩৫০ রেঞ্জে স্নায়বিক লক্ষণ প্রকাশ পেতে পারে।',
     associatedDomain: 'energy',
-    triggerCondition: (patient, obs) => {
+    matchedLabKey: 'vitamin_b12',
+    triggerCondition: (patient) => {
       const hasMetforminOrPPI = patient.active_medications.some(m =>
         /metformin|omeprazole|esomeprazole|pantoprazole|rabeprazole/i.test(m)
       );
-      const isVeg = patient.dietary_preferences?.diet_type === 'vegan' || patient.dietary_preferences?.diet_type === 'vegetarian';
-      return { shouldRecommend: true, elevatedPriority: (hasMetforminOrPPI || isVeg) ? 'high_priority' : 'standard' };
+      const isVeg = Boolean(patient.dietary_preferences?.is_vegetarian);
+      return { shouldRecommend: true, elevatedPriority: (hasMetforminOrPPI || isVeg) ? 'high_priority' : 'routine_consideration' };
     },
   },
 
@@ -279,8 +281,8 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_hscrp',
     testName_en: 'High-Sensitivity C-Reactive Protein (hs-CRP)',
     testName_bn: 'উচ্চ সংবেদনশীল সি-রিঅ্যাকটিভ প্রোটিন (hs-CRP)',
-    panelCategory: 'inflammatory',
-    basePriority: 'standard',
+    category: 'inflammatory',
+    basePriority: 'routine_consideration',
     specimenType: 'Venous blood (Serum)',
     fastingRequirement_en: 'No fasting required (ensure free of acute infection/fever)',
     fastingRequirement_bn: 'উপবাসের প্রয়োজন নেই (তীব্র জ্বর বা সংক্রমণ মুক্ত অবস্থায় পরীক্ষা কাম্য)',
@@ -293,7 +295,7 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
       const hasInflammation = hypotheses.some(h => h.cluster === 'immune_inflammatory') ||
         patient.selected_conditions.includes('fatty_liver') ||
         obs.some(o => o.tags?.includes('joint_pain') || o.tags?.includes('elevated_crp'));
-      return { shouldRecommend: hasInflammation, elevatedPriority: 'high_priority' };
+      return { shouldRecommend: Boolean(hasInflammation), elevatedPriority: 'high_priority' };
     },
   },
 
@@ -302,8 +304,8 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
     id: 'lab_stool_re',
     testName_en: 'Stool Routine & Microscopic Examination (Stool R/E)',
     testName_bn: 'মল রুটিন ও অণুবীক্ষণিক পরীক্ষা (Stool R/E)',
-    panelCategory: 'gi_functional',
-    basePriority: 'standard',
+    category: 'gastrointestinal',
+    basePriority: 'routine_consideration',
     specimenType: 'Fresh random stool specimen in sterile container',
     fastingRequirement_en: 'No fasting. Collect fresh sample within 1 hour of delivery to lab.',
     fastingRequirement_bn: 'উপবাস দরকার নেই। সংগ্রহের ১ ঘণ্টার মধ্যে ল্যাবে পৌঁছাতে হবে।',
@@ -319,15 +321,15 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
         o.tags?.includes('constipation') ||
         o.tags?.includes('abdominal_pain')
       );
-      return { shouldRecommend: hasGi, elevatedPriority: 'standard' };
+      return { shouldRecommend: hasGi, elevatedPriority: 'routine_consideration' };
     },
   },
   {
     id: 'lab_stool_calprotectin',
     testName_en: 'Fecal Calprotectin Quantitative Assay',
     testName_bn: 'ফিকাল ক্যালপ্রোটেকটিন পরীক্ষা (অন্ত্রের প্রদাহ সূচক)',
-    panelCategory: 'gi_functional',
-    basePriority: 'optional_advanced',
+    category: 'gastrointestinal',
+    basePriority: 'optional_conditional',
     specimenType: 'First morning stool sample in sterile container',
     fastingRequirement_en: 'No fasting. Avoid NSAIDs for 48 hours prior if clinically permitted.',
     fastingRequirement_bn: 'উপবাস দরকার নেই। আগের ৪৮ ঘণ্টা সম্ভব হলে ব্যথানাশক ওষুধ পরিহার করুন।',
@@ -341,14 +343,14 @@ const LAB_RECOMMENDATION_CATALOG: LabRule[] = [
         (o.tags?.includes('diarrhea') || o.tags?.includes('gi_bleeding') || o.tags?.includes('abdominal_pain')) &&
         (o.severity === 'moderate' || o.severity === 'severe')
       );
-      return { shouldRecommend: hasChronicSevereGi, elevatedPriority: 'optional_advanced' };
+      return { shouldRecommend: hasChronicSevereGi, elevatedPriority: 'optional_conditional' };
     },
   },
   {
     id: 'lab_hpylori_antigen',
     testName_en: 'Helicobacter pylori Stool Antigen Test',
     testName_bn: 'এইচ পাইলোরি স্টুল অ্যান্টিজেন পরীক্ষা (H. pylori)',
-    panelCategory: 'gi_functional',
+    category: 'gastrointestinal',
     basePriority: 'high_priority',
     specimenType: 'Stool specimen in clean container',
     fastingRequirement_en: 'Off PPIs for 2 weeks and antibiotics for 4 weeks for accurate detection',
@@ -376,27 +378,28 @@ export function generateLabRecommendations(
   hypotheses: ClinicalHypothesis[]
 ): LabRecommendation[] {
   const recommendations: LabRecommendation[] = [];
-
-  // Map of existing recorded labs from patient profile
-  const recordedLabs = patient.labs || {};
+  const recordedLabs = patient.labs || ({} as PatientProfile['labs']);
 
   for (const rule of LAB_RECOMMENDATION_CATALOG) {
-    // Check if lab already recorded in patient.labs
     let isAlreadyRecorded = false;
     let recordedValue: string | number | undefined = undefined;
 
     if (rule.matchedLabKey && recordedLabs[rule.matchedLabKey] !== undefined) {
-      isAlreadyRecorded = true;
-      recordedValue = recordedLabs[rule.matchedLabKey];
+      const val = recordedLabs[rule.matchedLabKey];
+      if (typeof val === 'number' || typeof val === 'string') {
+        isAlreadyRecorded = true;
+        recordedValue = val;
+      }
     } else {
-      // Check in observations category 'lab'
       const matchingObs = observations.find(o =>
         o.category === 'lab' &&
         (o.id.includes(rule.id) || (rule.matchedLabKey && o.tags?.includes(`obs_${rule.matchedLabKey}`)))
       );
       if (matchingObs) {
         isAlreadyRecorded = true;
-        recordedValue = matchingObs.observedValue;
+        recordedValue = typeof matchingObs.observedValue === 'boolean'
+          ? (matchingObs.observedValue ? 'Positive' : 'Negative')
+          : matchingObs.observedValue;
       }
     }
 
@@ -410,7 +413,6 @@ export function generateLabRecommendations(
     if (shouldRecommend) {
       const priority = elevatedPriority || rule.basePriority;
 
-      // Find matching hypothesis ID if applicable
       const matchingHyp = hypotheses.find(h =>
         h.biologicalSystems.includes(rule.associatedDomain) ||
         h.requiredInvestigations.some(inv => rule.id.toLowerCase().includes(inv.toLowerCase()))
@@ -420,36 +422,38 @@ export function generateLabRecommendations(
         id: rule.id,
         testName_en: rule.testName_en,
         testName_bn: rule.testName_bn,
-        panelCategory: rule.panelCategory,
+        category: rule.category,
+        clinicalRationale_en: rule.clinicalRationale_en,
+        clinicalRationale_bn: rule.clinicalRationale_bn,
+        triggeringFindingIds: matchingHyp ? [matchingHyp.id] : [],
         priority,
+        existingTestStatus: isAlreadyRecorded ? 'tested' : 'pending',
+        lastKnownValue: recordedValue,
+        lastTestedDate: isAlreadyRecorded ? patient.visit_date : undefined,
+        missingInformationToClarify: isAlreadyRecorded ? [] : [rule.testName_en],
+        requiresClinicianApproval: priority === 'immediate_clinical_evaluation' || priority === 'high_priority',
+        clinicianApproved: false,
         specimenType: rule.specimenType,
         fastingRequirement_en: rule.fastingRequirement_en,
         fastingRequirement_bn: rule.fastingRequirement_bn,
-        clinicalRationale_en: rule.clinicalRationale_en,
-        clinicalRationale_bn: rule.clinicalRationale_bn,
         interpretationGuidance_en: rule.interpretationGuidance_en,
         interpretationGuidance_bn: rule.interpretationGuidance_bn,
-        associatedHypothesisId: matchingHyp?.id,
-        associatedDomain: rule.associatedDomain,
         isAlreadyRecorded,
-        recordedValue,
-        recordedDate: isAlreadyRecorded ? patient.visit_date : undefined,
       });
     }
   }
 
-  // Priority sorting: immediate > high_priority > standard > optional_advanced
   const priorityWeight: Record<LabPriority, number> = {
-    immediate: 1,
+    immediate_clinical_evaluation: 1,
     high_priority: 2,
-    standard: 3,
-    optional_advanced: 4,
+    routine_consideration: 3,
+    optional_conditional: 4,
+    not_indicated: 5,
   };
 
   return recommendations.sort((a, b) => {
-    // Unrecorded tests should precede recorded tests within the same priority
-    if (a.isAlreadyRecorded !== b.isAlreadyRecorded) {
-      return a.isAlreadyRecorded ? 1 : -1;
+    if (a.existingTestStatus !== b.existingTestStatus) {
+      return a.existingTestStatus === 'pending' ? -1 : 1;
     }
     return priorityWeight[a.priority] - priorityWeight[b.priority];
   });
