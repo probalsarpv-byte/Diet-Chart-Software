@@ -132,9 +132,20 @@ export function interpretAyurvedicAssessment(
   const agniAdj_en: string[] = [];
   const agniAdj_bn: string[] = [];
 
-  const hasPittaAgni = observations.some(o => o.tags?.some(t => ['acid_reflux', 'heartburn', 'epigastric_pain', 'diarrhea'].includes(t)));
-  const hasVataAgni = observations.some(o => o.tags?.some(t => ['bloating', 'gas', 'constipation', 'irregular_meal_timing'].includes(t)));
-  const hasKaphaAgni = observations.some(o => o.tags?.some(t => ['sluggish_digestion', 'postprandial_fatigue', 'central_adiposity'].includes(t)));
+  const hasPittaAgni =
+    assessmentAnswers['q_ayur_agni'] === 'tikshnagni' ||
+    assessmentAnswers['q_gi_heartburn'] === 'daily' ||
+    assessmentAnswers['q_gi_acid_reflux'] === 'daily' ||
+    observations.some(o => o.tags?.some(t => ['acid_reflux', 'heartburn', 'epigastric_pain', 'diarrhea'].includes(t)));
+  const hasVataAgni =
+    assessmentAnswers['q_ayur_agni'] === 'vishamagni' ||
+    assessmentAnswers['q_gi_bloating'] === 'frequent' ||
+    assessmentAnswers['q_gi_constipation'] === 'frequent' ||
+    observations.some(o => o.tags?.some(t => ['bloating', 'gas', 'constipation', 'irregular_meal_timing'].includes(t)));
+  const hasKaphaAgni =
+    assessmentAnswers['q_ayur_agni'] === 'mandagni' ||
+    assessmentAnswers['q_gi_sluggish_digestion'] === 'frequent' ||
+    observations.some(o => o.tags?.some(t => ['sluggish_digestion', 'postprandial_fatigue', 'central_adiposity'].includes(t)));
 
   if (hasPittaAgni) {
     agniStatus = 'Tikshna';

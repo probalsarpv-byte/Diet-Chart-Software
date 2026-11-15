@@ -10,7 +10,8 @@
     "test:p0": "tsx test/p0_clinical_safety.test.ts",
     "test:p1": "tsx test/p1_assessment.test.ts",
     "test:p2": "tsx test/p2_clinical_intelligence.test.ts",
-    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2"
+    "test:p2:advanced": "tsx test/p2_advanced_intelligence.test.ts",
+    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced"
   },
   "dependencies": {
     "clsx": "^2.1.1",

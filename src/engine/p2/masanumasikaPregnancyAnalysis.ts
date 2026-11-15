@@ -31,8 +31,9 @@ export function analyzeMasanumasikaPregnancy(
   // Determine gestational age
   const ansWeeks = assessmentAnswers['q_pregnancy_gestational_weeks'];
   const ansDays = assessmentAnswers['q_pregnancy_gestational_days'];
-  const gestationalWeeks = typeof ansWeeks === 'number' ? ansWeeks : (patient.gestational_age_weeks || 16);
-  const gestationalDays = typeof ansDays === 'number' ? ansDays : (patient.gestational_age_days || 0);
+  const defaultWeeks = patient.trimester === 1 ? 8 : patient.trimester === 3 ? 32 : 16;
+  const gestationalWeeks = typeof ansWeeks === 'number' ? ansWeeks : ((patient as any).gestational_age_weeks || defaultWeeks);
+  const gestationalDays = typeof ansDays === 'number' ? ansDays : ((patient as any).gestational_age_days || 0);
 
   const pregnancyMonth = calculatePregnancyMonth(gestationalWeeks, gestationalDays);
   const trimester = getTrimesterFromWeeks(gestationalWeeks);

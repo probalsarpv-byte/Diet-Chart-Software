@@ -35,6 +35,8 @@ import { resolveConflicts } from '@/engine/conflictResolver';
 import { evaluateDNIAndTimeline, DNIEngineResult, checkSupplementOverlaps } from '@/engine/dniEngine';
 import { buildAutoScaledDietChart, getCookedDisplay, generateExchangesForFood } from '@/engine/mealScaler';
 import { advanceToNextPhase, recordFollowUpVisit, TransitionOptions } from '@/engine/phaseProgression';
+import { runP2Analysis } from '@/engine/p2';
+import { P2AnalysisResult, ClinicianDecision } from '@/engine/p2/types';
 
 const CURRENT_SCHEMA_VERSION = 2;
 
@@ -106,6 +108,13 @@ export interface PracticeContextType {
   saveCurrentPatient: () => void;
   loadPatient: (id: string) => void;
   createNewPatient: () => void;
+
+  // Phase P2 Clinical Intelligence
+  p2AnalysisResult: P2AnalysisResult | null;
+  isAnalyzingP2: boolean;
+  executeP2Analysis: (answers?: Record<string, any>) => P2AnalysisResult | null;
+  updateHypothesisDecision: (hypothesisId: string, decision: ClinicianDecision, note?: string) => void;
+  approveP2Analysis: (clinicianId: string, notes?: string) => void;
 }
 
 const PracticeContext = createContext<PracticeContextType | undefined>(undefined);
@@ -257,6 +266,144 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     locked_supplement_ids: [],
     locked_sections: []
   });
+
+  // Phase P2 Clinical Intelligence State
+  const [p2AnalysisResult, setP2AnalysisResult] = useState<P2AnalysisResult | null>(null);
+  const [isAnalyzingP2, setIsAnalyzingP2] = useState<boolean>(false);
+
+  // Load patient-isolated P2 analysis from LocalStorage
+  useEffect(() => {
+    if (!patient?.id) return;
+    const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
+    const visitId = `visit_${patient.id}_${visitDateClean}`;
+    const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+      if (saved) {
+        setP2AnalysisResult(JSON.parse(saved));
+      } else {
+        const initial = runP2Analysis(patient);
+        setP2AnalysisResult(initial);
+      }
+    } catch (e) {
+      console.warn('Could not load P2 analysis from storage:', e);
+      const initial = runP2Analysis(patient);
+      setP2AnalysisResult(initial);
+    }
+  }, [patient?.id, patient?.visit_date]);
+
+  const executeP2Analysis = useCallback((answers?: Record<string, any>) => {
+    if (!patient?.id) return null;
+    setIsAnalyzingP2(true);
+    try {
+      const result = runP2Analysis(patient, answers, p2AnalysisResult?.approvalHistory);
+      setP2AnalysisResult(result);
+      const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
+      const visitId = `visit_${patient.id}_${visitDateClean}`;
+      const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(storageKey, JSON.stringify(result));
+        }
+      } catch (err) {
+        console.warn('Failed to persist P2 analysis to localStorage:', err);
+      }
+      return result;
+    } finally {
+      setIsAnalyzingP2(false);
+    }
+  }, [patient, p2AnalysisResult?.approvalHistory]);
+
+  const updateHypothesisDecision = useCallback((hypothesisId: string, decision: ClinicianDecision, note?: string) => {
+    if (!p2AnalysisResult) return;
+    const updatedHypotheses = p2AnalysisResult.hypotheses.map(h => {
+      if (h.id === hypothesisId) {
+        return {
+          ...h,
+          clinicianDecision: decision,
+          clinicianNote: note !== undefined ? note : h.clinicianNote,
+          clinicianDecidedAt: new Date().toISOString(),
+        };
+      }
+      return h;
+    });
+
+    const approvalRecord = {
+      targetId: hypothesisId,
+      targetType: 'hypothesis' as const,
+      decision,
+      timestamp: new Date().toISOString(),
+      reason: note,
+      evidenceSnapshot: JSON.stringify({ hypothesisId, decision }),
+      ruleVersion: '2.0.0',
+    };
+
+    const newApprovalHistory = [
+      ...p2AnalysisResult.approvalHistory.filter(a => a.targetId !== hypothesisId),
+      approvalRecord,
+    ];
+
+    const updatedResult: P2AnalysisResult = {
+      ...p2AnalysisResult,
+      hypotheses: updatedHypotheses,
+      approvalHistory: newApprovalHistory,
+    };
+
+    setP2AnalysisResult(updatedResult);
+    const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
+    const visitId = `visit_${patient.id}_${visitDateClean}`;
+    const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(storageKey, JSON.stringify(updatedResult));
+      }
+    } catch (err) {
+      console.warn('Failed to persist hypothesis decision:', err);
+    }
+  }, [patient, p2AnalysisResult]);
+
+  const approveP2Analysis = useCallback((clinicianId: string, notes?: string) => {
+    if (!p2AnalysisResult) return;
+    const updatedReport = {
+      ...p2AnalysisResult.report,
+      isApproved: true,
+      approvedBy: clinicianId,
+      approvalDate: new Date().toISOString(),
+      clinicianNotes: notes || p2AnalysisResult.report.clinicianNotes,
+      sectionN_clinicianReview: {
+        ...p2AnalysisResult.report.sectionN_clinicianReview,
+        status: 'fully_approved' as const,
+        reviewingNutritionist: clinicianId,
+        reviewDate: new Date().toISOString().split('T')[0],
+        notes: notes || p2AnalysisResult.report.sectionN_clinicianReview.notes,
+      },
+    };
+
+    const updatedP3Context = {
+      ...p2AnalysisResult.p3PlanningContext,
+      clinicalAssessmentApproved: true,
+      approvedByClinicianId: clinicianId,
+      approvalTimestamp: new Date().toISOString(),
+    };
+
+    const updatedResult: P2AnalysisResult = {
+      ...p2AnalysisResult,
+      report: updatedReport,
+      p3PlanningContext: updatedP3Context,
+    };
+
+    setP2AnalysisResult(updatedResult);
+    const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
+    const visitId = `visit_${patient.id}_${visitDateClean}`;
+    const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(storageKey, JSON.stringify(updatedResult));
+      }
+    } catch (err) {
+      console.warn('Failed to persist approved P2 analysis:', err);
+    }
+  }, [patient, p2AnalysisResult]);
 
   // Pre-index foods in a lookup map for optimal performance
   const foodMap = useMemo(() => new Map(allFoods.map(f => [f.id, f])), []);
@@ -1061,7 +1208,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         savedPatients,
         saveCurrentPatient,
         loadPatient,
-        createNewPatient
+        createNewPatient,
+        p2AnalysisResult,
+        isAnalyzingP2,
+        executeP2Analysis,
+        updateHypothesisDecision,
+        approveP2Analysis
       }}
     >
       {children}

@@ -43,7 +43,7 @@ export function constructP3PlanningContext(params: {
   const assessmentId = `asmt_${patient.id}_${visitId}`;
 
   // Feeding route evaluation
-  const route = patient.feeding_route || 'Oral';
+  const route = patient.feeding_status?.route || 'Oral';
   const isOral = route.toLowerCase() === 'oral';
   const feedingRoute = {
     route,
@@ -56,13 +56,11 @@ export function constructP3PlanningContext(params: {
 
   for (const allergen of patient.confirmed_allergies) {
     hardRestrictions.push({
-      constraintId: `allergy_${allergen.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-      constraintType: 'absolute_exclusion',
-      targetFoodOrGroup: allergen,
-      reason_en: `Confirmed allergic hypersensitivity to ${allergen}. Absolute exclusion required.`,
-      reason_bn: `${allergen}-এ নিশ্চিত অ্যালার্জি। খাদ্যতালিকা থেকে সম্পূর্ণ বর্জনীয়।`,
-      isNonNegotiable: true,
-      clinicalSource: 'patient_profile',
+      type: 'confirmed_allergy',
+      description_en: `Confirmed allergic hypersensitivity to ${allergen}. Absolute exclusion required.`,
+      description_bn: `${allergen}-এ নিশ্চিত অ্যালার্জি। খাদ্যতালিকা থেকে সম্পূর্ণ বর্জনীয়।`,
+      affectedFoodIds: [allergen],
+      source: 'patient_profile',
     });
   }
 
@@ -78,13 +76,10 @@ export function constructP3PlanningContext(params: {
     prescribedSodiumLimit_mg = 1500;
     prescribedPotassiumLimit_mg = 2000;
     hardRestrictions.push({
-      constraintId: 'ckd_protein_cap',
-      constraintType: 'macronutrient_limit',
-      targetFoodOrGroup: 'Total Dietary Protein',
-      reason_en: 'Glomerular protection in renal impairment: maximum protein 0.8 g/kg/day.',
-      reason_bn: 'কিডনি সুরক্ষায় দৈনিক প্রোটিন সর্বোচ্চ ০.৮ গ্রাম/কেজি।',
-      isNonNegotiable: true,
-      clinicalSource: 'renal_pathway',
+      type: 'hard_contraindication',
+      description_en: 'Glomerular protection in renal impairment: maximum protein 0.8 g/kg/day.',
+      description_bn: 'কিডনি সুরক্ষায় দৈনিক প্রোটিন সর্বোচ্চ ০.৮ গ্রাম/কেজি।',
+      source: 'renal_pathway',
     });
   }
 
@@ -95,7 +90,7 @@ export function constructP3PlanningContext(params: {
   } else {
     bmr = 10 * patient.weight_kg + 6.25 * patient.height_cm - 5 * patient.age - 161;
   }
-  const activityMultiplier = patient.activity_level === 'active' ? 1.55 : patient.activity_level === 'light' ? 1.375 : 1.2;
+  const activityMultiplier = patient.activity_level === 'very_active' ? 1.725 : patient.activity_level === 'moderately_active' ? 1.55 : patient.activity_level === 'lightly_active' ? 1.375 : 1.2;
   let tdee = Math.round(bmr * activityMultiplier);
 
   // Pregnancy adjustments
@@ -129,13 +124,13 @@ export function constructP3PlanningContext(params: {
   // Safety findings
   const clinicalSafetyFindings = [
     ...redFlags.map(rf => `${rf.urgency.toUpperCase()}: ${rf.title_en} — ${rf.recommendedAction_en}`),
-    ...hardRestrictions.map(r => r.reason_en),
+    ...hardRestrictions.map(r => r.description_en),
   ];
 
   const functionalNutritionPriorities = priorities.map(p => `Rank ${p.rank} (${p.type}): ${p.title_en}`);
 
   const approvedInterventionGoals = interventionGoals.map(g => {
-    const prior = approvals.find(a => a.targetId === g.id && a.targetType === 'intervention_goal');
+    const prior = approvals.find(a => a.targetId === g.id && a.targetType === 'intervention');
     if (prior && prior.decision === 'accepted') {
       return { ...g, clinicianApprovalStatus: 'approved' as const };
     }

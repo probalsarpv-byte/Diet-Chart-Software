@@ -1428,6 +1428,13 @@ export const coreQuestions: QuestionDefinition[] = [
     "label_en": "Which specific foods trigger immediate gas, cramps, or bloating?",
     "label_bn": "কোন কোন খাবার খাওয়ার পর পেটে গ্যাস বা অস্বস্তি বাড়ে?",
     "domain": "gastrointestinal",
+    "visibility": {
+      "condition": {
+        "field": "bloating_frequency",
+        "operator": "notEquals",
+        "value": "none"
+      }
+    },
     "answerType": "multiselect",
     "options": [
       {

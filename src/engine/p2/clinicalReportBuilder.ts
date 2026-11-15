@@ -170,13 +170,13 @@ export function buildClinicalHealthAssessmentReport(params: {
       normalRange: '< 150 mg/dL',
     });
   }
-  if (labs.creatinine !== undefined) {
+  if (labs.uric_acid !== undefined) {
     availableResults.push({
-      marker: 'Serum Creatinine',
-      value: labs.creatinine,
+      marker: 'Serum Uric Acid',
+      value: labs.uric_acid,
       unit: 'mg/dL',
-      flag: labs.creatinine > 1.2 ? 'HIGH' : 'NORMAL',
-      normalRange: '0.6–1.2 mg/dL',
+      flag: labs.uric_acid > 6.5 ? 'HIGH' : 'NORMAL',
+      normalRange: '3.5–6.0 mg/dL',
     });
   }
   if (labs.ferritin !== undefined) {
@@ -190,7 +190,7 @@ export function buildClinicalHealthAssessmentReport(params: {
   }
 
   const pendingTests = labRecommendations
-    .filter(r => !r.isAlreadyRecorded && (r.priority === 'immediate' || r.priority === 'high_priority'))
+    .filter(r => r.existingTestStatus === 'pending' && (r.priority === 'immediate_clinical_evaluation' || r.priority === 'high_priority'))
     .map(r => r.testName_en);
 
   const missingInformation: string[] = [];
@@ -234,19 +234,21 @@ export function buildClinicalHealthAssessmentReport(params: {
   };
 
   // Section K: Clinical Safety
+  const route = patient.feeding_status?.route || 'Oral';
+  const isOral = route.toLowerCase() === 'oral';
   const hardStops: string[] = [];
   if (patient.confirmed_allergies.length > 0) {
     hardStops.push(`Absolute exclusion of confirmed food allergens: ${patient.confirmed_allergies.join(', ')}.`);
   }
-  if (patient.feeding_route && patient.feeding_route.toLowerCase() !== 'oral') {
-    hardStops.push(`Non-oral feeding route (${patient.feeding_route}): strictly requires dedicated clinical enteral/parenteral specialist prescription.`);
+  if (!isOral) {
+    hardStops.push(`Non-oral feeding route (${route}): strictly requires dedicated clinical enteral/parenteral specialist prescription.`);
   }
 
   const sectionK_clinicalSafety = {
     confirmedAllergies: patient.confirmed_allergies,
     hardStops,
     redFlags,
-    feedingRoute: patient.feeding_route || 'Oral',
+    feedingRoute: route,
     hypoglycemiaProtocolRequired: metabolicHealthAnalysis.medicationMealSafetyPriority,
   };
 

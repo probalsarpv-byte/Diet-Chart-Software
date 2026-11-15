@@ -66,13 +66,10 @@ export function analyzeDietaryPattern(
         plantScore++;
       }
     }
-    // If patient diet preferences state high vegetable intake, give baseline reasonable score
-    if (patient.dietary_preferences?.vegetable_intake === 'high') {
-      plantScore = Math.max(plantScore, 7);
-      answeredCount = Math.max(answeredCount, 8);
-    } else if (patient.dietary_preferences?.vegetable_intake === 'moderate') {
-      plantScore = Math.max(plantScore, 5);
-      answeredCount = Math.max(answeredCount, 6);
+    // If patient diet preferences state vegetarian, ensure plant score reflects diverse plant intake
+    if (patient.dietary_preferences?.is_vegetarian) {
+      plantScore = Math.max(plantScore, 6);
+      answeredCount = Math.max(answeredCount, 7);
     }
   }
 
