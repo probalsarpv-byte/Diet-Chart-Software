@@ -507,20 +507,96 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       qId => functionalAnswers[qId] === undefined || functionalAnswers[qId] === null || functionalAnswers[qId] === ""
     );
 
+    // 1. Allergies Reconciled Check
+    const allergiesReconciled = Array.isArray(patient?.confirmed_allergies);
+
+    // 2. Medication Reconciliation Check
+    const medicationReconciliationCompleted =
+      functionalAnswers['safety_insulin_active'] !== undefined &&
+      functionalAnswers['safety_sulfonylurea_active'] !== undefined;
+
+    // 3. Feeding Route & Swallowing Safety
+    const feedingRouteVerified =
+      Boolean(patient?.feeding_status?.route || functionalAnswers['safety_hospital_feeding_route']) &&
+      functionalAnswers['safety_dysphagia_choking_risk'] !== undefined;
+
+    // 4. Population-Specific Risks Resolved
+    let populationRisksResolved = true;
+    if (patient?.population_group === 'pregnancy') {
+      const gestationalWeeks = populationData.pregnancy?.gestational_age_weeks || Number(functionalAnswers['pregnancy_gestational_week']) || 0;
+      if (gestationalWeeks <= 0) {
+        populationRisksResolved = false; // Gestational age is unrecorded/unverified
+      }
+    }
+
+    // 5. Prescribed Restrictions Clarified (Do not allow unconfirmed Yes restrictions without limit)
+    let prescribedRestrictionsClarified = true;
+    if (functionalAnswers['cardio_prescribed_sodium_cap'] === 'yes') {
+      const sodiumNum = Number(functionalAnswers['safety_prescribed_sodium_limit_mg']);
+      if (!sodiumNum || isNaN(sodiumNum) || sodiumNum <= 0) {
+        prescribedRestrictionsClarified = false;
+      }
+    }
+    if (functionalAnswers['renal_potassium_restriction_prescribed'] === 'yes') {
+      const potNum = Number(functionalAnswers['safety_prescribed_potassium_limit_mg']);
+      if (!potNum || isNaN(potNum) || potNum <= 0) {
+        prescribedRestrictionsClarified = false;
+      }
+    }
+    if (functionalAnswers['safety_prescribed_fluid_limit'] === 'yes') {
+      const fluidNum = Number(functionalAnswers['safety_prescribed_fluid_limit_ml']);
+      if (!fluidNum || isNaN(fluidNum) || fluidNum <= 0) {
+        prescribedRestrictionsClarified = false;
+      }
+    }
+
     const hasTestedLabs = Object.values(labEntries).some(
       e => e.status === 'previously_tested' && e.numeric_value !== undefined
     );
 
+    const administrative_completed = Boolean(functionalAnswers['chief_complaint']);
+
+    // CLINICAL AUDIT RULE:
+    // Do not use an arbitrary percentage alone to authorize final approval.
+    // Completeness requires comprehensive safety verification across all clinical risk domains.
+    const clinical_safety_completed =
+      missingCritical.length === 0 &&
+      allergiesReconciled &&
+      medicationReconciliationCompleted &&
+      feedingRouteVerified &&
+      populationRisksResolved &&
+      prescribedRestrictionsClarified;
+
+    const mandatory_sections_completed =
+      clinical_safety_completed &&
+      administrative_completed &&
+      clinicianSafetyAcknowledged;
+
+    const is_provisional = !mandatory_sections_completed;
+
     return {
-      administrative_completed: Boolean(functionalAnswers['chief_complaint']),
-      clinical_safety_completed: missingCritical.length === 0,
-      mandatory_sections_completed: missingCritical.length === 0 && completionPercentage >= 60,
+      administrative_completed,
+      clinical_safety_completed,
+      mandatory_sections_completed,
       laboratory_data_available: hasTestedLabs,
-      requires_clinical_review: missingCritical.length > 0 || !clinicianSafetyAcknowledged,
+      requires_clinical_review: is_provisional || !clinicianSafetyAcknowledged,
       unanswered_critical_questions: missingCritical,
-      is_provisional: missingCritical.length > 0 || !clinicianSafetyAcknowledged
+      is_provisional,
+      allergies_reconciled: allergiesReconciled,
+      medication_reconciliation_completed: medicationReconciliationCompleted,
+      feeding_route_verified: feedingRouteVerified,
+      population_risks_resolved: populationRisksResolved,
+      prescribed_restrictions_clarified: prescribedRestrictionsClarified,
     };
-  }, [functionalAnswers, labEntries, completionPercentage, clinicianSafetyAcknowledged]);
+  }, [
+    functionalAnswers,
+    labEntries,
+    clinicianSafetyAcknowledged,
+    patient?.confirmed_allergies,
+    patient?.feeding_status?.route,
+    patient?.population_group,
+    populationData.pregnancy?.gestational_age_weeks
+  ]);
 
   // Legacy data adapter
   const legacyData: AssessmentData = useMemo(() => ({

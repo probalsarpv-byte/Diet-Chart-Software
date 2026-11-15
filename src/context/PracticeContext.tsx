@@ -459,9 +459,20 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Rejected P2 approval: Active clinical safety hard stops exist. Must be clinically resolved before sign-off.');
       return false;
     }
+
+    // Require complete safety screening: allergies, medication reconciliation, feeding route, population risks, restrictions
     if (currentClinicalAssessment && !currentClinicalAssessment.completion.clinical_safety_completed) {
-      console.warn('Rejected P2 approval: Clinical safety assessment is incomplete. Unanswered critical safety questions must be resolved.');
+      console.warn('Rejected P2 approval: Clinical safety assessment is incomplete. Critical safety screening must be resolved.');
       return false;
+    }
+
+    // Check if any prescribed nutrient restrictions are marked Yes but missing confirmed limits
+    if (p2AnalysisResult.p3PlanningContext.prescriptions) {
+      const unclarified = Object.values(p2AnalysisResult.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
+      if (unclarified.length > 0) {
+        console.warn('Rejected P2 approval: Prescribed nutrient restrictions require clarification before sign-off.');
+        return false;
+      }
     }
 
     const timestamp = new Date().toISOString();
@@ -496,21 +507,31 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       analysisInvalidatedAt: undefined,
       report: updatedReport,
       p3PlanningContext: updatedP3Context,
+      dietPlanningContext: updatedP3Context,
     };
 
-    setP2AnalysisResult(updatedResult);
+    // CLINICAL AUDIT RULE (Approval Persistence):
+    // Report successful approval only after a valid clinician review and successful persistence.
+    // If saving fails, return false and do not claim approval succeeded or mutate state.
     const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
     const visitId = `visit_${patient.id}_${visitDateClean}`;
     const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
     try {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(storageKey, JSON.stringify(updatedResult));
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(storageKey, JSON.stringify(updatedResult));
+        const verified = window.localStorage.getItem(storageKey);
+        if (!verified) {
+          throw new Error('Verification read-back failed after localStorage write');
+        }
       }
     } catch (err) {
-      console.warn('Failed to persist approved P2 analysis:', err);
+      console.error('CRITICAL: Failed to persist approved P2 analysis to localStorage:', err);
+      return false;
     }
+
+    setP2AnalysisResult(updatedResult);
     return true;
-  }, [patient, p2AnalysisResult]);
+  }, [patient, p2AnalysisResult, currentClinicalAssessment]);
 
   // Pre-index foods in a lookup map for optimal performance
   const foodMap = useMemo(() => new Map(allFoods.map(f => [f.id, f])), []);

@@ -243,21 +243,18 @@ export interface NutritionalTarget {
   source: 'anthropometric_calculation' | 'condition_adjustment' | 'lab_finding' | 'clinician_set';
 }
 
-// ─── Diet Planning Context (P3 interface) ────────────────────────
-export interface DietPlanningContext {
-  patientId: string;
-  visitId: string;
-  generatedAt: string;
-  confirmedAllergies: string[];
-  hardRestrictions: SafetyConstraint[];
-  approvedInterventionGoals: InterventionGoal[];
-  nutritionalTargets: NutritionalTarget[];
-  lifeStage: string;
-  medicationConstraints: string[];
-  foodPreferences: Record<string, unknown>;
-  currentCarePhase: 1 | 2 | 3 | 4;
-  clinicianApprovedHypotheses: string[];
-  unconfirmedHypotheses: string[]; // NOT to be used as hard food restrictions
+// ─── Documented Prescribed Nutrient Restriction (Validated & Traceable) ───
+export interface PrescribedNutrientRestriction {
+  nutrient: 'sodium' | 'potassium' | 'protein' | 'fluid';
+  isRestricted: boolean;
+  hasConfirmedLimit: boolean;
+  numericalLimit?: number;
+  unit: 'mg/day' | 'g/day' | 'mL/day' | 'g/kg/day';
+  prescribedDate?: string;
+  source: 'patient_profile' | 'clinical_assessment' | 'feeding_status' | 'clinician_order';
+  requiresClarification: boolean;
+  clarificationNote_en?: string;
+  clarificationNote_bn?: string;
 }
 
 // ─── Targeted Laboratory Recommendation ──────────────────────────
@@ -417,7 +414,7 @@ export interface GutHealthAnalysisResult {
   furtherInvestigationsSuggested: string[];
 }
 
-// ─── Structured P3 Planning Handoff Contract ─────────────────────
+// ─── Structured P3 Planning Handoff Contract (Authoritative & Unified) ─────
 export interface P3NutritionPlanningContext {
   patientId: string;
   visitId: string;
@@ -432,14 +429,30 @@ export interface P3NutritionPlanningContext {
   confirmedAllergies: string[];
   feedingRoute: { route: string; oral_intake_permitted: boolean; requires_specialist_support: boolean };
   hardRestrictions: SafetyConstraint[];
+  
+  // Confirmed numerical limits (populated strictly when verified numerical value exists)
   prescribedFluidLimit_mL?: number;
   prescribedSodiumLimit_mg?: number;
   prescribedPotassiumLimit_mg?: number;
   prescribedProteinCap_g?: number;
   
+  // Explicitly tracked restrictions with validation and clarification flags
+  prescriptions: {
+    sodium: PrescribedNutrientRestriction;
+    potassium: PrescribedNutrientRestriction;
+    protein: PrescribedNutrientRestriction;
+    fluid: PrescribedNutrientRestriction;
+  };
+
+  // Clinical Separation Flags
+  hasSuspectedRenalAbnormality: boolean;
+  hasConfirmedCkdDiagnosis: boolean;
+  
   energyTargetCalories: number;
   proteinTargetGrams: number;
+  nutritionalTargets: NutritionalTarget[];
   carbohydrateConsiderations: string[];
+  medicationPrecautions: string[];
   
   clinicalSafetyFindings: string[];
   functionalNutritionPriorities: string[];
@@ -448,7 +461,18 @@ export interface P3NutritionPlanningContext {
   ayurvedicContext: AyurvedicInterpretationResult;
   pregnancyContext?: MasanumasikaPregnancyAnalysisResult;
   approvedInterventionGoals: InterventionGoal[];
+
+  // Authoritative Unified Handoff Fields (single source of truth for P3)
+  generatedAt: string;
+  lifeStage: string;
+  medicationConstraints: string[];
+  foodPreferences: Record<string, unknown>;
+  currentCarePhase: 1 | 2 | 3 | 4;
+  clinicianApprovedHypotheses: string[];
+  unconfirmedHypotheses: string[];
 }
+
+export type DietPlanningContext = P3NutritionPlanningContext;
 
 // ─── Pre-Intervention Clinical Health Assessment Report ───────────
 export interface ClinicalHealthAssessmentReport {

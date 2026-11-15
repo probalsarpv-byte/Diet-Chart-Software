@@ -413,6 +413,13 @@ export interface AssessmentCompletionStatus {
   requires_clinical_review: boolean;
   unanswered_critical_questions: string[];
   is_provisional?: boolean;
+
+  // Comprehensive safety screening details
+  allergies_reconciled?: boolean;
+  medication_reconciliation_completed?: boolean;
+  feeding_route_verified?: boolean;
+  population_risks_resolved?: boolean;
+  prescribed_restrictions_clarified?: boolean;
 }
 
 export interface ClinicalAssessment {

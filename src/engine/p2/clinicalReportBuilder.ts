@@ -9,6 +9,7 @@ import {
   ClinicalRedFlag,
   ClinicalPriority,
   ClinicalTimelineEvent,
+  InterventionGoal,
   LabRecommendation,
   AyurvedicInterpretationResult,
   MasanumasikaPregnancyAnalysisResult,
@@ -26,6 +27,7 @@ export function buildClinicalHealthAssessmentReport(params: {
   redFlags: ClinicalRedFlag[];
   priorities: ClinicalPriority[];
   timelineEvents: ClinicalTimelineEvent[];
+  interventionGoals?: InterventionGoal[];
   labRecommendations: LabRecommendation[];
   ayurvedicInterpretation: AyurvedicInterpretationResult;
   masanumasikaAnalysis: MasanumasikaPregnancyAnalysisResult;
@@ -48,6 +50,7 @@ export function buildClinicalHealthAssessmentReport(params: {
     redFlags,
     priorities,
     timelineEvents,
+    interventionGoals = [],
     labRecommendations,
     ayurvedicInterpretation,
     masanumasikaAnalysis,
@@ -258,11 +261,33 @@ export function buildClinicalHealthAssessmentReport(params: {
         rawRoute.toLowerCase().includes('oral');
 
   const hardStops: string[] = [];
-  if (patient.confirmed_allergies.length > 0) {
-    hardStops.push(`Absolute exclusion of confirmed food allergens: ${patient.confirmed_allergies.join(', ')}.`);
+
+  // CLINICAL SAFETY AUDIT RULE (Allergy vs Hard Stop):
+  // A documented allergy alone is a mandatory food-exclusion constraint, NOT a hard stop
+  // that prevents approval of a Clinical Assessment Report.
+  // Block only actual contraindicated interventions or unresolved clinically significant safety conflicts.
+  for (const allergen of patient.confirmed_allergies) {
+    const allergenLower = allergen.toLowerCase().trim();
+    const conflictingGoal = interventionGoals.find(g =>
+      g.title_en.toLowerCase().includes(allergenLower) ||
+      g.rationale_en.toLowerCase().includes(allergenLower) ||
+      g.nutritionalConstraints.some((c: string) => c.toLowerCase().includes(allergenLower))
+    );
+    if (conflictingGoal) {
+      hardStops.push(`Allergic Conflict: Proposed intervention '${conflictingGoal.title_en}' conflicts with confirmed allergen '${allergen}'.`);
+    }
   }
-  if (!isOral) {
-    hardStops.push(`Non-oral feeding route (${rawRoute}): strictly requires dedicated clinical enteral/parenteral specialist prescription.`);
+
+  // Non-oral feeding route without specialist authorization
+  if (!isOral && !patient.feeding_status?.requires_specialist_support) {
+    hardStops.push(`Non-oral feeding route (${rawRoute}): Standard oral solid diet contraindicated. Dedicated clinical enteral/parenteral specialist protocol required.`);
+  }
+
+  // Critical immediate red flags that block automated intervention approval
+  for (const rf of redFlags) {
+    if (rf.urgency === 'immediate' && rf.blocksAutoIntervention) {
+      hardStops.push(`Critical Red Flag: ${rf.title_en} (${rf.recommendedAction_en})`);
+    }
   }
 
   const sectionK_clinicalSafety = {

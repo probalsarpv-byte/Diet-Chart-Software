@@ -663,6 +663,7 @@ export function runP2Analysis(
     redFlags,
     priorities,
     timelineEvents,
+    interventionGoals,
     labRecommendations,
     ayurvedicInterpretation,
     masanumasikaAnalysis,
@@ -690,6 +691,7 @@ export function runP2Analysis(
     metabolicHealthAnalysis,
     assessment,
     assessmentAnswers: rawAnswers,
+    hypotheses: finalHypotheses,
     approvals,
     isOverallApproved,
     approvedByClinicianId,
@@ -698,21 +700,10 @@ export function runP2Analysis(
     invalidationReason,
   });
 
-  const dietPlanningContext: DietPlanningContext = {
-    patientId: patient.id,
-    visitId,
-    generatedAt: new Date().toISOString(),
-    confirmedAllergies: patient.confirmed_allergies,
-    hardRestrictions: [],
-    approvedInterventionGoals: interventionGoals.filter(g => g.clinicianApprovalStatus === 'approved'),
-    nutritionalTargets: [],
-    lifeStage: patient.population_group,
-    medicationConstraints: patient.active_medications,
-    foodPreferences: patient.dietary_preferences || {},
-    currentCarePhase: patient.current_phase,
-    clinicianApprovedHypotheses: finalHypotheses.filter(h => h.clinicianDecision === 'accepted').map(h => h.id),
-    unconfirmedHypotheses: finalHypotheses.filter(h => h.clinicianDecision === 'pending').map(h => h.id),
-  };
+  // UNIFIED P2-to-P3 SAFETY CONTRACT:
+  // Remove competing empty and populated nutrition-constraint structures.
+  // Both point to the exact same authoritative, validated contract.
+  const dietPlanningContext: DietPlanningContext = p3PlanningContext;
 
   return {
     patientId: patient.id,

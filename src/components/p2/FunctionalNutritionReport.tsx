@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ClinicalHealthAssessmentReport, P2AnalysisResult } from '../../engine/p2/types';
 import { PatientProfile } from '../../types';
 
@@ -26,6 +26,14 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
   const [approvalSuccessMessage, setApprovalSuccessMessage] = useState<string | null>(null);
   const [safetyReviewConfirmed, setSafetyReviewConfirmed] = useState(report.isApproved);
   const [isApproved, setIsApproved] = useState(report.isApproved);
+
+  // Synchronize state when report prop changes
+  useEffect(() => {
+    setIsApproved(Boolean(report.isApproved));
+    if (report.approvedBy) setClinicianId(report.approvedBy);
+    if (report.clinicianNotes) setApprovalNotes(report.clinicianNotes);
+    if (report.isApproved) setSafetyReviewConfirmed(true);
+  }, [report.isApproved, report.approvedBy, report.clinicianNotes]);
 
   const hasActiveHardStops = Boolean(report.sectionK_clinicalSafety?.hardStops && report.sectionK_clinicalSafety.hardStops.length > 0);
 
@@ -59,7 +67,9 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
 
     setApprovalError(null);
 
-    // Call actual approval function and test its returned result!
+    // CLINICAL AUDIT RULE (Approval Persistence):
+    // Report successful approval only after a valid clinician review and successful persistence.
+    // If saving fails, show failure and do not claim the approval was saved.
     const success = onApprove ? onApprove(trimmed, approvalNotes) : false;
     if (success) {
       setIsApproved(true);
@@ -67,7 +77,9 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
     } else {
       setIsApproved(false);
       setApprovalSuccessMessage(null);
-      setApprovalError(lang === 'bn' ? 'অনুমোদন ব্যর্থ হয়েছে বা ক্লিনিক্যাল সুরক্ষা যাচাই দ্বারা প্রত্যাখ্যাত হয়েছে।' : 'Approval failed or was rejected by clinical validation rules.');
+      setApprovalError(lang === 'bn'
+        ? 'অনুমোদন ব্যর্থ হয়েছে বা লোকাল স্টোরেজে সংরক্ষণ সম্পন্ন করা যায়নি। অনুগ্রহ করে প্রয়োজনীয় নিরাপত্তা যাচাই সম্পন্ন করে পুনরায় চেষ্টা করুন।'
+        : 'Approval failed: Could not persist clinical approval to storage or clinical safety criteria were not met. Approval was not saved.');
     }
   };
 
