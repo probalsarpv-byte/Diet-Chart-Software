@@ -17,20 +17,31 @@ import {
 } from 'lucide-react';
 
 export const ReportTab: React.FC = () => {
-  const { patient, dietChart, trafficLight, dniResult, candidateSupplements, language, setLanguage } = usePractice();
+  const { 
+    patient, 
+    dietChart, 
+    trafficLight, 
+    dniResult, 
+    candidateSupplements, 
+    language, 
+    setLanguage,
+    clinicalSafetyEvaluation,
+    interventionApproval
+  } = usePractice();
   const bn = language === 'bn';
   const phaseInfo = CLINICAL_PHASES[patient.current_phase];
 
   const approvedSupplements = candidateSupplements.filter(s => s.approval_status === 'clinician_approved');
 
   const redDietItems = dietChart.flatMap(m => m.items.filter(i => i.traffic_status === 'RED'));
-  const hasUnresolvedContraindications = redDietItems.length > 0;
+  const hasHardStops = clinicalSafetyEvaluation?.overallDecision === 'HARD_STOP';
+  const hasUnresolvedContraindications = redDietItems.length > 0 || hasHardStops;
 
   const handlePrint = () => {
     if (hasUnresolvedContraindications) {
       alert(bn
-        ? "ত্রুটি: খাদ্যতালিকায় নিষিদ্ধ (লাল) খাবার অন্তর্ভুক্ত রয়েছে। রোগীর নিরাপত্তার স্বার্থে এই রিপোর্ট প্রিন্ট বা অনুমোদন করা যাবে না। অনুগ্রহ করে ডায়েট চার্ট ট্যাবে গিয়ে লাল তালিকাভুক্ত খাবারগুলো পরিবর্তন বা রিসেট করুন।"
-        : "Error: The diet chart contains strictly contraindicated (RED) food items. For clinical safety, this report cannot be finalized or printed until all contraindicated foods are resolved."
+        ? "ত্রুটি: ক্লিনিক্যাল সেফটি হার্ড স্টপ বা খাদ্যতালিকায় নিষিদ্ধ (লাল) খাবার অন্তর্ভুক্ত রয়েছে। রোগীর নিরাপত্তার স্বার্থে এই রিপোর্ট প্রিন্ট বা অনুমোদন করা যাবে না।"
+        : "Error: The plan contains active Clinical Safety HARD STOPS or contraindicated (RED) food items. For clinical safety, this report cannot be finalized or printed until resolved."
       );
       return;
     }

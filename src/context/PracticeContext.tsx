@@ -14,8 +14,18 @@ import {
   PatientRecord, 
   ClinicalConditionId,
   FoodExchangeItem,
-  SupplementOverlapWarning
+  SupplementOverlapWarning,
+  InterventionApproval,
+  InterventionRevision,
+  InterventionLockState,
+  FeedingStatus,
+  ClinicalPathway,
+  InterventionApprovalStatus
 } from '@/types';
+import { 
+  validateInterventionPlan, 
+  ComprehensiveSafetyEvaluation 
+} from '@/clinical-safety';
 import foodsData from '@/data/foods.json';
 import medicinesData from '@/data/medicines.json';
 import supplementsData from '@/data/supplements.json';
@@ -64,6 +74,16 @@ export interface PracticeContextType {
   candidateSupplements: CandidateSupplement[];
   approveCandidateSupplement: (id: string, dose?: string, notes?: string) => void;
   rejectCandidateSupplement: (id: string) => void;
+
+  // Clinical Safety & Intervention Governance
+  clinicalSafetyEvaluation: ComprehensiveSafetyEvaluation;
+  interventionApproval: InterventionApproval;
+  interventionRevisions: InterventionRevision[];
+  lockState: InterventionLockState;
+  approveCurrentIntervention: (clinicianId?: string, rationale?: string) => boolean;
+  toggleItemLock: (type: 'food' | 'meal' | 'day' | 'supplement', id: string | number) => void;
+  updateFeedingStatus: (status: Partial<FeedingStatus>) => void;
+  updateClinicalPathways: (pathways: ClinicalPathway[]) => void;
 
   // Diet Plan Management
   dietChart: DietChartMeal[];
@@ -219,8 +239,96 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [candidateSupplements, setCandidateSupplements] = useState<CandidateSupplement[]>([]);
   const [savedPatients, setSavedPatients] = useState<PatientRecord[]>([]);
 
+  // Clinical Safety & Intervention Revision State
+  const [revisionNumber, setRevisionNumber] = useState(1);
+  const [interventionApproval, setInterventionApproval] = useState<InterventionApproval>({
+    intervention_id: `int_${patient.id}_1`,
+    revision_number: 1,
+    approved_by: '',
+    approval_timestamp: '',
+    status: 'draft',
+    is_valid: false
+  });
+  const [interventionRevisions, setInterventionRevisions] = useState<InterventionRevision[]>([]);
+  const [lockState, setLockState] = useState<InterventionLockState>({
+    locked_food_ids: [],
+    locked_meal_ids: [],
+    locked_days: [],
+    locked_supplement_ids: [],
+    locked_sections: []
+  });
+
   // Pre-index foods in a lookup map for optimal performance
   const foodMap = useMemo(() => new Map(allFoods.map(f => [f.id, f])), []);
+
+  // Reactive Central Clinical Safety Engine
+  const clinicalSafetyEvaluation = useMemo(() => {
+    return validateInterventionPlan(patient, dietChart, allFoods);
+  }, [patient, dietChart]);
+
+  const approveCurrentIntervention = useCallback((clinicianId = 'CLINICIAN_ACTIVE', rationale?: string) => {
+    if (!clinicalSafetyEvaluation.isEligibleForApproval) {
+      return false;
+    }
+    const approval: InterventionApproval = {
+      intervention_id: `int_${patient.id}_${revisionNumber}`,
+      revision_number: revisionNumber,
+      approved_by: clinicianId,
+      approval_timestamp: new Date().toISOString(),
+      status: 'clinician_approved',
+      clinical_rationale: rationale,
+      is_valid: true
+    };
+    setInterventionApproval(approval);
+    return true;
+  }, [clinicalSafetyEvaluation.isEligibleForApproval, patient.id, revisionNumber]);
+
+  const toggleItemLock = useCallback((type: 'food' | 'meal' | 'day' | 'supplement', id: string | number) => {
+    setLockState(prev => {
+      if (type === 'food') {
+        const sid = String(id);
+        const exists = prev.locked_food_ids.includes(sid);
+        return { ...prev, locked_food_ids: exists ? prev.locked_food_ids.filter(x => x !== sid) : [...prev.locked_food_ids, sid] };
+      }
+      if (type === 'meal') {
+        const sid = String(id);
+        const exists = prev.locked_meal_ids.includes(sid);
+        return { ...prev, locked_meal_ids: exists ? prev.locked_meal_ids.filter(x => x !== sid) : [...prev.locked_meal_ids, sid] };
+      }
+      if (type === 'day') {
+        const nid = Number(id);
+        const exists = prev.locked_days.includes(nid);
+        return { ...prev, locked_days: exists ? prev.locked_days.filter(x => x !== nid) : [...prev.locked_days, nid] };
+      }
+      if (type === 'supplement') {
+        const sid = String(id);
+        const exists = prev.locked_supplement_ids.includes(sid);
+        return { ...prev, locked_supplement_ids: exists ? prev.locked_supplement_ids.filter(x => x !== sid) : [...prev.locked_supplement_ids, sid] };
+      }
+      return prev;
+    });
+  }, []);
+
+  const updateFeedingStatus = useCallback((statusUpdates: Partial<FeedingStatus>) => {
+    setPatient(prev => ({
+      ...prev,
+      feeding_status: {
+        ...(prev.feeding_status || {
+          route: 'oral_standard',
+          oral_intake_permitted: true,
+          requires_specialist_support: false
+        }),
+        ...statusUpdates
+      }
+    }));
+  }, []);
+
+  const updateClinicalPathways = useCallback((pathways: ClinicalPathway[]) => {
+    setPatient(prev => ({
+      ...prev,
+      clinical_pathways: pathways
+    }));
+  }, []);
 
   // 1. Reactive Traffic Light Conflict Resolver
   const trafficLight = useMemo(() => {
@@ -581,11 +689,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           cooked_weight_g: cookedG,
           cooked_display_bn: display.bn,
           cooked_display_en: display.en,
-          kcal: Math.round(per100.kcal * mult),
-          protein_g: Math.round(per100.protein_g * mult * 10) / 10,
-          carbs_g: Math.round(per100.carbs_g * mult * 10) / 10,
-          fat_g: Math.round(per100.fat_g * mult * 10) / 10,
-          fiber_g: Math.round(per100.fiber_g * mult * 10) / 10
+          kcal: Math.round((per100.kcal ?? 0) * mult),
+          protein_g: Math.round((per100.protein_g ?? 0) * mult * 10) / 10,
+          carbs_g: Math.round((per100.carbs_g ?? 0) * mult * 10) / 10,
+          fat_g: Math.round((per100.fat_g ?? 0) * mult * 10) / 10,
+          fiber_g: Math.round((per100.fiber_g ?? 0) * mult * 10) / 10
         };
       });
 
@@ -627,11 +735,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           cooked_weight_g: cookedG,
           cooked_display_bn: display.bn,
           cooked_display_en: display.en,
-          kcal: Math.round(food.per_100g.kcal * mult),
-          protein_g: Math.round(food.per_100g.protein_g * mult * 10) / 10,
-          carbs_g: Math.round(food.per_100g.carbs_g * mult * 10) / 10,
-          fat_g: Math.round(food.per_100g.fat_g * mult * 10) / 10,
-          fiber_g: Math.round(food.per_100g.fiber_g * mult * 10) / 10,
+          kcal: Math.round((food.per_100g.kcal ?? 0) * mult),
+          protein_g: Math.round((food.per_100g.protein_g ?? 0) * mult * 10) / 10,
+          carbs_g: Math.round((food.per_100g.carbs_g ?? 0) * mult * 10) / 10,
+          fat_g: Math.round((food.per_100g.fat_g ?? 0) * mult * 10) / 10,
+          fiber_g: Math.round((food.per_100g.fiber_g ?? 0) * mult * 10) / 10,
           prep_note_bn: food.prep_note_bn,
           prep_note_en: food.prep_note_en,
           alternatives: generateExchangesForFood(
@@ -705,11 +813,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       cooked_weight_g: cookedG,
       cooked_display_bn: display.bn,
       cooked_display_en: display.en,
-      kcal: Math.round(food.per_100g.kcal * mult),
-      protein_g: Math.round(food.per_100g.protein_g * mult * 10) / 10,
-      carbs_g: Math.round(food.per_100g.carbs_g * mult * 10) / 10,
-      fat_g: Math.round(food.per_100g.fat_g * mult * 10) / 10,
-      fiber_g: Math.round(food.per_100g.fiber_g * mult * 10) / 10,
+      kcal: Math.round((food.per_100g.kcal ?? 0) * mult),
+      protein_g: Math.round((food.per_100g.protein_g ?? 0) * mult * 10) / 10,
+      carbs_g: Math.round((food.per_100g.carbs_g ?? 0) * mult * 10) / 10,
+      fat_g: Math.round((food.per_100g.fat_g ?? 0) * mult * 10) / 10,
+      fiber_g: Math.round((food.per_100g.fiber_g ?? 0) * mult * 10) / 10,
       prep_note_bn: food.prep_note_bn,
       prep_note_en: food.prep_note_en,
       alternatives: generateExchangesForFood(
@@ -930,6 +1038,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         candidateSupplements,
         approveCandidateSupplement,
         rejectCandidateSupplement,
+        clinicalSafetyEvaluation,
+        interventionApproval,
+        interventionRevisions,
+        lockState,
+        approveCurrentIntervention,
+        toggleItemLock,
+        updateFeedingStatus,
+        updateClinicalPathways,
         dietChart,
         isDietPlanDirty,
         recalculateDietPlan,

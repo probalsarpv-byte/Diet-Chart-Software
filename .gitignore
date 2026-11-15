@@ -42,3 +42,6 @@ temp_inspect/
 fetch_*.txt
 *.tmp
 
+# raw uncompressed datasets
+src/data/raw/medicine_search_index_raw.json
+

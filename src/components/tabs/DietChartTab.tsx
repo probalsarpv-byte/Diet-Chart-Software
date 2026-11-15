@@ -16,6 +16,9 @@ import {
   ChevronDown,
   CookingPot,
   ShieldAlert,
+  ShieldCheck,
+  Lock,
+  Unlock,
   AlertOctagon,
   CheckCircle2
 } from 'lucide-react';
@@ -35,7 +38,12 @@ export const DietChartTab: React.FC = () => {
     resetDietChartToAutoScaled, 
     allFoods, 
     trafficLight, 
-    language 
+    language,
+    clinicalSafetyEvaluation,
+    interventionApproval,
+    approveCurrentIntervention,
+    lockState,
+    toggleItemLock
   } = usePractice();
 
   const bn = language === 'bn';
@@ -107,6 +115,81 @@ export const DietChartTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Clinical Safety Engine & Approval Governance Banner */}
+      <div className={`p-4 rounded-2xl border transition-all ${
+        clinicalSafetyEvaluation.overallDecision === 'HARD_STOP'
+          ? 'bg-rose-500/15 border-rose-500/40 text-rose-700 dark:text-rose-300'
+          : clinicalSafetyEvaluation.overallDecision === 'CLINICAL_REVIEW_REQUIRED'
+          ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300'
+          : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            {clinicalSafetyEvaluation.overallDecision === 'HARD_STOP' ? (
+              <ShieldAlert className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
+            ) : clinicalSafetyEvaluation.overallDecision === 'CLINICAL_REVIEW_REQUIRED' ? (
+              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+            ) : (
+              <ShieldCheck className="h-5 w-5 text-emerald-500 shrink-0 mt-0.5" />
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                  clinicalSafetyEvaluation.overallDecision === 'HARD_STOP'
+                    ? 'bg-rose-500 text-white'
+                    : clinicalSafetyEvaluation.overallDecision === 'CLINICAL_REVIEW_REQUIRED'
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-emerald-500 text-white'
+                }`}>
+                  {clinicalSafetyEvaluation.overallDecision.replace(/_/g, ' ')}
+                </span>
+                {interventionApproval?.is_valid && (
+                  <span className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {bn ? `অনুমোদিত (ভার্সন #${interventionApproval.revision_number})` : `Approved (Rev #${interventionApproval.revision_number})`}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs font-semibold mt-1">
+                {bn ? clinicalSafetyEvaluation.summary_bn : clinicalSafetyEvaluation.summary_en}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {clinicalSafetyEvaluation.isEligibleForApproval && !interventionApproval?.is_valid && (
+              <button
+                type="button"
+                onClick={() => approveCurrentIntervention()}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-sm flex items-center gap-1.5"
+              >
+                <Check className="h-3.5 w-3.5" />
+                <span>{bn ? 'ডায়েট প্ল্যান অনুমোদন করুন' : 'Approve Intervention'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Detailed Hard Stops if any */}
+        {clinicalSafetyEvaluation.hardStops.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-rose-500/20 space-y-1.5">
+            {clinicalSafetyEvaluation.hardStops.map((stop, i) => (
+              <div key={i} className="text-xs bg-rose-500/10 p-2 rounded-lg flex items-start gap-2">
+                <AlertOctagon className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">{bn ? stop.title_bn : stop.title_en}: </span>
+                  <span>{bn ? stop.clinical_explanation_bn : stop.clinical_explanation_en}</span>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    <strong>{bn ? 'করণীয়: ' : 'Required Action: '}</strong>
+                    {bn ? stop.required_action_bn : stop.required_action_en}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* 1. Macro & Calorie Targets vs Current Chart Header */}
       <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
@@ -213,6 +296,45 @@ export const DietChartTab: React.FC = () => {
           </div>
 
         </div>
+
+        {/* P0 Foundations: BMR Calorie Floor, Discretionary Oil/Ghee, Salt & Fluid */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t">
+          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
+            <span className="text-muted-foreground block text-[10px]">{bn ? 'বিএমআর নিরাপদ সীমা (BMR Floor):' : 'BMR Energy Floor:'}</span>
+            <span className="font-bold text-foreground">{patient.calculated.bmr} kcal/day</span>
+            <span className={`text-[10px] font-medium block mt-0.5 ${
+              totalKcal >= patient.calculated.bmr ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+            }`}>
+              {totalKcal >= patient.calculated.bmr 
+                ? (bn ? '✓ বিএমআরের চেয়ে বেশি (নিরাপদ)' : '✓ Met (>= BMR)')
+                : (bn ? `⚠️ ঘাটতি: ${patient.calculated.bmr - totalKcal} kcal` : `⚠️ Deficit: ${patient.calculated.bmr - totalKcal} kcal`)}
+            </span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
+            <span className="text-muted-foreground block text-[10px]">{bn ? 'রান্নার তেল/ঘি বরাদ্দ:' : 'Discretionary Oil/Ghee:'}</span>
+            <span className="font-bold text-foreground">15g (~135 kcal)</span>
+            <span className="text-[10px] text-muted-foreground block mt-0.5">
+              {bn ? 'সরিষার তেল / খাঁটি দেশি ঘি' : 'Mustard Oil / Pure Ghee'}
+            </span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
+            <span className="text-muted-foreground block text-[10px]">{bn ? 'দৈনিক বাড়তি লবণ (Discretionary Salt):' : 'Added Cooking Salt:'}</span>
+            <span className="font-bold text-foreground">5g salt (~1967 mg Na)</span>
+            <span className="text-[10px] text-muted-foreground block mt-0.5">
+              {bn ? '১ চা চামচ সমান' : '1 level teaspoon daily limit'}
+            </span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
+            <span className="text-muted-foreground block text-[10px]">{bn ? 'দৈনিক তরল হিসাব (Hydration):' : 'Hydration Intake:'}</span>
+            <span className="font-bold text-foreground">2,500 mL / day</span>
+            <span className="text-[10px] text-muted-foreground block mt-0.5">
+              {bn ? 'পানি + ভেষজ পানীয় + স্যুপ' : 'Water + Functional Drinks'}
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* 2. Structured Meals Accordion / Tables */}
@@ -252,6 +374,19 @@ export const DietChartTab: React.FC = () => {
                 }`}>
                   PRAL: {meal.meal_pral}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => toggleItemLock('meal', meal.id)}
+                  className={`p-1.5 rounded-lg border text-xs transition flex items-center gap-1 ${
+                    lockState.locked_meal_ids.includes(meal.id)
+                      ? 'bg-amber-500/20 text-amber-600 border-amber-500/40 font-semibold'
+                      : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border'
+                  }`}
+                  title={lockState.locked_meal_ids.includes(meal.id) ? 'Meal locked from regeneration' : 'Lock meal'}
+                >
+                  {lockState.locked_meal_ids.includes(meal.id) ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                  <span className="text-[10px] hidden sm:inline">{lockState.locked_meal_ids.includes(meal.id) ? (bn ? 'লকড' : 'Locked') : (bn ? 'আনলক' : 'Lock')}</span>
+                </button>
                 <button
                   onClick={() => setSelectedMealForAdd(meal.id)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition"

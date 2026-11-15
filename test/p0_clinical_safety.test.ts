@@ -7,7 +7,16 @@ import { advanceToNextPhase, recordFollowUpVisit, compareLongitudinalProgress } 
 import foodsData from '../src/data/foods.json';
 import medsData from '../src/data/medicines.json';
 import suppsData from '../src/data/supplements.json';
-import { FoodItem, MedicineItem, SupplementItem, PatientProfile, PatientRecord, CandidateSupplement } from '../src/types';
+import { FoodItem, MedicineItem, SupplementItem, PatientProfile, PatientRecord, CandidateSupplement, DietChartMeal } from '../src/types';
+import { searchMedications } from '../src/engine/medicationSearch';
+import { 
+  validateInterventionPlan, 
+  evaluateEnergySafety, 
+  evaluateMedicationSafety, 
+  evaluateFeedingRouteSafety, 
+  evaluateFastingEligibility, 
+  evaluateFluidAndElectrolytes 
+} from '../src/clinical-safety';
 
 const allFoods = foodsData as FoodItem[];
 const allMeds = medsData as MedicineItem[];
@@ -415,8 +424,426 @@ console.log("\n13. New Patient Neutral Initialization Test");
   assert(freshCalc.target_calories >= freshCalc.bmr_safe_calorie_floor, "Energy floor calculation operates on neutral patient");
 }
 
+// TEST 14: Food Database V6 Data Integrity & Missing vs Zero
+console.log("\n14. Food Database V6 Data Integrity & Missing vs Zero");
+{
+  assert(allFoods.length === 381, "All 381 Bangladeshi foods preserved in database");
+  
+  let nullKcal = 0, zeroKcal = 0, nullK = 0, zeroK = 0, hasP = 0, nullP = 0;
+  allFoods.forEach(f => {
+    if (f.per_100g.kcal === null) nullKcal++;
+    else if (f.per_100g.kcal === 0) zeroKcal++;
+
+    if (f.micronutrients?.potassium_mg === null) nullK++;
+    else if (f.micronutrients?.potassium_mg === 0) zeroK++;
+
+    if (f.micronutrients?.phosphorus_mg !== null && f.micronutrients?.phosphorus_mg !== undefined) hasP++;
+    else nullP++;
+  });
+
+  assert(nullKcal === 29, `Missing energy strictly preserved as null (found ${nullKcal}, expected 29; never 0)`);
+  assert(zeroKcal === 1, `Documented numerical zero energy preserved (found ${zeroKcal}, expected 1)`);
+  assert(nullK === 63, `Missing potassium strictly preserved as null (found ${nullK}, expected 63; never 0)`);
+  assert(zeroK === 6, `Documented numerical zero potassium preserved (found ${zeroK}, expected 6)`);
+  assert(hasP === 318, `Phosphorus integrated for 318 foods from FCTB V6 (found ${hasP}, expected 318)`);
+}
+
+// TEST 15: MediNutrition Medicine Search & Brand Resolution
+console.log("\n15. MediNutrition Medicine Search & Brand Resolution");
+{
+  const metResults = searchMedications("Metformin", 3);
+  assert(metResults.length > 0, "Generic search for 'Metformin' returns matches");
+  assert(metResults[0].rule_coverage_status === 'fully_covered', "Metformin is tagged with fully_covered clinical rules");
+
+  const brandResults = searchMedications("Napache", 3);
+  assert(brandResults.length > 0, "Brand search for 'Napache' returns matches from 32,461 brand index");
+  assert(Boolean(brandResults[0].generic_name), "Brand resolves to canonical generic name");
+
+  const unknownResults = searchMedications("Azithromycin", 2);
+  assert(unknownResults.length > 0, "Corpus identifies Azithromycin");
+  assert(unknownResults[0].rule_coverage_status === 'no_rules_available', "Uncovered medicine flagged with 'no_rules_available'");
+  assert(unknownResults[0].clinical_coverage_note_en.includes('clinician verification'), "Requires explicit clinician verification note");
+}
+
+// TEST 16: Central Clinical Safety Engine — Standardized Decisions
+console.log("\n16. Central Clinical Safety Engine — Standardized Decisions");
+{
+  const basePatient: PatientProfile = {
+    schema_version: 2,
+    id: 'pt_safety_test',
+    name: 'Safety Test Patient',
+    age: 45,
+    gender: 'female',
+    phone: '',
+    visit_date: '2026-11-15',
+    current_phase: 1,
+    height_cm: 160,
+    weight_kg: 68,
+    waist_cm: 82,
+    activity_level: 'sedentary',
+    sleep_hours: 7,
+    shift_worker: false,
+    population_group: 'adult_standard',
+    bmr_floor_strategy: 'clamped_to_bmr',
+    confirmed_allergies: ['egg'],
+    clinician_disallowed_foods: [],
+    clinician_disallowed_tags: [],
+    selected_conditions: [],
+    active_medications: [],
+    gut_profile: {
+      bloating: 'none',
+      acid_reflux_hypoacidity: false,
+      bristol_stool_score: 4,
+      energy_score: 7,
+      sleep_quality_score: 7,
+      digestive_fire_agni: 'samagni'
+    },
+    labs: { lab_flags: [] },
+    calculated: {
+      bmi: 26.6,
+      bmi_category_en: 'Overweight',
+      bmi_category_bn: 'অতিরিক্ত ওজন',
+      ibw_kg: 54,
+      adjusted_bw_kg: 57.5,
+      whtr: 0.51,
+      whtr_risk_en: 'Increased Risk',
+      whtr_risk_bn: 'ঝুঁকি বিদ্যমান',
+      bmr: 1350,
+      tdee: 1620,
+      bmr_safe_calorie_floor: 1350,
+      target_calories: 1400,
+      target_protein_g: 70,
+      target_carbs_g: 175,
+      target_fat_g: 45,
+      protein_ratio_used: '1.0 g/kg',
+      population_group: 'adult_standard',
+      bmr_floor_strategy: 'clamped_to_bmr',
+      is_estimated: false,
+      energy_calculation_method: 'Mifflin-St Jeor'
+    }
+  };
+
+  const eggFood = allFoods.find(f => f.name_en.toLowerCase().includes('egg'))!;
+  const riceFood = allFoods.find(f => f.id === 'f_01_0001')!;
+
+  const testMealsWithEgg: DietChartMeal[] = [{
+    id: 'm_breakfast',
+    meal_type: 'breakfast',
+    title_bn: 'সকালের নাশতা',
+    title_en: 'Breakfast',
+    target_time: '08:00',
+    items: [{
+      id: 'item_egg',
+      food_id: eggFood.id,
+      food_name_bn: eggFood.name_bn,
+      food_name_en: eggFood.name_en,
+      category: eggFood.category,
+      raw_weight_g: 60,
+      cooked_weight_g: 60,
+      cooked_display_bn: '১টি ডিম',
+      cooked_display_en: '1 egg',
+      kcal: 90,
+      protein_g: 7,
+      carbs_g: 1,
+      fat_g: 6,
+      fiber_g: 0,
+      prep_note_bn: '',
+      prep_note_en: '',
+      alternatives: []
+    }],
+    meal_calories: 90,
+    meal_protein_g: 7,
+    meal_carbs_g: 1,
+    meal_fat_g: 6,
+    meal_gl: 0,
+    meal_gl_is_estimated: false,
+    meal_pral: 1,
+    incompatible_warnings: []
+  }];
+
+  const allergyEvaluation = validateInterventionPlan(basePatient, testMealsWithEgg, allFoods);
+  assert(allergyEvaluation.overallDecision === 'HARD_STOP', "Allergen violation triggers HARD_STOP");
+  assert(allergyEvaluation.isEligibleForApproval === false, "HARD_STOP blocks intervention approval eligibility");
+
+  // NPO Feeding route test
+  const npoPatient: PatientProfile = {
+    ...basePatient,
+    confirmed_allergies: [],
+    feeding_status: {
+      route: 'npo_nil_per_os',
+      oral_intake_permitted: false,
+      requires_specialist_support: true
+    }
+  };
+  const npoEvaluation = validateInterventionPlan(npoPatient, testMealsWithEgg, allFoods);
+  assert(npoEvaluation.overallDecision === 'HARD_STOP', "NPO status triggers HARD_STOP");
+  assert(npoEvaluation.hardStops.some(s => s.rule_id === 'FEEDING_ROUTE_NPO_HARD_STOP'), "Triggers FEEDING_ROUTE_NPO_HARD_STOP");
+}
+
+// TEST 17: Medication-Nutrition Safety Rules
+console.log("\n17. Medication-Nutrition Safety Rules");
+{
+  const insulinPatient: PatientProfile = {
+    schema_version: 2,
+    id: 'pt_insulin',
+    name: 'Insulin Patient',
+    age: 52,
+    gender: 'male',
+    phone: '',
+    visit_date: '2026-11-15',
+    current_phase: 1,
+    height_cm: 170,
+    weight_kg: 80,
+    waist_cm: 95,
+    activity_level: 'sedentary',
+    sleep_hours: 6,
+    shift_worker: false,
+    population_group: 'adult_standard',
+    bmr_floor_strategy: 'clamped_to_bmr',
+    confirmed_allergies: [],
+    clinician_disallowed_foods: [],
+    clinician_disallowed_tags: [],
+    selected_conditions: ['t2d_ir'],
+    active_medications: ['insulin glargine', 'glimepiride', 'warfarin', 'levothyroxine'],
+    gut_profile: {
+      bloating: 'none',
+      acid_reflux_hypoacidity: false,
+      bristol_stool_score: 4,
+      energy_score: 5,
+      sleep_quality_score: 6,
+      digestive_fire_agni: 'samagni'
+    },
+    labs: { lab_flags: [] },
+    calculated: {
+      bmi: 27.7,
+      bmi_category_en: 'Overweight',
+      bmi_category_bn: 'অতিরিক্ত ওজন',
+      ibw_kg: 66,
+      adjusted_bw_kg: 69.5,
+      whtr: 0.56,
+      whtr_risk_en: 'High Risk',
+      whtr_risk_bn: 'উচ্চ ঝুঁকি',
+      bmr: 1650,
+      tdee: 1980,
+      bmr_safe_calorie_floor: 1650,
+      target_calories: 1700,
+      target_protein_g: 80,
+      target_carbs_g: 200,
+      target_fat_g: 50,
+      protein_ratio_used: '1.0 g/kg',
+      population_group: 'adult_standard',
+      bmr_floor_strategy: 'clamped_to_bmr',
+      is_estimated: false,
+      energy_calculation_method: 'Mifflin-St Jeor'
+    }
+  };
+
+  // Test 17a: Prolonged fasting on insulin
+  const medResultsFasting = evaluateMedicationSafety(insulinPatient, [], 16);
+  assert(medResultsFasting.some(r => r.rule_id === 'INSULIN_FASTING_STOP'), "Prolonged fasting (16h) on insulin triggers INSULIN_FASTING_STOP");
+  assert(medResultsFasting.some(r => r.rule_id === 'SULFONYLUREA_FASTING_STOP'), "Prolonged fasting on sulfonylurea triggers SULFONYLUREA_FASTING_STOP");
+
+  // Test 17b: Warfarin and Levothyroxine advisories
+  const medResultsAdvisories = evaluateMedicationSafety(insulinPatient, []);
+  assert(medResultsAdvisories.some(r => r.rule_id === 'WARFARIN_VITK_CONSISTENCY_ADVISORY'), "Warfarin triggers WARFARIN_VITK_CONSISTENCY_ADVISORY");
+  assert(medResultsAdvisories.some(r => r.rule_id === 'LEVOTHYROXINE_TIMING_ADVISORY'), "Levothyroxine triggers LEVOTHYROXINE_TIMING_ADVISORY");
+}
+
+// TEST 18: Energy Floor Validation (Actual Daily Calories vs BMR)
+console.log("\n18. Energy Floor Validation (Actual Daily Calories vs BMR)");
+{
+  const testPatient: PatientProfile = {
+    schema_version: 2,
+    id: 'pt_energy',
+    name: 'Energy Test',
+    age: 35,
+    gender: 'female',
+    phone: '',
+    visit_date: '2026-11-15',
+    current_phase: 1,
+    height_cm: 155,
+    weight_kg: 65,
+    waist_cm: 80,
+    activity_level: 'sedentary',
+    sleep_hours: 7,
+    shift_worker: false,
+    population_group: 'adult_standard',
+    bmr_floor_strategy: 'clamped_to_bmr',
+    confirmed_allergies: [],
+    clinician_disallowed_foods: [],
+    clinician_disallowed_tags: [],
+    selected_conditions: [],
+    active_medications: [],
+    gut_profile: {
+      bloating: 'none',
+      acid_reflux_hypoacidity: false,
+      bristol_stool_score: 4,
+      energy_score: 7,
+      sleep_quality_score: 7,
+      digestive_fire_agni: 'samagni'
+    },
+    labs: { lab_flags: [] },
+    calculated: {
+      bmi: 27,
+      bmi_category_en: 'Overweight',
+      bmi_category_bn: 'অতিরিক্ত ওজন',
+      ibw_kg: 50,
+      adjusted_bw_kg: 53.75,
+      whtr: 0.51,
+      whtr_risk_en: 'Increased Risk',
+      whtr_risk_bn: 'ঝুঁকি',
+      bmr: 1300,
+      tdee: 1560,
+      bmr_safe_calorie_floor: 1300,
+      target_calories: 1300,
+      target_protein_g: 65,
+      target_carbs_g: 150,
+      target_fat_g: 40,
+      protein_ratio_used: '1.0 g/kg',
+      population_group: 'adult_standard',
+      bmr_floor_strategy: 'clamped_to_bmr',
+      is_estimated: false,
+      energy_calculation_method: 'Mifflin-St Jeor'
+    }
+  };
+
+  const lowCalorieMeals: DietChartMeal[] = [{
+    id: 'm1',
+    meal_type: 'lunch',
+    title_bn: 'দুপুরের খাবার',
+    title_en: 'Lunch',
+    target_time: '13:00',
+    items: [],
+    meal_calories: 900, // 900 kcal is below 1300 BMR floor!
+    meal_protein_g: 45,
+    meal_carbs_g: 100,
+    meal_fat_g: 20,
+    meal_gl: 25,
+    meal_gl_is_estimated: false,
+    meal_pral: -2,
+    incompatible_warnings: []
+  }];
+
+  const energyResults = evaluateEnergySafety(testPatient, lowCalorieMeals);
+  assert(energyResults.some(r => r.rule_id === 'ADULT_BMR_FLOOR_HARD_STOP'), "Planned day below BMR triggers ADULT_BMR_FLOOR_HARD_STOP");
+  const stop = energyResults.find(r => r.rule_id === 'ADULT_BMR_FLOOR_HARD_STOP');
+  assert(stop?.clinical_explanation_en.includes('400 kcal'), "Calculates exact calorie deficit (1300 - 900 = 400 kcal)");
+}
+
+// TEST 19: Fluid, Sodium & Discretionary Accounting
+console.log("\n19. Fluid, Sodium & Discretionary Accounting");
+{
+  const renalPatient: PatientProfile = {
+    schema_version: 2,
+    id: 'pt_renal',
+    name: 'Renal Patient',
+    age: 60,
+    gender: 'male',
+    phone: '',
+    visit_date: '2026-11-15',
+    current_phase: 1,
+    height_cm: 168,
+    weight_kg: 72,
+    waist_cm: 88,
+    activity_level: 'sedentary',
+    sleep_hours: 6,
+    shift_worker: false,
+    population_group: 'renal',
+    bmr_floor_strategy: 'clamped_to_bmr',
+    confirmed_allergies: [],
+    clinician_disallowed_foods: [],
+    clinician_disallowed_tags: [],
+    selected_conditions: ['hypertension_ckd'],
+    active_medications: [],
+    gut_profile: {
+      bloating: 'none',
+      acid_reflux_hypoacidity: false,
+      bristol_stool_score: 4,
+      energy_score: 5,
+      sleep_quality_score: 6,
+      digestive_fire_agni: 'samagni'
+    },
+    labs: { lab_flags: [] },
+    calculated: {} as any
+  };
+
+  const fluidPrescription = {
+    patient_id: renalPatient.id,
+    is_restricted: true,
+    total_fluid_limit_ml: 1500,
+    accounting: {
+      plain_water_ml: 1000,
+      functional_drinks_ml: 300,
+      beverages_tea_coffee_ml: 200,
+      milk_dairy_liquids_ml: 200,
+      soups_liquid_foods_ml: 100,
+      oral_nutrition_supplements_ml: 0
+    },
+    total_prescribed_ml: 1800,
+    clinical_rationale: 'CKD Stage 4 fluid restriction'
+  };
+
+  const { totalFluidMl, totalSodiumMg, safetyResults } = evaluateFluidAndElectrolytes(
+    renalPatient,
+    [],
+    allFoods,
+    fluidPrescription,
+    {
+      mustard_oil_g: 15,
+      desi_ghee_g: 0,
+      other_cooking_oil_g: 0,
+      total_added_fat_g: 15,
+      total_fat_calories: 135,
+      discretionary_added_salt_g: 6, // 6g salt ~ 2360 mg Na
+      added_sodium_mg: 2360
+    }
+  );
+
+  assert(totalFluidMl === 1800, "Fluid accounting sums across all sources (1000 + 300 + 200 + 200 + 100 = 1800 mL)");
+  assert(safetyResults.some(r => r.rule_id === 'FLUID_PRESCRIPTION_EXCEEDED_STOP'), "Exceeding prescribed fluid limit (1800 > 1500 mL) triggers FLUID_PRESCRIPTION_EXCEEDED_STOP");
+  assert(totalSodiumMg >= 2360, "Salt to sodium conversion accurate (6g salt ~ 2360 mg Na)");
+  assert(safetyResults.some(r => r.rule_id === 'SODIUM_RESTRICTION_EXCEEDED'), "Sodium > 2300 mg in renal/hypertension triggers SODIUM_RESTRICTION_EXCEEDED");
+}
+
+// TEST 20: Fasting Eligibility Pre-Screening
+console.log("\n20. Fasting Eligibility Pre-Screening");
+{
+  const pregnantPatient: PatientProfile = {
+    schema_version: 2,
+    id: 'pt_preg',
+    name: 'Pregnant Patient',
+    age: 28,
+    gender: 'female',
+    phone: '',
+    visit_date: '2026-11-15',
+    current_phase: 1,
+    height_cm: 158,
+    weight_kg: 62,
+    waist_cm: 85,
+    activity_level: 'sedentary',
+    sleep_hours: 8,
+    shift_worker: false,
+    population_group: 'pregnancy',
+    trimester: 2,
+    bmr_floor_strategy: 'clamped_to_bmr',
+    confirmed_allergies: [],
+    clinician_disallowed_foods: [],
+    clinician_disallowed_tags: [],
+    selected_conditions: [],
+    active_medications: [],
+    gut_profile: {} as any,
+    labs: { lab_flags: [] },
+    calculated: {} as any
+  };
+
+  const { eligibility, safetyResults } = evaluateFastingEligibility(pregnantPatient, 14);
+  assert(eligibility.is_eligible_for_fasting === false, "Fasting is contraindicated for pregnancy");
+  assert(eligibility.max_allowable_fasting_hours === 0, "Max allowable fasting hours is 0 for pregnancy");
+  assert(safetyResults.some(r => r.rule_id === 'FASTING_PREGNANCY_STOP'), "Triggers FASTING_PREGNANCY_STOP");
+}
+
 console.log("\n=================================================");
-console.log(`ALL 13 VERIFICATION CATEGORIES PASSED: ${passedCount} CHECKS PASSED, ${failedCount} FAILED`);
+console.log(`ALL 20 P0 VERIFICATION CATEGORIES PASSED: ${passedCount} CHECKS PASSED, ${failedCount} FAILED`);
 console.log("=================================================");
 
 if (failedCount > 0) {

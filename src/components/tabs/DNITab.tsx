@@ -12,8 +12,10 @@ import {
   Check, 
   X, 
   Edit3,
-  Lock
+  Lock,
+  Search
 } from 'lucide-react';
+import { searchMedications, MedicineSearchResult } from '@/engine/medicationSearch';
 
 export const DNITab: React.FC = () => {
   const { 
@@ -29,9 +31,20 @@ export const DNITab: React.FC = () => {
   } = usePractice();
   const bn = language === 'bn';
 
+  const [medSearchQuery, setMedSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<MedicineSearchResult[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [customDose, setCustomDose] = useState('');
   const [customNotes, setCustomNotes] = useState('');
+
+  const handleSearchChange = (q: string) => {
+    setMedSearchQuery(q);
+    if (q.trim().length >= 2) {
+      setSearchResults(searchMedications(q, 8));
+    } else {
+      setSearchResults([]);
+    }
+  };
 
   const handleStartEdit = (id: string, currentDose: string, currentNotes?: string) => {
     setEditingId(id);
@@ -57,6 +70,82 @@ export const DNITab: React.FC = () => {
           <span className="text-xs text-muted-foreground">
             {bn ? 'ওষুধ-পুষ্টি মিথস্ক্রিয়া (DNI) যাচাই করতে ওষুধ নির্বাচন করুন' : 'Select all current medications to detect depletions'}
           </span>
+        </div>
+
+        {/* MediNutrition V5 Fast Search Bar (32,461 Brands, 2,189 Generics) */}
+        <div className="relative">
+          <div className="flex items-center gap-2 px-3 py-2 border rounded-xl bg-background focus-within:ring-2 focus-within:ring-primary/40">
+            <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+            <input
+              type="text"
+              value={medSearchQuery}
+              onChange={e => handleSearchChange(e.target.value)}
+              placeholder={bn 
+                ? 'বাংলাদেশের যেকোনো ব্র্যান্ড বা জেনেরিক খুঁজুন (যেমন: Napa, Seclo, Gevilon, Glimepiride, Warfarin)...' 
+                : 'Search any BD brand or generic (e.g. Napa, Seclo, Gevilon, Glimepiride, Warfarin)...'}
+              className="w-full text-xs bg-transparent focus:outline-none text-foreground placeholder:text-muted-foreground"
+            />
+            {medSearchQuery && (
+              <button 
+                onClick={() => { setMedSearchQuery(''); setSearchResults([]); }}
+                className="text-muted-foreground hover:text-foreground text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Search Dropdown Results */}
+          {searchResults.length > 0 && (
+            <div className="absolute z-20 left-0 right-0 mt-1.5 bg-card border rounded-xl shadow-lg max-h-72 overflow-y-auto p-1.5 space-y-1">
+              {searchResults.map((res, i) => {
+                const isSelected = patient.active_medications.some(m => 
+                  m.toLowerCase() === res.name.toLowerCase() || m.toLowerCase() === res.generic_name.toLowerCase()
+                );
+                return (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      toggleMedication(res.name);
+                      setMedSearchQuery('');
+                      setSearchResults([]);
+                    }}
+                    className={`p-2.5 rounded-lg border text-left cursor-pointer transition-colors flex items-center justify-between ${
+                      isSelected 
+                        ? 'bg-primary/10 border-primary' 
+                        : 'hover:bg-muted/60 border-transparent'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-foreground">{res.name}</span>
+                        <span className="text-[10px] uppercase font-semibold px-1.5 py-0.2 rounded bg-muted text-muted-foreground">
+                          {res.type}
+                        </span>
+                        {res.strength && (
+                          <span className="text-[10px] text-muted-foreground">({res.strength} {res.dosage_form})</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        <span className="font-medium text-foreground/80">{res.generic_name}</span>
+                        {res.manufacturer && <span> • {res.manufacturer}</span>}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-0.5 italic">
+                        {bn ? res.clinical_coverage_note_bn : res.clinical_coverage_note_en}
+                      </div>
+                    </div>
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-md ${
+                      isSelected 
+                        ? 'bg-primary text-primary-foreground' 
+                        : 'bg-secondary text-secondary-foreground'
+                    }`}>
+                      {isSelected ? (bn ? 'যুক্ত করা আছে' : 'Active') : (bn ? '+ যোগ করুন' : '+ Add')}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

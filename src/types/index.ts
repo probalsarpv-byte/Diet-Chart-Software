@@ -1,3 +1,13 @@
+import type {
+  ClinicalPathway,
+  FeedingStatus,
+  AyurvedicAssessmentContext,
+  InterventionApprovalStatus,
+  InterventionLockState,
+  FastingSafetyEligibility
+} from './clinical';
+export * from './clinical';
+
 export type FoodCategory = 
   | 'grain'
   | 'protein'
@@ -19,22 +29,32 @@ export interface FoodItem {
   category: FoodCategory;
   exchange_group: 'grain' | 'lean_protein' | 'fatty_protein' | 'vegetable' | 'fruit' | 'fat' | 'dairy' | 'seed_nut';
   per_100g: {
-    kcal: number;
-    protein_g: number;
-    carbs_g: number;
-    fat_g: number;
-    fiber_g: number;
+    kcal: number | null;
+    protein_g: number | null;
+    carbs_g: number | null;
+    fat_g: number | null;
+    fiber_g: number | null;
+    water_g?: number | null;
+    ash_g?: number | null;
   };
   micronutrients?: {
-    calcium_mg: number;
-    iron_mg: number;
-    magnesium_mg: number;
-    potassium_mg: number;
-    sodium_mg: number;
-    zinc_mg: number;
-    vitamin_c_mg: number;
-    folate_mcg: number;
-    vitamin_a_mcg: number;
+    calcium_mg?: number | null;
+    iron_mg?: number | null;
+    magnesium_mg?: number | null;
+    phosphorus_mg?: number | null; // Core P0 integration
+    potassium_mg?: number | null;
+    sodium_mg?: number | null;
+    zinc_mg?: number | null;
+    copper_mg?: number | null;
+    vitamin_a_mcg?: number | null;
+    vitamin_d_mcg?: number | null;
+    vitamin_e_mg?: number | null;
+    thiamin_mg?: number | null;
+    riboflavin_mg?: number | null;
+    niacin_mg?: number | null;
+    vitamin_b6_mg?: number | null;
+    folate_mcg?: number | null;
+    vitamin_c_mg?: number | null;
   };
   raw_to_cooked_ratio: number;
   glycemic_load: GlycemicLoad;
@@ -42,6 +62,13 @@ export interface FoodItem {
   tags: string[];
   prep_note_bn: string;
   prep_note_en: string;
+  edible_portion_factor?: number;
+  scientific_name?: string;
+  source_reference?: string;
+  fodmap_level?: 'low' | 'moderate' | 'high';
+  purine_level?: 'low' | 'moderate' | 'high';
+  oxalate_level?: 'low' | 'moderate' | 'high';
+  histamine_level?: 'low' | 'moderate' | 'high';
 }
 
 export type RestrictionCategory = 
@@ -250,6 +277,13 @@ export interface PatientProfile {
   sleep_hours: number;
   shift_worker: boolean;
   population_group: PopulationGroup;
+  clinical_pathways?: ClinicalPathway[];
+  feeding_status?: FeedingStatus;
+  ayurvedic_context?: AyurvedicAssessmentContext;
+  intervention_version?: number;
+  approval_status?: InterventionApprovalStatus;
+  lock_state?: InterventionLockState;
+  fasting_eligibility?: FastingSafetyEligibility;
   trimester?: 1 | 2 | 3;
   bmr_floor_strategy: BmrFloorStrategy;
   custom_calorie_floor?: number;

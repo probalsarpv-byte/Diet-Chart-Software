@@ -146,11 +146,126 @@ export const IntakeTab: React.FC = () => {
                   className="w-full px-3 py-2 text-sm bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
                 >
                   <option value="adult_standard">{bn ? 'প্রাপ্তবয়স্ক সাধারণ (Adult Standard)' : 'Adult Standard'}</option>
-                  <option value="pediatric">{bn ? 'পেডিয়াট্রিক / শিশু-কিশোর (<১৮)' : 'Pediatric (<18y)'}</option>
+                  <option value="pediatric">{bn ? 'পেডিয়াট্রিক / শিশু (<১০)' : 'Pediatric (<10y)'}</option>
+                  <option value="adolescent">{bn ? 'কিশোর-কিশোরী (Adolescent 10-19y)' : 'Adolescent (10-19y)'}</option>
                   <option value="pregnancy">{bn ? 'গর্ভকালীন পুষ্টি (Pregnancy)' : 'Pregnancy'}</option>
                   <option value="lactation">{bn ? 'স্তন্যদানকারী মা (Lactation)' : 'Lactation'}</option>
                   <option value="geriatric">{bn ? 'বার্ধক্যকালীন পুষ্টি (Geriatric >65y)' : 'Geriatric (>65y)'}</option>
+                  <option value="oncology">{bn ? 'অনকোলজি / ক্যান্সার পুষ্টি (Oncology)' : 'Oncology / Cancer'}</option>
+                  <option value="renal">{bn ? 'রেনাল / কিডনি পুষ্টি (Renal)' : 'Renal / Nephrology'}</option>
+                  <option value="malnutrition_risk">{bn ? 'ম্যালনিউট্রিশন ঝুঁকি / অপুষ্টি' : 'Malnutrition Risk / Underweight'}</option>
                 </select>
+              </div>
+
+              {/* Multi-Pathway Clinical Categories */}
+              <div className="col-span-full border-t pt-3 mt-2">
+                <label className="text-xs font-semibold text-foreground block mb-1">
+                  {bn ? 'ক্লিনিক্যাল পাথওয়ে ও বিশেষায়িত বিভাগ (Clinical Pathways - Multi-Select)' : 'Clinical Pathways & Care Categories (Multi-Select)'}
+                </label>
+                <p className="text-[11px] text-muted-foreground mb-2">
+                  {bn ? 'একক রোগী একই সাথে একাধিক ক্লিনিক্যাল ক্যাটাগরির অন্তর্ভুক্ত হতে পারেন।' : 'A patient may belong to multiple specialized clinical categories simultaneously.'}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'metabolic', label_en: 'Metabolic & Glycemic', label_bn: 'মেটাবলিক ও ডায়াবেটিস' },
+                    { id: 'underweight_restoration', label_en: 'Underweight Restoration', label_bn: 'ওজন পুনরুদ্ধার ও পুষ্টি' },
+                    { id: 'oncology', label_en: 'Oncology / Cachexia', label_bn: 'ক্যান্সার ও ক্যাশেক্সিয়া' },
+                    { id: 'renal', label_en: 'Renal / Dialysis', label_bn: 'কিডনি ও ডায়ালাইসিস' },
+                    { id: 'cardiovascular', label_en: 'Cardiovascular / HTN', label_bn: 'হৃদরোগ ও উচ্চ রক্তচাপ' },
+                    { id: 'gastrointestinal_hepatic', label_en: 'GI & Hepatic', label_bn: 'পরিপাকতন্ত্র ও লিভার' },
+                    { id: 'surgical_postoperative', label_en: 'Surgical / Post-Op', label_bn: 'সার্জারি ও পোস্ট-অপারেটিভ' },
+                    { id: 'critical_care_specialized_support', label_en: 'Specialized Nutrition Support', label_bn: 'বিশেষায়িত পুষ্টি সাপোর্ট' },
+                    { id: 'other_multimorbidity', label_en: 'Complex Multimorbidity', label_bn: 'জটিল বহুমুখী রোগ' },
+                  ].map(pw => {
+                    const active = (patient.clinical_pathways || []).includes(pw.id as any);
+                    return (
+                      <button
+                        key={pw.id}
+                        type="button"
+                        onClick={() => {
+                          const current = patient.clinical_pathways || [];
+                          const updated = active 
+                            ? current.filter(x => x !== pw.id)
+                            : [...current, pw.id as any];
+                          updatePatient({ clinical_pathways: updated });
+                        }}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-all ${
+                          active 
+                            ? 'bg-primary text-primary-foreground border-primary font-medium shadow-sm' 
+                            : 'bg-muted/40 text-muted-foreground hover:bg-muted border-border'
+                        }`}
+                      >
+                        {bn ? pw.label_bn : pw.label_en}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Hospital Feeding Route */}
+              <div className="col-span-full border-t pt-3 mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-foreground block mb-1">
+                    {bn ? 'খাওয়ার মাধ্যম / ফিডিং রুট (Hospital Feeding Route)' : 'Hospital Feeding Route'}
+                  </label>
+                  <select
+                    value={patient.feeding_status?.route || 'oral_standard'}
+                    onChange={e => {
+                      const route = e.target.value as any;
+                      const isNpo = route === 'npo_nil_per_os';
+                      const isTube = route.startsWith('enteral') || route.startsWith('parenteral');
+                      updatePatient({
+                        feeding_status: {
+                          ...(patient.feeding_status || { oral_intake_permitted: true, requires_specialist_support: false }),
+                          route,
+                          oral_intake_permitted: !isNpo && !isTube,
+                          requires_specialist_support: isTube
+                        }
+                      });
+                    }}
+                    className="w-full px-3 py-2 text-sm bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    <option value="oral_standard">{bn ? 'মুখের সাধারণ খাবার (Standard Oral Diet)' : 'Standard Oral Diet'}</option>
+                    <option value="oral_nutritional_supplements">{bn ? 'ওরাল নিউট্রিশনাল সাপ্লিমেন্ট যুক্ত (Oral Supplements)' : 'Oral Diet + ONS'}</option>
+                    <option value="modified_texture_soft">{bn ? 'নরম খাবার / সফট ডায়েট (IDDSI Level 6 Soft)' : 'Soft & Bite-Sized (IDDSI 6)'}</option>
+                    <option value="modified_texture_pureed">{bn ? 'পিউরি / ব্লেন্ডারাইজড ডায়েট (IDDSI Level 4 Pureed)' : 'Pureed (IDDSI 4)'}</option>
+                    <option value="enteral_tube_nasogastric">{bn ? 'এনজি টিউব / রাইলস টিউব (NG Tube Feeding)' : 'NG Tube Feeding'}</option>
+                    <option value="enteral_tube_peg_pej">{bn ? 'পেগ টিউব / জেজুনোস্টমি (PEG / PEJ Tube)' : 'PEG / PEJ Tube'}</option>
+                    <option value="parenteral_total_tpn">{bn ? 'শিরাপথে সম্পূর্ণ পুষ্টি (Total Parenteral TPN)' : 'Total Parenteral (TPN)'}</option>
+                    <option value="npo_nil_per_os">{bn ? 'এনপিও / মুখে খাবার সম্পূর্ণ নিষেধ (NPO - Nil Per Os)' : 'NPO (Nil Per Os)'}</option>
+                  </select>
+                </div>
+
+                <div className="flex flex-col justify-end gap-1.5 pb-1">
+                  <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(patient.feeding_status?.swallowing_difficulty_dysphagia)}
+                      onChange={e => updatePatient({
+                        feeding_status: {
+                          ...(patient.feeding_status || { route: 'oral_standard', oral_intake_permitted: true, requires_specialist_support: false }),
+                          swallowing_difficulty_dysphagia: e.target.checked
+                        }
+                      })}
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    <span>{bn ? 'গিলতে সমস্যা / ডিসফেজিয়া (Dysphagia)' : 'Swallowing Impairment / Dysphagia'}</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(patient.feeding_status?.aspiration_risk)}
+                      onChange={e => updatePatient({
+                        feeding_status: {
+                          ...(patient.feeding_status || { route: 'oral_standard', oral_intake_permitted: true, requires_specialist_support: false }),
+                          aspiration_risk: e.target.checked
+                        }
+                      })}
+                      className="rounded border-border text-primary focus:ring-primary"
+                    />
+                    <span>{bn ? 'খাবার ফুসফুসে প্রবেশের ঝুঁকি (Aspiration Risk)' : 'Choking / Aspiration Risk'}</span>
+                  </label>
+                </div>
               </div>
 
               {patient.population_group === 'pregnancy' && (

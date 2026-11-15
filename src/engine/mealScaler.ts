@@ -123,8 +123,8 @@ export function generateExchangesForFood(
   redFoodIds: Set<string> = new Set(),
   yellowFoodIds: Set<string> = new Set()
 ): FoodExchangeItem[] {
-  const targetKcal = (food.per_100g.kcal * rawGrams) / 100;
-  const targetProtein = (food.per_100g.protein_g * rawGrams) / 100;
+  const targetKcal = ((food.per_100g.kcal ?? 0) * rawGrams) / 100;
+  const targetProtein = ((food.per_100g.protein_g ?? 0) * rawGrams) / 100;
 
   // Candidates: Same exchange group, NOT red, NOT current food
   const candidates = allFoods.filter(f => 
@@ -138,12 +138,14 @@ export function generateExchangesForFood(
 
   for (const cand of candidates.slice(0, 4)) {
     let scaledGrams = 100;
-    if (food.exchange_group === 'grain' && cand.per_100g.kcal > 0) {
-      scaledGrams = Math.round((targetKcal / cand.per_100g.kcal) * 100);
-    } else if ((food.exchange_group === 'lean_protein' || food.exchange_group === 'fatty_protein') && cand.per_100g.protein_g > 0) {
-      scaledGrams = Math.round((targetProtein / cand.per_100g.protein_g) * 100);
-    } else if (cand.per_100g.kcal > 0) {
-      scaledGrams = Math.round((targetKcal / cand.per_100g.kcal) * 100);
+    const candKcal = cand.per_100g.kcal ?? 0;
+    const candProtein = cand.per_100g.protein_g ?? 0;
+    if (food.exchange_group === 'grain' && candKcal > 0) {
+      scaledGrams = Math.round((targetKcal / candKcal) * 100);
+    } else if ((food.exchange_group === 'lean_protein' || food.exchange_group === 'fatty_protein') && candProtein > 0) {
+      scaledGrams = Math.round((targetProtein / candProtein) * 100);
+    } else if (candKcal > 0) {
+      scaledGrams = Math.round((targetKcal / candKcal) * 100);
     }
 
     if (scaledGrams > 0 && scaledGrams < 500) {
@@ -158,8 +160,8 @@ export function generateExchangesForFood(
         raw_weight_g: scaledGrams,
         cooked_display_bn: display.bn,
         cooked_display_en: display.en,
-        kcal: Math.round((cand.per_100g.kcal * scaledGrams) / 100),
-        protein_g: Math.round(((cand.per_100g.protein_g * scaledGrams) / 100) * 10) / 10,
+        kcal: Math.round(((cand.per_100g.kcal ?? 0) * scaledGrams) / 100),
+        protein_g: Math.round((((cand.per_100g.protein_g ?? 0) * scaledGrams) / 100) * 10) / 10,
         traffic_status: status
       });
     }
@@ -320,11 +322,11 @@ export function buildAutoScaledDietChart(
       cooked_weight_g: cookedG,
       cooked_display_bn: display.bn,
       cooked_display_en: display.en,
-      kcal: Math.round(food.per_100g.kcal * multiplier),
-      protein_g: Math.round(food.per_100g.protein_g * multiplier * 10) / 10,
-      carbs_g: Math.round(food.per_100g.carbs_g * multiplier * 10) / 10,
-      fat_g: Math.round(food.per_100g.fat_g * multiplier * 10) / 10,
-      fiber_g: Math.round(food.per_100g.fiber_g * multiplier * 10) / 10,
+      kcal: Math.round((food.per_100g.kcal ?? 0) * multiplier),
+      protein_g: Math.round((food.per_100g.protein_g ?? 0) * multiplier * 10) / 10,
+      carbs_g: Math.round((food.per_100g.carbs_g ?? 0) * multiplier * 10) / 10,
+      fat_g: Math.round((food.per_100g.fat_g ?? 0) * multiplier * 10) / 10,
+      fiber_g: Math.round((food.per_100g.fiber_g ?? 0) * multiplier * 10) / 10,
       prep_note_bn: food.prep_note_bn,
       prep_note_en: food.prep_note_en,
       alternatives: generateExchangesForFood(food, rawG, allFoods, greenIds, redIds, yellowIds),
@@ -407,7 +409,7 @@ export function buildAutoScaledDietChart(
     allFoods, greenFoods, yellowFoods, redFoods, patient
   );
   if (breakfastGrain.food) {
-    const rutiRawG = Math.round((breakfastCarbG / Math.max(0.60, breakfastGrain.food.per_100g.carbs_g / 100)));
+    const rutiRawG = Math.round((breakfastCarbG / Math.max(0.60, (breakfastGrain.food.per_100g.carbs_g ?? 0) / 100)));
     breakfastItems.push(createMealItem(breakfastGrain.food, Math.max(35, Math.min(80, rutiRawG)), breakfastGrain.trafficStatus || 'GREEN'));
   } else if (breakfastGrain.error) {
     breakfastErrors.push(breakfastGrain.error);
@@ -464,7 +466,7 @@ export function buildAutoScaledDietChart(
     allFoods, greenFoods, yellowFoods, redFoods, patient
   );
   if (lunchGrain.food) {
-    const lunchRiceRawG = Math.round((lunchCarbG / Math.max(0.65, lunchGrain.food.per_100g.carbs_g / 100)));
+    const lunchRiceRawG = Math.round((lunchCarbG / Math.max(0.65, (lunchGrain.food.per_100g.carbs_g ?? 0) / 100)));
     lunchItems.push(createMealItem(lunchGrain.food, Math.max(40, Math.min(100, lunchRiceRawG)), lunchGrain.trafficStatus || 'GREEN'));
   } else if (lunchGrain.error) {
     lunchErrors.push(lunchGrain.error);
@@ -478,7 +480,7 @@ export function buildAutoScaledDietChart(
     allFoods, greenFoods, yellowFoods, redFoods, patient
   );
   if (lunchProtein.food) {
-    const lunchFishRawG = Math.round(((targetProtein * 0.40) / Math.max(0.18, lunchProtein.food.per_100g.protein_g / 100)));
+    const lunchFishRawG = Math.round(((targetProtein * 0.40) / Math.max(0.18, (lunchProtein.food.per_100g.protein_g ?? 0) / 100)));
     lunchItems.push(createMealItem(lunchProtein.food, Math.max(80, Math.min(160, lunchFishRawG)), lunchProtein.trafficStatus || 'GREEN'));
   } else if (lunchProtein.error) {
     lunchErrors.push(lunchProtein.error);
@@ -541,7 +543,7 @@ export function buildAutoScaledDietChart(
     allFoods, greenFoods, yellowFoods, redFoods, patient
   );
   if (dinnerProtein.food) {
-    const dinnerChickenRawG = Math.round(((targetProtein * 0.30) / Math.max(0.20, dinnerProtein.food.per_100g.protein_g / 100)));
+    const dinnerChickenRawG = Math.round(((targetProtein * 0.30) / Math.max(0.20, (dinnerProtein.food.per_100g.protein_g ?? 0) / 100)));
     dinnerItems.push(createMealItem(dinnerProtein.food, Math.max(70, Math.min(140, dinnerChickenRawG)), dinnerProtein.trafficStatus || 'GREEN'));
   } else if (dinnerProtein.error) {
     dinnerErrors.push(dinnerProtein.error);
