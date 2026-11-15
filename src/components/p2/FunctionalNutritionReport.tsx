@@ -23,7 +23,11 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
   const [clinicianId, setClinicianId] = useState(report.approvedBy || '');
   const [approvalNotes, setApprovalNotes] = useState(report.clinicianNotes || '');
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [approvalSuccessMessage, setApprovalSuccessMessage] = useState<string | null>(null);
+  const [safetyReviewConfirmed, setSafetyReviewConfirmed] = useState(report.isApproved);
   const [isApproved, setIsApproved] = useState(report.isApproved);
+
+  const hasActiveHardStops = Boolean(report.sectionK_clinicalSafety?.hardStops && report.sectionK_clinicalSafety.hardStops.length > 0);
 
   const handlePrint = () => {
     if (typeof window !== 'undefined') {
@@ -42,10 +46,28 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
       setApprovalError(lang === 'bn' ? 'অনুগ্রহ করে আসল চিকিৎসকের নাম লিখুন (প্লেসহোল্ডার গ্রহণযোগ্য নয়)।' : 'Generic placeholder names are not permitted. Please enter the licensed practitioner name.');
       return;
     }
+
+    if (hasActiveHardStops) {
+      setApprovalError(lang === 'bn' ? 'অননুমোদিত: সক্রিয় ক্লিনিক্যাল সেফটি হার্ড স্টপ রয়েছে। অনুমোদন করার আগে সমাধান করুন।' : 'Approval blocked: Unresolved clinical safety hard stops exist. Review and resolve before sign-off.');
+      return;
+    }
+
+    if (!safetyReviewConfirmed) {
+      setApprovalError(lang === 'bn' ? 'অনুমোদনের পূর্বে নিরাপত্তা পর্যালোচনা (অ্যালার্জি, হার্ড স্টপ, ফিডিং রুট) নিশ্চিত করা আবশ্যক।' : 'You must confirm completion of the clinical safety review (allergies, red flags, and contraindications) before final approval.');
+      return;
+    }
+
     setApprovalError(null);
-    setIsApproved(true);
-    if (onApprove) {
-      onApprove(trimmed, approvalNotes);
+
+    // Call actual approval function and test its returned result!
+    const success = onApprove ? onApprove(trimmed, approvalNotes) : false;
+    if (success) {
+      setIsApproved(true);
+      setApprovalSuccessMessage(lang === 'bn' ? 'অ্যাসেসমেন্ট রিপোর্ট সফলভাবে অনুমোদিত ও সংরক্ষিত হয়েছে।' : 'Clinical assessment report officially approved and persisted for P3 planning.');
+    } else {
+      setIsApproved(false);
+      setApprovalSuccessMessage(null);
+      setApprovalError(lang === 'bn' ? 'অনুমোদন ব্যর্থ হয়েছে বা ক্লিনিক্যাল সুরক্ষা যাচাই দ্বারা প্রত্যাখ্যাত হয়েছে।' : 'Approval failed or was rejected by clinical validation rules.');
     }
   };
 
@@ -639,15 +661,55 @@ export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps>
                   disabled={isApproved}
                 />
               </div>
+
+              {/* Mandatory Clinical Safety Review Verification */}
+              <div className="p-3 bg-muted/50 rounded-lg border border-border">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    checked={safetyReviewConfirmed || isApproved}
+                    onChange={e => setSafetyReviewConfirmed(e.target.checked)}
+                    disabled={isApproved}
+                    className="mt-0.5 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span className="text-[11px] leading-relaxed text-foreground">
+                    <strong>{lang === 'bn' ? 'ক্লিনিক্যাল নিরাপত্তা পর্যালোচনা সম্পন্ন:' : 'Clinical Safety Review Verified:'}</strong>{' '}
+                    {lang === 'bn'
+                      ? 'আমি নিশ্চিত করছি যে রোগীর নিশ্চিত অ্যালার্জি, ক্ষতিকর খাদ্য নিষেধাজ্ঞা, রেড ফ্ল্যাগ ও ফিডিং রুট সংক্রান্ত সমস্ত নিরাপত্তা বিষয় পুঙ্খানুপুঙ্খভাবে পর্যালোচনা করা হয়েছে।'
+                      : 'I confirm that all Section K clinical safety elements (confirmed allergies, hard contraindications, red flags, and feeding route safety) have been reviewed.'}
+                  </span>
+                </label>
+              </div>
+
+              {hasActiveHardStops && (
+                <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-600 dark:text-rose-400 text-[11px] font-semibold">
+                  ⚠️ {lang === 'bn'
+                    ? 'অনুমোদন স্থগিত: সক্রিয় ক্লিনিক্যাল সেফটি হার্ড স্টপ বিদ্যমান। সমাধান ব্যতীত অনুমোদন সম্ভব নয়।'
+                    : 'Approval Blocked: Active clinical safety hard stops exist. Must be clinically resolved before sign-off.'}
+                </div>
+              )}
+
               {approvalError && (
                 <div className="text-[11px] text-rose-500 font-semibold">
                   ⚠️ {approvalError}
                 </div>
               )}
+
+              {approvalSuccessMessage && (
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-center font-bold rounded-lg text-xs">
+                  ✓ {approvalSuccessMessage}
+                </div>
+              )}
+
               {!isApproved ? (
                 <button
                   onClick={handleSignOff}
-                  className="w-full py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow text-xs transition-colors"
+                  disabled={hasActiveHardStops}
+                  className={`w-full py-2.5 px-4 font-bold rounded-lg shadow text-xs transition-colors ${
+                    hasActiveHardStops
+                      ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }`}
                 >
                   ✓ Approve Clinical Assessment & Sign Off for Phase P3 Diet Chart
                 </button>

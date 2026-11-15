@@ -135,7 +135,8 @@ export function calculateAgni(answers: Record<string, AgniClassification>): Agni
     samagni: 0,
     vishamagni: 0,
     tikshnagni: 0,
-    mandagni: 0
+    mandagni: 0,
+    unassessed: 0
   };
 
   const supporting: string[] = [];
@@ -187,8 +188,25 @@ export function calculateAgni(answers: Record<string, AgniClassification>): Agni
       name_bn: 'মন্দাগ্নি (ধীর ও দুর্বল পরিপাক অগ্নি)',
       summary_en: 'Kapha-dominated metabolic sluggishness. Delayed gastric emptying, low appetite, persistent abdominal heaviness, and metabolic toxin (Ama) accumulation.',
       summary_bn: 'কফ দোষের আধিক্যে ধীরগতির হজম। দুর্বল ক্ষুধা, দীর্ঘক্ষণ পেট ভারী থাকা, বদহজম এবং শরীরে আম (টক্সিন) সঞ্চয়।'
+    },
+    unassessed: {
+      name_en: 'Unassessed Agni (Digestive Fire Unassessed)',
+      name_bn: 'অনির্ধারিত পরিপাক অগ্নি (অ্যাসেসমেন্ট সম্পন্ন হয়নি)',
+      summary_en: 'Digestive fire capacity (Agni) has not been assessed. Complete clinical digestive questions to evaluate metabolic fire.',
+      summary_bn: 'পরিপাক অগ্নির অবস্থা এখনও মূল্যায়ন করা হয়নি। অগ্নির ধরন নির্ধারণের জন্য পরিপাক সংক্রান্ত প্রশ্নাবলী পূরণ করুন।'
     }
   };
+
+  if (supporting.length === 0) {
+    return {
+      type: 'unassessed',
+      name_en: meta.unassessed.name_en,
+      name_bn: meta.unassessed.name_bn,
+      clinical_summary_en: meta.unassessed.summary_en,
+      clinical_summary_bn: meta.unassessed.summary_bn,
+      supporting_answers: []
+    };
+  }
 
   const sel = meta[topType];
 

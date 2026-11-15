@@ -281,7 +281,16 @@ console.log("\n8. Phase P3 Planning Handoff Contract");
   assert(p3.proteinTargetGrams > 0, "Calculates protein target with clinical constraints");
   assert(p3.confirmedAllergies.includes('peanut'), "Passes confirmed allergies to P3");
   assert(p3.hardRestrictions.some(r => r.type === 'confirmed_allergy'), "Translates confirmed allergies to hard restrictions");
-  assert(p3.prescribedProteinCap_g !== undefined, "Enforces protein cap for renal impairment (CKD)");
+  assert(p3.prescribedProteinCap_g === undefined, "Does NOT automatically impose unprescribed protein caps without documented prescription");
+
+  // Documented patient-specific prescription test
+  const patientWithRx = makeSyntheticPatient({
+    selected_conditions: ['t2d_ir', 'hypertension_ckd'],
+    clinical_pathways: ['renal'],
+    ...({ prescribed_protein_cap_g: 50 } as any),
+  });
+  const rxResult = runP2Analysis(patientWithRx, {});
+  assert(rxResult.p3PlanningContext.prescribedProteinCap_g === 50, "Enforces documented patient-specific protein cap in P3");
 }
 
 console.log("\n=====================================================================");

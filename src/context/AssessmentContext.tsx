@@ -412,10 +412,11 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
   // Pregnancy / Masanumasika Model
   const masanumasikaAssessment: MasanumasikaPregnancyAssessment | null = useMemo(() => {
     if (patient?.population_group !== 'pregnancy') return null;
-    const weeks = functionalAnswers['pregnancy_gestational_week'] || populationData.pregnancy?.gestational_age_weeks || 16;
+    const rawWeeks = functionalAnswers['pregnancy_gestational_week'] ?? populationData.pregnancy?.gestational_age_weeks;
+    const weeks = (rawWeeks && Number(rawWeeks) > 0) ? Number(rawWeeks) : 0;
     const days = populationData.pregnancy?.gestational_age_days || 0;
-    const month = calculatePregnancyMonth(weeks, days);
-    const trimester = getTrimesterFromWeeks(weeks);
+    const month = weeks > 0 ? calculatePregnancyMonth(weeks, days) : 1;
+    const trimester = weeks > 0 ? getTrimesterFromWeeks(weeks) : 1;
 
     return {
       gestational_age_weeks: weeks,

@@ -5,6 +5,7 @@
 // Independent, versioned clinical approval governance.
 
 import { PatientProfile } from '../../types';
+import { ClinicalAssessment } from '../../types/assessment';
 import {
   P3NutritionPlanningContext,
   SafetyConstraint,
@@ -27,6 +28,8 @@ export interface ConstructP3Params {
   ayurvedicInterpretation: AyurvedicInterpretationResult;
   masanumasikaAnalysis: MasanumasikaPregnancyAnalysisResult;
   metabolicHealthAnalysis: MetabolicHealthAnalysisResult;
+  assessment?: ClinicalAssessment;
+  assessmentAnswers?: Record<string, any>;
   approvals?: ClinicianApprovalRecord[];
   isOverallApproved?: boolean;
   approvedByClinicianId?: string;
@@ -45,6 +48,8 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
     ayurvedicInterpretation,
     masanumasikaAnalysis,
     metabolicHealthAnalysis,
+    assessment,
+    assessmentAnswers = {},
     approvals = [],
     isOverallApproved = false,
     approvedByClinicianId,
@@ -108,45 +113,85 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
 
   // ─── 2. Separation of Hypertension and Chronic Kidney Disease ─────
   // CLINICAL SAFETY AUDIT RULE:
-  // A patient with hypertension alone must NOT be subjected to renal protein restriction (0.8 g/kg)
-  // or potassium restrictions (2000 mg).
-  // CKD must be explicitly confirmed by renal pathway, documented diagnosis, or impaired renal labs.
-  const isRenalPathway = patient.clinical_pathways?.includes('renal');
+  // 1. An isolated abnormal creatinine (> 1.5) or eGFR (< 60) must NOT automatically be treated as confirmed CKD.
+  // 2. Automatically prescribed fixed protein, sodium, potassium, and fluid limits are REMOVED.
+  //    Only documented patient-specific prescriptions and verified clinical requirements are populated.
+  const isRenalPathway = Boolean(patient.clinical_pathways?.includes('renal'));
   const confirmedConditions: string[] = (patient as any).confirmed_conditions || [];
   const patientLabs = patient.labs as any;
-  const hasDocumentedCkd =
-    Boolean(isRenalPathway) ||
-    confirmedConditions.some((c: string) => /ckd|kidney|renal_impairment/i.test(c)) ||
-    Boolean(patientLabs?.creatinine && patientLabs.creatinine > 1.5) ||
-    Boolean(patientLabs?.egfr && patientLabs.egfr < 60) ||
+
+  const hasConfirmedCkdDiagnosis =
+    confirmedConditions.some((c: string) => /ckd|chronic_kidney|end_stage_renal|renal_failure/i.test(c)) ||
     Boolean(patient.selected_conditions?.includes('hypertension_ckd') && isRenalPathway);
+  const hasDocumentedCkd = hasConfirmedCkdDiagnosis || isRenalPathway;
 
-  const hasHypertensionOnly =
-    (patient.selected_conditions?.includes('hypertension_ckd') || patient.clinical_pathways?.includes('cardiovascular')) &&
-    !hasDocumentedCkd;
+  const hasIsolatedRenalLab =
+    !hasDocumentedCkd &&
+    (Boolean(patientLabs?.creatinine && patientLabs.creatinine > 1.5) ||
+     Boolean(patientLabs?.egfr && patientLabs.egfr < 60));
 
-  let prescribedProteinCap_g: number | undefined = undefined;
-  let prescribedSodiumLimit_mg: number | undefined = undefined;
-  let prescribedPotassiumLimit_mg: number | undefined = undefined;
-  let prescribedFluidLimit_mL: number | undefined = undefined;
+  // Extract documented prescriptions from patient profile, feeding status, and assessment
+  const renalData = (assessment?.population_data as any)?.renal;
+  const ans = assessmentAnswers || (assessment?.functional_answers) || {};
+  const feeding = patient.feeding_status as any;
 
-  if (hasDocumentedCkd) {
-    // Documented Chronic Kidney Disease: Glomerular preservation protocol
-    prescribedProteinCap_g = Math.round(patient.weight_kg * 0.8);
-    prescribedSodiumLimit_mg = 1500;
-    prescribedPotassiumLimit_mg = 2000;
-    if (patient.feeding_status?.fluid_restriction_active) {
-      prescribedFluidLimit_mL = 1500;
-    }
+  let prescribedProteinCap_g: number | undefined =
+    (patient as any).prescribed_protein_cap_g ??
+    (patient as any).prescribed_protein_cap ??
+    ans['renal_prescribed_protein_cap'] ??
+    (renalData?.prescribed_protein_cap_g ? Number(renalData.prescribed_protein_cap_g) : undefined);
+
+  let prescribedSodiumLimit_mg: number | undefined =
+    feeding?.prescribed_sodium_limit_mg ??
+    (patient as any).prescribed_sodium_limit_mg ??
+    (ans['safety_prescribed_sodium_limit_mg'] ? Number(ans['safety_prescribed_sodium_limit_mg']) : undefined) ??
+    (renalData?.prescribed_sodium_limit_mg ? Number(renalData.prescribed_sodium_limit_mg) : undefined) ??
+    (renalData?.prescribed_sodium_restriction ? 1500 : undefined) ??
+    (ans['cardio_prescribed_sodium_cap'] === 'yes' ? 2000 : undefined);
+
+  let prescribedPotassiumLimit_mg: number | undefined =
+    (patient as any).prescribed_potassium_limit_mg ??
+    (ans['renal_potassium_restriction_prescribed'] === 'yes' ? 2000 : undefined) ??
+    (renalData?.prescribed_potassium_limit_mg ? Number(renalData.prescribed_potassium_limit_mg) : undefined);
+
+  let prescribedFluidLimit_mL: number | undefined =
+    feeding?.fluid_limit_ml ??
+    (patient as any).prescribed_fluid_limit_ml ??
+    (ans['safety_prescribed_fluid_limit_ml'] ? Number(ans['safety_prescribed_fluid_limit_ml']) : undefined) ??
+    (renalData?.prescribed_fluid_limit_ml ? Number(renalData.prescribed_fluid_limit_ml) : undefined);
+
+  // Hard restrictions based on explicit documented prescriptions
+  if (prescribedProteinCap_g !== undefined) {
     hardRestrictions.push({
       type: 'hard_contraindication',
-      description_en: 'Glomerular protection in verified renal impairment (CKD): protein capped at 0.8 g/kg/day, sodium <= 1500 mg, potassium <= 2000 mg.',
-      description_bn: 'কিডনি সুরক্ষা (সিকেডি): প্রোটিন দৈনিক সর্বোচ্চ ০.৮ গ্রাম/কেজি, সোডিয়াম <= ১৫০০ মিলিগ্রাম, পটাশিয়াম <= ২০০০ মিলিগ্রাম।',
-      source: 'renal_pathway',
+      description_en: `Clinician-prescribed protein restriction: maximum ${prescribedProteinCap_g} g/day.`,
+      description_bn: `চিকিৎসক নির্ধারিত প্রোটিন সীমা: দৈনিক সর্বোচ্চ ${prescribedProteinCap_g} গ্রাম।`,
+      source: 'documented_clinical_prescription',
     });
-  } else if (hasHypertensionOnly) {
-    // Hypertension without CKD: Restrict sodium for blood pressure; do NOT restrict protein or potassium
-    prescribedSodiumLimit_mg = 1500;
+  }
+  if (prescribedSodiumLimit_mg !== undefined) {
+    hardRestrictions.push({
+      type: 'hard_contraindication',
+      description_en: `Clinician-prescribed sodium restriction: maximum ${prescribedSodiumLimit_mg} mg/day.`,
+      description_bn: `চিকিৎসক নির্ধারিত সোডিয়াম সীমা: দৈনিক সর্বোচ্চ ${prescribedSodiumLimit_mg} মিলিগ্রাম।`,
+      source: 'documented_clinical_prescription',
+    });
+  }
+  if (prescribedPotassiumLimit_mg !== undefined) {
+    hardRestrictions.push({
+      type: 'hard_contraindication',
+      description_en: `Clinician-prescribed potassium restriction: maximum ${prescribedPotassiumLimit_mg} mg/day.`,
+      description_bn: `চিকিৎসক নির্ধারিত পটাশিয়াম সীমা: দৈনিক সর্বোচ্চ ${prescribedPotassiumLimit_mg} মিলিগ্রাম।`,
+      source: 'documented_clinical_prescription',
+    });
+  }
+  if (prescribedFluidLimit_mL !== undefined) {
+    hardRestrictions.push({
+      type: 'hard_contraindication',
+      description_en: `Clinician-prescribed fluid restriction: maximum ${prescribedFluidLimit_mL} mL/day.`,
+      description_bn: `চিকিৎসক নির্ধারিত তরল সীমা: দৈনিক সর্বোচ্চ ${prescribedFluidLimit_mL} মিলি।`,
+      source: 'documented_clinical_prescription',
+    });
   }
 
   // ─── 3. Energy & Protein Targets ─────────────────────────────────
@@ -208,8 +253,21 @@ export function constructP3PlanningContext(params: ConstructP3Params): P3Nutriti
     );
   }
 
+  const additionalSafetyNotes: string[] = [];
+  if (hasIsolatedRenalLab) {
+    additionalSafetyNotes.push(
+      'Isolated altered renal biomarker (elevated serum creatinine or reduced eGFR) observed without confirmed CKD diagnosis. Nephrology evaluation advised to differentiate AKI vs chronic etiology before applying restrictive renal diet.'
+    );
+  }
+  if (hasDocumentedCkd) {
+    additionalSafetyNotes.push(
+      'Verified Chronic Kidney Disease / Renal Pathway documented. Nutrition planning must adhere to documented patient-specific prescriptions and avoid unprescribed restrictive extremes.'
+    );
+  }
+
   // Safety findings
   const clinicalSafetyFindings = [
+    ...additionalSafetyNotes,
     ...redFlags.map(rf => `${rf.urgency.toUpperCase()}: ${rf.title_en} — ${rf.recommendedAction_en}`),
     ...hardRestrictions.map(r => r.description_en),
   ];

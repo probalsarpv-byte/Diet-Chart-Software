@@ -163,55 +163,72 @@ export function interpretAyurvedicAssessment(
   }
 
   // ─── 3. Agni Assessment (Digestive Fire) ──────────────────────────
-  let agniStatus: AyurvedicInterpretationResult['agni']['status'] = 'Sama';
-  let agniDesc_en = 'Balanced digestive fire (Sama Agni): comfortable digestion, predictable hunger, and regular assimilation.';
-  let agniDesc_bn = 'ভারসাম্যপূর্ণ হজম ক্ষমতা (সম অগ্নি): আরামদায়ক পরিপাক, স্বাভাবিক ক্ষুধা এবং সুস্থ খাদ্য শোষণ।';
+  let agniStatus: AyurvedicInterpretationResult['agni']['status'] = 'Unassessed';
+  let agniDesc_en = 'Ayurvedic digestive fire (Agni) capacity is unassessed. Complete clinical digestive questions to evaluate metabolic assimilation fire.';
+  let agniDesc_bn = 'পরিপাক অগ্নির অবস্থা এখনও অনির্ধারিত। পরিপাক ক্ষমতা নির্ণয়ের জন্য প্রশ্নাবলী পূরণ করুন।';
   const agniAdj_en: string[] = [];
   const agniAdj_bn: string[] = [];
+
+  const hasDirectAgniData =
+    Boolean(p1Ayurveda?.agni && p1Ayurveda.agni.type !== 'unassessed') ||
+    Boolean(assessmentAnswers['q_ayur_agni']) ||
+    Boolean(assessmentAnswers['agni_hunger_pattern']) ||
+    Boolean(assessmentAnswers['q_gi_heartburn']) ||
+    Boolean(assessmentAnswers['q_gi_acid_reflux']) ||
+    Boolean(assessmentAnswers['q_gi_bloating']) ||
+    Boolean(assessmentAnswers['q_gi_constipation']) ||
+    Boolean(assessmentAnswers['q_gi_sluggish_digestion']);
 
   const hasPittaAgni =
     assessmentAnswers['q_ayur_agni'] === 'tikshnagni' ||
     assessmentAnswers['q_gi_heartburn'] === 'daily' ||
     assessmentAnswers['q_gi_acid_reflux'] === 'daily' ||
-    observations.some(o => o.tags?.some(t => ['acid_reflux', 'heartburn', 'epigastric_pain', 'diarrhea'].includes(t)));
+    observations.some(o => o.tags?.some(t => ['acid_reflux', 'heartburn', 'epigastric_pain'].includes(t)));
   const hasVataAgni =
     assessmentAnswers['q_ayur_agni'] === 'vishamagni' ||
     assessmentAnswers['q_gi_bloating'] === 'frequent' ||
     assessmentAnswers['q_gi_constipation'] === 'frequent' ||
-    observations.some(o => o.tags?.some(t => ['bloating', 'gas', 'constipation', 'irregular_meal_timing'].includes(t)));
+    observations.some(o => o.tags?.some(t => ['bloating', 'gas', 'constipation'].includes(t)));
   const hasKaphaAgni =
     assessmentAnswers['q_ayur_agni'] === 'mandagni' ||
     assessmentAnswers['q_gi_sluggish_digestion'] === 'frequent' ||
-    observations.some(o => o.tags?.some(t => ['sluggish_digestion', 'postprandial_fatigue', 'central_adiposity'].includes(t)));
+    observations.some(o => o.tags?.some(t => ['sluggish_digestion', 'postprandial_fatigue'].includes(t)));
 
   if (p1Ayurveda?.agni?.type) {
     const t = p1Ayurveda.agni.type;
     if (t === 'tikshnagni') agniStatus = 'Tikshna';
     else if (t === 'vishamagni') agniStatus = 'Vishama';
     else if (t === 'mandagni') agniStatus = 'Manda';
-    else agniStatus = 'Sama';
+    else if (t === 'samagni') agniStatus = 'Sama';
+    else agniStatus = 'Unassessed';
     agniDesc_en = p1Ayurveda.agni.clinical_summary_en || (p1Ayurveda.agni as any).clinical_manifestation_en || agniDesc_en;
     agniDesc_bn = p1Ayurveda.agni.clinical_summary_bn || (p1Ayurveda.agni as any).clinical_manifestation_bn || agniDesc_bn;
     if ((p1Ayurveda.agni as any).therapeutic_diet_principles_en) agniAdj_en.push(...(p1Ayurveda.agni as any).therapeutic_diet_principles_en);
     if ((p1Ayurveda.agni as any).therapeutic_diet_principles_bn) agniAdj_bn.push(...(p1Ayurveda.agni as any).therapeutic_diet_principles_bn);
-  } else if (hasPittaAgni) {
-    agniStatus = 'Tikshna';
-    agniDesc_en = 'Hyperactive / Sharp Digestive Fire (Tikshna Agni): excessive appetite, burning epigastric discomfort, acid reflux, or loose bowel motions.';
-    agniDesc_bn = 'তীব্র পরিপাক অগ্নি (তীক্ষ্ণ অগ্নি): অতিরিক্ত ক্ষুধা, বুক ও পেট জ্বালা, এসিডিটি এবং দ্রুত বা আলগা পায়খানা।';
-    agniAdj_en.push('Avoid pungent, sour, fermented, and deep-fried items. Favor cooling hydration: tender coconut water, sweet lassi, coriander water.');
-    agniAdj_bn.push('অতিরিক্ত ঝাল, টক, পোড়া ভাজা ও কড়া মশলাদার খাবার পরিহার করুন। ডাবের পানি, মিষ্টি ঘোল ও ধনে ভেজানো পানি উপকারী।');
-  } else if (hasVataAgni) {
-    agniStatus = 'Vishama';
-    agniDesc_en = 'Variable / Fluctuating Digestive Fire (Vishama Agni): fluctuating appetite, unpredictable bowel movements, abdominal distension, and bloating.';
-    agniDesc_bn = 'অনিয়মিত পরিপাক অগ্নি (বিষম অগ্নি): একেক দিন একেক রকম ক্ষুধা, পেট ফাঁপা, গ্যাস ও মলত্যাগে অনিয়ম।';
-    agniAdj_en.push('Ensure strictly fixed meal schedules. Favor warm, soft cooked foods (khichuri, warm vegetable soup), small sip of warm ginger water.');
-    agniAdj_bn.push('নির্দিষ্ট সময়ে খাবার গ্রহণ বাধ্যতামূলক। হালকা গরম, নরম জাউ বা পাতলা খিচুড়ি এবং অল্প কুসুম গরম আদা পানি উপকারী।');
-  } else if (hasKaphaAgni) {
-    agniStatus = 'Manda';
-    agniDesc_en = 'Slow / Hypoactive Digestive Fire (Manda Agni): poor appetite, heavy postprandial sensation persisting for hours, coated tongue, and sluggish motility.';
-    agniDesc_bn = 'ধীর ও দুর্বল পরিপাক অগ্নি (মন্দ অগ্নি): ক্ষুধার অভাব, খাওয়ার পর ঘণ্টার পর ঘণ্টা পেট ভারী লাগা এবং আলস্য ভাব।';
-    agniAdj_en.push('Favor light, warm, well-spiced foods (cumin, black pepper, ginger). Avoid heavy dairy, cold drinks, daytime sleep, and late dinners.');
-    agniAdj_bn.push('হালকা গরম খাবার, জিরে ও গোলমরিচ দিয়ে রান্না। ভারী মিষ্টি, ঠান্ডা পানীয়, দিনের বেলা ঘুমানো এবং দেরিতে রাতের খাবার খাওয়া নিষিদ্ধ।');
+  } else if (hasDirectAgniData) {
+    if (hasPittaAgni) {
+      agniStatus = 'Tikshna';
+      agniDesc_en = 'Hyperactive / Sharp Digestive Fire (Tikshna Agni): excessive appetite, burning epigastric discomfort, acid reflux, or loose bowel motions.';
+      agniDesc_bn = 'তীব্র পরিপাক অগ্নি (তীক্ষ্ণ অগ্নি): অতিরিক্ত ক্ষুধা, বুক ও পেট জ্বালা, এসিডিটি এবং দ্রুত বা আলগা পায়খানা।';
+      agniAdj_en.push('Avoid pungent, sour, fermented, and deep-fried items. Favor cooling hydration: tender coconut water, sweet lassi, coriander water.');
+      agniAdj_bn.push('অতিরিক্ত ঝাল, টক, পোড়া ভাজা ও কড়া মশলাদার খাবার পরিহার করুন। ডাবের পানি, মিষ্টি ঘোল ও ধনে ভেজানো পানি উপকারী।');
+    } else if (hasVataAgni) {
+      agniStatus = 'Vishama';
+      agniDesc_en = 'Variable / Fluctuating Digestive Fire (Vishama Agni): fluctuating appetite, unpredictable bowel movements, abdominal distension, and bloating.';
+      agniDesc_bn = 'অনিয়মিত পরিপাক অগ্নি (বিষম অগ্নি): একেক দিন একেক রকম ক্ষুধা, পেট ফাঁপা, গ্যাস ও মলত্যাগে অনিয়ম।';
+      agniAdj_en.push('Ensure strictly fixed meal schedules. Favor warm, soft cooked foods (khichuri, warm vegetable soup), small sip of warm ginger water.');
+      agniAdj_bn.push('নির্দিষ্ট সময়ে খাবার গ্রহণ বাধ্যতামূলক। হালকা গরম, নরম জাউ বা পাতলা খিচুড়ি এবং অল্প কুসুম গরম আদা পানি উপকারী।');
+    } else if (hasKaphaAgni) {
+      agniStatus = 'Manda';
+      agniDesc_en = 'Slow / Hypoactive Digestive Fire (Manda Agni): poor appetite, heavy postprandial sensation persisting for hours, coated tongue, and sluggish motility.';
+      agniDesc_bn = 'ধীর ও দুর্বল পরিপাক অগ্নি (মন্দ অগ্নি): ক্ষুধার অভাব, খাওয়ার পর ঘণ্টার পর ঘণ্টা পেট ভারী লাগা এবং আলস্য ভাব।';
+      agniAdj_en.push('Favor light, warm, well-spiced foods (cumin, black pepper, ginger). Avoid heavy dairy, cold drinks, daytime sleep, and late dinners.');
+      agniAdj_bn.push('হালকা গরম খাবার, জিরে ও গোলমরিচ দিয়ে রান্না। ভারী মিষ্টি, ঠান্ডা পানীয়, দিনের বেলা ঘুমানো এবং দেরিতে রাতের খাবার খাওয়া নিষিদ্ধ।');
+    } else if (assessmentAnswers['q_ayur_agni'] === 'samagni') {
+      agniStatus = 'Sama';
+      agniDesc_en = 'Balanced digestive fire (Sama Agni): comfortable digestion, predictable hunger, and regular assimilation.';
+      agniDesc_bn = 'ভারসাম্যপূর্ণ হজম ক্ষমতা (সম অগ্নি): আরামদায়ক পরিপাক, স্বাভাবিক ক্ষুধা এবং সুস্থ খাদ্য শোষণ।';
+    }
   }
 
   // ─── 4. Pathya / Apathya Recommendations ────────────────────────
@@ -261,11 +278,12 @@ export function interpretAyurvedicAssessment(
     finalFavorable = finalFavorable.filter(f => !/nut|almond|walnut|peanut/i.test(f));
   }
 
-  const agniTypeMap: Record<string, 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni'> = {
+  const agniTypeMap: Record<string, 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni' | 'unassessed'> = {
     Sama: 'samagni',
     Vishama: 'vishamagni',
     Tikshna: 'tikshnagni',
     Manda: 'mandagni',
+    Unassessed: 'unassessed',
   };
 
   const viryaPref: 'sheeta' | 'ushna' | 'neutral' =
@@ -297,7 +315,7 @@ export function interpretAyurvedicAssessment(
       triggeringSymptomIds: [...new Set(triggeringSymptomIds)],
     },
     agni: {
-      type: agniTypeMap[agniStatus] || 'samagni',
+      type: agniTypeMap[agniStatus] || 'unassessed',
       clinical_manifestation_en: agniDesc_en,
       clinical_manifestation_bn: agniDesc_bn,
       therapeutic_diet_principles_en: agniAdj_en,

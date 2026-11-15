@@ -286,6 +286,9 @@ console.log("\n7. Ayurvedic Vikriti & Agni Assessment Test");
   };
   const mandRes = calculateAgni(mandagniAnswers);
   assert(mandRes.type === 'mandagni', "Sluggish digestion and thick tongue classify as Mandagni");
+
+  const unassessedAgni = calculateAgni({});
+  assert(unassessedAgni.type === 'unassessed', "Empty answers preserve explicit 'unassessed' Agni state");
 }
 
 // TEST 8: Masanumasika Pregnancy Nutrition Framework (Addendum)

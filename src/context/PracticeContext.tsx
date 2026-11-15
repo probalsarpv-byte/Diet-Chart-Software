@@ -454,6 +454,16 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return false;
     }
 
+    // Require complete relevant clinical safety review before final approval
+    if (p2AnalysisResult.report.sectionK_clinicalSafety.hardStops.length > 0) {
+      console.warn('Rejected P2 approval: Active clinical safety hard stops exist. Must be clinically resolved before sign-off.');
+      return false;
+    }
+    if (currentClinicalAssessment && !currentClinicalAssessment.completion.clinical_safety_completed) {
+      console.warn('Rejected P2 approval: Clinical safety assessment is incomplete. Unanswered critical safety questions must be resolved.');
+      return false;
+    }
+
     const timestamp = new Date().toISOString();
     const updatedReport = {
       ...p2AnalysisResult.report,

@@ -274,7 +274,8 @@ export function buildFlattenedAnswersForP2(assessment: ClinicalAssessment): Reco
   // Overlay FFQ summary findings
   if (assessment.dietary_frequency?.summary) {
     const s = assessment.dietary_frequency.summary;
-    if (s.weekly_plant_diversity_score < 10) flat['low_food_group_variety'] = 'yes';
+    // Actual P1 FFQ plant diversity metric: 12 plant categories. Score < 5 is low diversity; 5-8 moderate; >= 9 high.
+    if (s.weekly_plant_diversity_score < 5) flat['low_food_group_variety'] = 'yes';
     if (s.daily_fruit_veg_servings_est < 2) flat['low_vegetable_intake'] = 'yes';
     if (s.ultra_processed_burden === 'high' || s.ultra_processed_burden === 'very_high') flat['fried_food_intake'] = 'frequent';
     if (s.sodium_risk_flag) flat['raw_salt_added_at_table'] = 'yes';

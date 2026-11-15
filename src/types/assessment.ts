@@ -235,7 +235,7 @@ export interface VikritiScore {
   active_aggravations: ('vata' | 'pitta' | 'kapha')[];
 }
 
-export type AgniClassification = 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni';
+export type AgniClassification = 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni' | 'unassessed';
 
 export interface AgniAssessmentResult {
   type: AgniClassification;

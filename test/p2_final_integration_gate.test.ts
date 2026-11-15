@@ -18,6 +18,8 @@ import { analyzeDietaryPattern } from '../src/engine/p2/dietaryPatternAnalysis';
 import { interpretAyurvedicAssessment } from '../src/engine/p2/ayurvedicInterpretationEngine';
 import { analyzeMasanumasikaPregnancy } from '../src/engine/p2/masanumasikaPregnancyAnalysis';
 import { constructP3PlanningContext } from '../src/engine/p2/p3PlanningHandoff';
+import { buildFlattenedAnswersForP2 } from '../src/engine/assessment/p2HandoffAdapter';
+import { calculateAgni } from '../src/engine/assessment/agniEngine';
 import { PatientProfile } from '../src/types';
 import { ClinicalAssessment } from '../src/types/assessment';
 
@@ -119,7 +121,7 @@ console.log("Gate 1: Hypoglycemic Pharmacotherapy & Meal Timing Safety");
 // ─── GATE 2: Separation of Hypertension vs Chronic Kidney Disease ─
 console.log("\nGate 2: Separation of Hypertension vs Chronic Kidney Disease (CKD)");
 {
-  // Patient A: Essential Hypertension WITHOUT CKD
+  // Patient A: Essential Hypertension WITHOUT CKD and WITHOUT documented sodium prescription
   const htnPatient = makeSyntheticPatient({
     selected_conditions: ['hypertension_ckd'], // Legacy combined code
     clinical_pathways: ['cardiovascular'],     // Hypertension only, normal kidneys
@@ -143,11 +145,24 @@ console.log("\nGate 2: Separation of Hypertension vs Chronic Kidney Disease (CKD
     "Hypertension WITHOUT CKD: Does NOT restrict dietary potassium to 2000 mg (DASH promotes dietary potassium)"
   );
   assert(
-    htnP3.prescribedSodiumLimit_mg === 1500,
-    "Hypertension WITHOUT CKD: Correctly applies cardiovascular sodium reduction (1500 mg)"
+    htnP3.prescribedSodiumLimit_mg === undefined,
+    "Hypertension WITHOUT CKD: Does NOT automatically impose fixed sodium limits unless documented in clinical prescription"
   );
 
-  // Patient B: Documented Chronic Kidney Disease (CKD Stage 3/4)
+  // Patient A2: Essential Hypertension WITH documented cardiologist sodium restriction
+  const htnPatientWithRx = makeSyntheticPatient({
+    selected_conditions: ['hypertension_ckd'],
+    clinical_pathways: ['cardiovascular'],
+    weight_kg: 70,
+    ...({ prescribed_sodium_limit_mg: 1500 } as any),
+  });
+  const htnWithRxResult = runP2Analysis(htnPatientWithRx, {});
+  assert(
+    htnWithRxResult.p3PlanningContext.prescribedSodiumLimit_mg === 1500,
+    "Hypertension WITH documented prescription: Enforces documented 1500 mg sodium limit"
+  );
+
+  // Patient B: Documented Chronic Kidney Disease (CKD Stage 3/4) WITHOUT explicit unprescribed caps
   const ckdPatient = makeSyntheticPatient({
     selected_conditions: ['hypertension_ckd'],
     clinical_pathways: ['renal'],             // Documented renal pathway
@@ -159,24 +174,72 @@ console.log("\nGate 2: Separation of Hypertension vs Chronic Kidney Disease (CKD
   const ckdP3 = ckdResult.p3PlanningContext;
 
   assert(
-    ckdP3.prescribedProteinCap_g === 56, // 70 kg * 0.8 = 56 g
-    "CKD Patient: Enforces renal glomerular protective protein cap (0.8 g/kg = 56 g)"
+    ckdP3.prescribedProteinCap_g === undefined,
+    "CKD Patient WITHOUT documented cap: Does NOT fabricate an automatic 0.8 g/kg protein cap"
   );
   assert(
-    ckdP3.proteinTargetGrams === 56,
-    "CKD Patient: Clamps protein target to renal cap (56 g)"
+    ckdP3.prescribedPotassiumLimit_mg === undefined,
+    "CKD Patient WITHOUT documented cap: Does NOT fabricate an automatic 2000 mg potassium cap"
   );
   assert(
-    ckdP3.prescribedPotassiumLimit_mg === 2000,
-    "CKD Patient: Restricts dietary potassium to 2000 mg/day for hyperkalemia prevention"
+    ckdP3.prescribedSodiumLimit_mg === undefined,
+    "CKD Patient WITHOUT documented cap: Does NOT fabricate an automatic sodium cap"
+  );
+
+  // Patient B2: Verified CKD WITH documented clinical prescriptions
+  const ckdWithRxPatient = makeSyntheticPatient({
+    selected_conditions: ['hypertension_ckd'],
+    clinical_pathways: ['renal'],
+    weight_kg: 70,
+    ...({
+      prescribed_protein_cap_g: 56,
+      prescribed_potassium_limit_mg: 2000,
+      prescribed_sodium_limit_mg: 1500,
+      feeding_status: { route: 'oral_standard', oral_intake_permitted: true, requires_specialist_support: false, fluid_limit_ml: 1500 }
+    } as any),
+  });
+  const ckdWithRxResult = runP2Analysis(ckdWithRxPatient, {});
+  const ckdWithRxP3 = ckdWithRxResult.p3PlanningContext;
+
+  assert(
+    ckdWithRxP3.prescribedProteinCap_g === 56,
+    "CKD Patient WITH documented prescription: Enforces documented protein cap (56 g)"
   );
   assert(
-    ckdP3.prescribedSodiumLimit_mg === 1500,
-    "CKD Patient: Restricts sodium to 1500 mg/day"
+    ckdWithRxP3.proteinTargetGrams === 56,
+    "CKD Patient WITH documented prescription: Clamps protein target to documented cap (56 g)"
   );
   assert(
-    ckdP3.hardRestrictions.some(r => r.source === 'renal_pathway'),
-    "CKD Patient: Enforces hard contraindication for glomerular preservation"
+    ckdWithRxP3.prescribedPotassiumLimit_mg === 2000,
+    "CKD Patient WITH documented prescription: Enforces documented potassium limit (2000 mg)"
+  );
+  assert(
+    ckdWithRxP3.prescribedSodiumLimit_mg === 1500,
+    "CKD Patient WITH documented prescription: Enforces documented sodium limit (1500 mg)"
+  );
+  assert(
+    ckdWithRxP3.prescribedFluidLimit_mL === 1500,
+    "CKD Patient WITH documented prescription: Enforces documented fluid limit (1500 mL)"
+  );
+  assert(
+    ckdWithRxP3.hardRestrictions.some(r => r.source === 'documented_clinical_prescription'),
+    "CKD Patient WITH documented prescription: Translates documented prescription into hard restrictions"
+  );
+
+  // Patient C: Isolated abnormal renal lab (creatinine > 1.5) WITHOUT confirmed CKD diagnosis or renal pathway
+  const isolatedLabPatient = makeSyntheticPatient({
+    selected_conditions: [],
+    clinical_pathways: [],
+    labs: { creatinine: 2.2, egfr: 45, lab_flags: [] } as any,
+  });
+  const isolatedLabResult = runP2Analysis(isolatedLabPatient, {});
+  assert(
+    isolatedLabResult.p3PlanningContext.prescribedProteinCap_g === undefined,
+    "Isolated abnormal creatinine/eGFR: Must NOT automatically be treated as confirmed CKD"
+  );
+  assert(
+    isolatedLabResult.p3PlanningContext.clinicalSafetyFindings.some(f => f.includes('Isolated altered renal biomarker')),
+    "Isolated abnormal creatinine/eGFR: Flags clinical investigation note for nephrology differentiation"
   );
 }
 
@@ -252,6 +315,14 @@ console.log("\nGate 4: Ayurvedic Prakriti — Zero BMI Inference & Preliminary S
   assert(
     ayur.prakriti.vata_score === 0 && ayur.prakriti.pitta_score === 0 && ayur.prakriti.kapha_score === 0,
     "Prakriti scores remain zero rather than fabricating points from body weight"
+  );
+  assert(
+    ayur.agni.status === 'Unassessed',
+    "Ayurvedic Agni preserves status: 'Unassessed' when survey unanswered (NEVER defaults to Samagni)"
+  );
+  assert(
+    ayur.agni.type === 'unassessed',
+    "Ayurvedic Agni type is 'unassessed' without sufficient clinical data"
   );
 }
 
@@ -637,6 +708,30 @@ console.log("\nGate 11: Complete End-to-End Clinical Lifecycle Journey");
   assert(fullAnalysis.report.isApproved === true, "Report Section N officially signed off");
   assert(fullAnalysis.p3PlanningContext.clinicalAssessmentApproved === true, "P3 handoff contract approved and ready for diet scaling");
   assert(fullAnalysis.p3PlanningContext.confirmedAllergies.includes('egg'), "Confirmed allergy 'egg' passed to P3 contract");
+
+  // Plant diversity scoring in p2HandoffAdapter: Plant score of 7 (>= 5) must NOT trigger false low-diversity flag
+  const mock7 = {
+    ...mockAssessment,
+    dietary_frequency: {
+      ...mockAssessment.dietary_frequency,
+      summary: {
+        ...mockAssessment.dietary_frequency.summary,
+        weekly_plant_diversity_score: 7,
+      }
+    }
+  };
+  const flat7 = buildFlattenedAnswersForP2(mock7 as any);
+  assert(
+    flat7['low_food_group_variety'] === undefined,
+    "p2HandoffAdapter: Plant diversity score of 7 does NOT trigger false low-diversity flag"
+  );
+
+  // Unassessed Agni preservation
+  const rawAgni = calculateAgni({});
+  assert(
+    rawAgni.type === 'unassessed',
+    "calculateAgni preserves explicit 'unassessed' state without inputs"
+  );
 }
 
 console.log("\n=====================================================================");

@@ -688,6 +688,8 @@ export function runP2Analysis(
     ayurvedicInterpretation,
     masanumasikaAnalysis,
     metabolicHealthAnalysis,
+    assessment,
+    assessmentAnswers: rawAnswers,
     approvals,
     isOverallApproved,
     approvedByClinicianId,

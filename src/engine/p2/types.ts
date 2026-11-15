@@ -318,7 +318,7 @@ export interface AyurvedicInterpretationResult {
     triggeringSymptomIds?: string[];
   };
   agni: {
-    type: 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni';
+    type: 'samagni' | 'vishamagni' | 'tikshnagni' | 'mandagni' | 'unassessed';
     clinical_manifestation_en: string;
     clinical_manifestation_bn: string;
     therapeutic_diet_principles_en: string[];

@@ -38,25 +38,37 @@ export const StepPopulationSpecific: React.FC = () => {
   const isUnderweight = pathways.includes('underweight_restoration');
   const isPostOp = pathways.includes('surgical_postoperative');
 
-  // Pregnancy local state
-  const [gestWeeks, setGestWeeks] = useState(masanumasikaAssessment?.gestational_age_weeks || 16);
+  // Pregnancy local state - strictly unknown until recorded and verified
+  const initialWeeks = masanumasikaAssessment?.gestational_age_weeks && masanumasikaAssessment.gestational_age_weeks > 0
+    ? masanumasikaAssessment.gestational_age_weeks
+    : '';
+  const [gestWeeks, setGestWeeks] = useState<number | ''>(initialWeeks);
   const [gestDays, setGestDays] = useState(masanumasikaAssessment?.gestational_age_days || 0);
 
-  const handleGestWeeksChange = (w: number) => {
-    setGestWeeks(w);
-    updatePregnancyGestational(w, gestDays, masanumasikaAssessment?.maternal_risks);
+  const handleGestWeeksChange = (valStr: string) => {
+    if (!valStr || valStr === '') {
+      setGestWeeks('');
+      updatePregnancyGestational(0, gestDays, masanumasikaAssessment?.maternal_risks);
+      return;
+    }
+    const parsed = parseInt(valStr, 10);
+    const clamped = isNaN(parsed) ? 0 : Math.max(1, Math.min(42, parsed));
+    setGestWeeks(clamped);
+    updatePregnancyGestational(clamped, gestDays, masanumasikaAssessment?.maternal_risks);
   };
 
   const handleGestDaysChange = (d: number) => {
     setGestDays(d);
-    updatePregnancyGestational(gestWeeks, d, masanumasikaAssessment?.maternal_risks);
+    const currentWeeks = typeof gestWeeks === 'number' ? gestWeeks : 0;
+    updatePregnancyGestational(currentWeeks, d, masanumasikaAssessment?.maternal_risks);
   };
 
   const handleMaternalRiskToggle = (riskKey: string) => {
     if (!masanumasikaAssessment) return;
     const current = { ...masanumasikaAssessment.maternal_risks };
     (current as any)[riskKey] = !(current as any)[riskKey];
-    updatePregnancyGestational(gestWeeks, gestDays, current);
+    const currentWeeks = typeof gestWeeks === 'number' ? gestWeeks : 0;
+    updatePregnancyGestational(currentWeeks, gestDays, current);
   };
 
   return (
@@ -83,7 +95,9 @@ export const StepPopulationSpecific: React.FC = () => {
                   {bn ? 'আয়ুর্বেদিক মাসানুমাসিক গর্ভিণী পরিচর্যা' : 'Ayurvedic Masanumasika Paricharya'}
                 </span>
                 <span className="text-xs font-bold text-primary">
-                  {bn ? `মাস: ${masanumasikaAssessment.pregnancy_month}ম মাস` : `Pregnancy Month: ${masanumasikaAssessment.pregnancy_month}`}
+                  {gestWeeks && gestWeeks > 0
+                    ? (bn ? `মাস: ${masanumasikaAssessment.pregnancy_month}ম মাস` : `Pregnancy Month: ${masanumasikaAssessment.pregnancy_month}`)
+                    : (bn ? 'বয়স: অনির্ধারিত (সপ্তাহ লিখুন)' : 'Gestational Age: Unrecorded')}
                 </span>
               </div>
               <h4 className="text-sm font-bold text-foreground mt-1">
@@ -91,7 +105,9 @@ export const StepPopulationSpecific: React.FC = () => {
               </h4>
             </div>
             <div className="text-xs font-semibold text-muted-foreground">
-              {bn ? `ট্রাইমেস্টার ${masanumasikaAssessment.trimester}` : `Trimester ${masanumasikaAssessment.trimester}`}
+              {gestWeeks && gestWeeks > 0
+                ? (bn ? `ট্রাইমেস্টার ${masanumasikaAssessment.trimester}` : `Trimester ${masanumasikaAssessment.trimester}`)
+                : (bn ? 'ট্রাইমেস্টার: অপেক্ষমাণ' : 'Trimester: Pending')}
             </div>
           </div>
 
@@ -105,8 +121,9 @@ export const StepPopulationSpecific: React.FC = () => {
                 type="number"
                 min="1"
                 max="42"
+                placeholder={bn ? 'সপ্তাহ লিখুন (১-৪২)' : 'Enter weeks (1-42)'}
                 value={gestWeeks}
-                onChange={(e) => handleGestWeeksChange(parseInt(e.target.value) || 1)}
+                onChange={(e) => handleGestWeeksChange(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none"
               />
             </div>
@@ -129,12 +146,20 @@ export const StepPopulationSpecific: React.FC = () => {
               <span className="text-[10px] text-muted-foreground font-semibold">
                 {bn ? 'গণনাকৃত গর্ভ মাস:' : 'Derived Pregnancy Month:'}
               </span>
-              <span className="text-sm font-bold text-primary">
-                {bn ? `মাস ${masanumasikaAssessment.pregnancy_month} (Month ${masanumasikaAssessment.pregnancy_month})` : `Month ${masanumasikaAssessment.pregnancy_month}`}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                Classical Source: {masanumasikaAssessment.current_month_guidance.classical_source.replace('_', ' ')}
-              </span>
+              {gestWeeks && gestWeeks > 0 ? (
+                <>
+                  <span className="text-sm font-bold text-primary">
+                    {bn ? `মাস ${masanumasikaAssessment.pregnancy_month} (${masanumasikaAssessment.pregnancy_month}th Month)` : `Month ${masanumasikaAssessment.pregnancy_month}`}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Classical Source: {masanumasikaAssessment.current_month_guidance.classical_source.replace('_', ' ')}
+                  </span>
+                </>
+              ) : (
+                <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  {bn ? 'গর্ভকালীন বয়স অপেক্ষমাণ (যাচাই প্রয়োজন)' : 'Unrecorded (Verification Required)'}
+                </span>
+              )}
             </div>
           </div>
 

@@ -39,18 +39,40 @@ export const StepAssessmentReview: React.FC = () => {
   } = useAssessment();
 
   const [handoffSuccess, setHandoffSuccess] = useState<boolean>(false);
+  const [safetyBlockedNotice, setSafetyBlockedNotice] = useState<string | null>(null);
+
+  const isSafetyComplete = completionStatus.clinical_safety_completed;
+  const isFullyComplete = isSafetyComplete && completionStatus.mandatory_sections_completed;
 
   const handleRunP2Analysis = () => {
-    // 1. Export structured ClinicalAssessment contract
-    const clinicalAssessment = exportClinicalAssessment();
-    markCompleted(true);
+    // 1. Safety review gate check
+    if (!isSafetyComplete) {
+      setSafetyBlockedNotice(
+        bn
+          ? `জরুরি নিরাপত্তা প্রশ্ন অসম্পূর্ণ: ${completionStatus.unanswered_critical_questions.join(', ')}। বিশ্লেষণ চালানোর পূর্বে নিরাপত্তা প্রশ্নের পর্যালোচনা সম্পন্ন করা আবশ্যক।`
+          : `Required safety screening incomplete (${completionStatus.unanswered_critical_questions.join(', ')}). Critical safety review must not be bypassed.`
+      );
+      return;
+    }
 
-    // 2. Execute real P2 analysis with complete structured assessment into shared P2 state
+    setSafetyBlockedNotice(null);
+
+    // 2. Export structured ClinicalAssessment contract
+    const clinicalAssessment = exportClinicalAssessment();
+
+    // 3. Mark completed ONLY if all mandatory sections and safety criteria are fulfilled.
+    // Incomplete assessments strictly remain provisional!
+    markCompleted(isFullyComplete);
+    if (!isFullyComplete) {
+      clinicalAssessment.completion.is_provisional = true;
+    }
+
+    // 4. Execute real P2 analysis with complete structured assessment into shared P2 state
     executeP2Analysis(clinicalAssessment);
 
     setHandoffSuccess(true);
 
-    // 3. Navigate directly to Tab 3 (Root-Cause Intelligence & Matrix) after brief confirmation
+    // 5. Navigate directly to Tab 3 (Root-Cause Intelligence & Matrix) after brief confirmation
     setTimeout(() => {
       setActiveTab('clinical_intelligence');
     }, 600);
@@ -296,6 +318,19 @@ export const StepAssessmentReview: React.FC = () => {
             ? 'অ্যাসেসমেন্টের সমস্ত ডেটা (১৪ ডোমেন, ৭ দিনের এফএফকিউ, আয়ুর্বেদিক প্রকৃতি ও ল্যাব) পি২ ক্লিনিশিয়ান ডিসিশন সাপোর্ট ইঞ্জিনে স্থানান্তরিত হবে।'
             : 'Convert all assessment inputs into deterministic clinical observations and launch P2 Root-Cause Hypothesis Generation.'}
         </p>
+
+        {safetyBlockedNotice && (
+          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs font-semibold flex items-center justify-between gap-2 max-w-lg mx-auto text-left">
+            <span>⚠️ {safetyBlockedNotice}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentStep('step_medical_history')}
+              className="px-2.5 py-1 bg-amber-600 text-white rounded-lg text-[11px] font-bold hover:bg-amber-700 shrink-0"
+            >
+              {bn ? 'নিরাপত্তা প্রশ্নে যান' : 'Complete Safety Questions'}
+            </button>
+          </div>
+        )}
 
         <div className="pt-2 flex justify-center">
           <button
