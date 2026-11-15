@@ -47,8 +47,8 @@ export const StepHistorySafety: React.FC = () => {
   };
 
   const handleAddMedication = (med: MedicationSearchResult) => {
-    const canonicalName = med.genericName;
-    if (!patient.active_medications.includes(canonicalName)) {
+    const canonicalName = med.genericName || med.generic_name || med.brandName || '';
+    if (canonicalName && !patient.active_medications.includes(canonicalName)) {
       updatePatient({
         active_medications: [...patient.active_medications, canonicalName]
       });

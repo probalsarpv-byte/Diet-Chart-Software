@@ -76,6 +76,9 @@ export interface ClinicalObservation {
   isMissing?: boolean;
   associatedDomains: FunctionalDomain[];
   tags?: string[];
+  title_en?: string;
+  title_bn?: string;
+  provenance?: string;
 }
 
 // ─── Functional Domain Summary ───────────────────────────────────

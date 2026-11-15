@@ -13,7 +13,8 @@ import {
   ShieldCheck,
   Sparkles,
   BookOpen,
-  Info
+  Info,
+  CheckCircle2
 } from 'lucide-react';
 
 export const StepPopulationSpecific: React.FC = () => {

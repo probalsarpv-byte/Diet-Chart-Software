@@ -34,6 +34,7 @@ import {
   StructuredLabEntry,
   PopulationSpecificData,
   ClinicalAssessment,
+  CompleteAyurvedicAssessment,
   AssessmentCompletionStatus
 } from "../types/assessment";
 import { calculatePrakriti } from "../engine/assessment/prakritiEngine";
@@ -114,6 +115,7 @@ export interface AssessmentContextProps {
   setMode: (mode: AssessmentMode) => void;
   currentStep: AssessmentStepId;
   setCurrentStep: (step: AssessmentStepId) => void;
+  functionalAnswers: Record<string, any>;
   
   // Sub-Assessments
   ffqItems: Record<string, FFQItemResponse>;
@@ -600,6 +602,7 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
         setMode,
         currentStep,
         setCurrentStep,
+        functionalAnswers,
 
         ffqItems,
         setFFQItem,

@@ -34,6 +34,7 @@ import {
 } from '../src/engine/assessment/p2HandoffAdapter';
 import { searchMedications } from '../src/engine/medicationSearch';
 import { runP2Analysis } from '../src/engine/p2/index';
+import { calculateAnthropometrics } from '../src/engine/anthropometrics';
 import { PatientProfile } from '../src/types';
 import { ClinicalAssessment } from '../src/types/assessment';
 
@@ -338,8 +339,8 @@ console.log("\n10. Medication Search & Laboratory Integration Test");
 // TEST 11: Patient Data Isolation
 console.log("\n11. Patient-Specific Data Isolation Test");
 {
-  const key1 = `shuddho_assessment_pt_001_visit_1`;
-  const key2 = `shuddho_assessment_pt_002_visit_1`;
+  const key1: string = `shuddho_assessment_pt_001_visit_1`;
+  const key2: string = `shuddho_assessment_pt_002_visit_1`;
   assert(key1 !== key2, "Different patients have distinct isolated storage keys");
 }
 
@@ -347,6 +348,7 @@ console.log("\n11. Patient-Specific Data Isolation Test");
 console.log("\n12. P2 Clinical Intelligence Handoff Test");
 {
   const mockPatient: PatientProfile = {
+    schema_version: 2,
     id: 'pt_test_handoff',
     name: 'Rahim Uddin',
     age: 45,
@@ -366,11 +368,18 @@ console.log("\n12. P2 Clinical Intelligence Handoff Test");
     confirmed_allergies: ['shrimp'],
     clinician_disallowed_foods: [],
     clinician_disallowed_tags: [],
-    selected_conditions: ['type_2_diabetes'],
+    selected_conditions: ['t2d_ir'],
     active_medications: ['Metformin Hydrochloride'],
-    gut_profile: { bloating_frequency: 'often', bowel_regularity: 'irregular', bristol_stool: 2, energy_score: 5, symptom_relief_pct: 0 },
+    gut_profile: {
+      bloating: 'mild',
+      acid_reflux_hypoacidity: false,
+      bristol_stool_score: 3,
+      energy_score: 5,
+      sleep_quality_score: 6,
+      digestive_fire_agni: 'vishamagni'
+    },
     labs: { lab_flags: [] },
-    calculated: { bmi: 28.4, bmr: 1680, tdee: 2016, target_calories: 1680, target_protein_g: 90, target_carbs_g: 160, target_fat_g: 50, whtr: 0.55 }
+    calculated: calculateAnthropometrics(45, 'male', 170, 82, 94, 'sedentary', ['t2d_ir'])
   };
 
   const mockAssessment: ClinicalAssessment = {

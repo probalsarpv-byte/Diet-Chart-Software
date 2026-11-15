@@ -25,7 +25,7 @@ export const StepAssessmentReview: React.FC = () => {
     currentStep,
     setCurrentStep,
     mode,
-    functionalAnswers,
+    data,
     ffqAnalysis,
     prakritiResult,
     vikritiResult,
@@ -172,7 +172,7 @@ export const StepAssessmentReview: React.FC = () => {
             <div className="flex justify-between">
               <span className="text-muted-foreground">{bn ? 'ইনসুলিন স্ট্যাটাস:' : 'Insulin Therapy:'}</span>
               <span className="font-semibold text-foreground">
-                {functionalAnswers['safety_insulin_active'] === 'yes' ? 'Active Insulin' : 'No'}
+                {data.answers['safety_insulin_active'] === 'yes' ? 'Active Insulin' : 'No'}
               </span>
             </div>
             <div className="flex justify-between">

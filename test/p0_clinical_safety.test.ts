@@ -411,7 +411,7 @@ console.log("\n12. Diet Recalculation & Newly Contraindicated RED Food Test");
   } : { ...initialMealItem, traffic_status: 'GREEN' as const };
 
   assert(reEvaluatedItem.traffic_status === 'RED', "Newly contraindicated meal item is explicitly marked RED");
-  assert(Boolean(reEvaluatedItem.contraindicated_reasons && reEvaluatedItem.contraindicated_reasons.length > 0), "Documented clinical reasons preserved on RED item");
+  assert(Boolean((reEvaluatedItem as any).contraindicated_reasons && (reEvaluatedItem as any).contraindicated_reasons.length > 0), "Documented clinical reasons preserved on RED item");
 }
 
 // TEST 13: New Patient Neutral Initialization & Isolation
@@ -727,7 +727,7 @@ console.log("\n18. Energy Floor Validation (Actual Daily Calories vs BMR)");
   const energyResults = evaluateEnergySafety(testPatient, lowCalorieMeals);
   assert(energyResults.some(r => r.rule_id === 'ADULT_BMR_FLOOR_HARD_STOP'), "Planned day below BMR triggers ADULT_BMR_FLOOR_HARD_STOP");
   const stop = energyResults.find(r => r.rule_id === 'ADULT_BMR_FLOOR_HARD_STOP');
-  assert(stop?.clinical_explanation_en.includes('400 kcal'), "Calculates exact calorie deficit (1300 - 900 = 400 kcal)");
+  assert(Boolean(stop?.clinical_explanation_en.includes('400 kcal')), "Calculates exact calorie deficit (1300 - 900 = 400 kcal)");
 }
 
 // TEST 19: Fluid, Sodium & Discretionary Accounting

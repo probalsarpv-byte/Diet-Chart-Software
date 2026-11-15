@@ -43,15 +43,19 @@ export function buildP2ClinicalObservations(
   ) {
     observations.push({
       id: `obs_${id}`,
-      type: 'symptom',
+      patientId: assessment.patient_id,
+      visitId: assessment.visit_id,
+      category: 'symptom',
+      observedValue: title_en,
       title_en,
       title_bn,
+      date: now,
       associatedDomains: domains,
       severity,
       tags,
-      provenance,
-      timestamp: now,
-      isPositive: true
+      dataSource: 'patient_reported',
+      verificationStatus: 'clinician_verified',
+      provenance
     });
   }
 

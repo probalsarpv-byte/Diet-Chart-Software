@@ -160,10 +160,10 @@ export const AssessmentRightSnapshot: React.FC = () => {
           </div>
         )}
 
-        {clinicalSafetyEvaluation && clinicalSafetyEvaluation.hard_stops > 0 && (
+        {clinicalSafetyEvaluation && clinicalSafetyEvaluation.hardStops && clinicalSafetyEvaluation.hardStops.length > 0 && (
           <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-2 mt-2">
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-            <span>{bn ? `${clinicalSafetyEvaluation.hard_stops}টি নিরাপত্তা বাধা সক্রিয়` : `${clinicalSafetyEvaluation.hard_stops} Clinical Hard Stop(s) active`}</span>
+            <span>{bn ? `${clinicalSafetyEvaluation.hardStops.length}টি নিরাপত্তা বাধা সক্রিয়` : `${clinicalSafetyEvaluation.hardStops.length} Clinical Hard Stop(s) active`}</span>
           </div>
         )}
       </div>
