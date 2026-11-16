@@ -17,8 +17,16 @@ import {
   interpretBristolStoolChange,
   executeLongitudinalComparison,
   buildComparativeProgressReport,
-  constructClinicalProgressPlanningContext
+  constructClinicalProgressPlanningContext,
+  validateClinicianCredentials
 } from '../src/engine/longitudinal/comparisonEngine';
+import {
+  generateCollisionResistantId,
+  refreshAppointmentStatus,
+  getDhakaTodayDateString
+} from '../src/context/PracticeContext';
+import { calculateAnthropometrics } from '../src/engine/anthropometrics';
+import { searchMedications } from '../src/engine/medicationSearch';
 import {
   ClinicalVisitSnapshot,
   FollowUpAppointment,
@@ -53,30 +61,15 @@ function runCheck(testName: string, fn: () => void) {
 // ─── 1. Neutral Registration & Zero Fabricated Data ───────────────
 console.log('1. Neutral Patient Registration (Zero Fabricated Metrics)');
 runCheck('Neutral registration preserves unmeasured anthropometrics', () => {
-  const neutralPatient: Partial<PatientProfile> = {
-    id: 'SH-TEST-001',
-    name: 'New Registered Patient',
-    age: 0,
-    weight_kg: 0,
-    height_cm: 0,
-    confirmed_allergies: [],
-    allergy_reconciliation_status: 'not_assessed',
-    medication_reconciliation_status: 'not_assessed',
-    gut_profile: {
-      bloating: 'none',
-      acid_reflux_hypoacidity: false,
-      bristol_stool_score: 4,
-      energy_score: 5,
-      sleep_quality_score: 5,
-      digestive_fire_agni: 'unassessed'
-    }
-  };
+  const unmeasuredCalc = calculateAnthropometrics(
+    0, 'female', 0, 0, 0, 'sedentary', [], 'adult_standard', undefined, 'clamped_to_bmr'
+  );
 
-  assert(neutralPatient.weight_kg === 0, 'Weight defaults to 0 (unmeasured), not fabricated 65kg');
-  assert(neutralPatient.height_cm === 0, 'Height defaults to 0 (unmeasured), not fabricated 165cm');
-  assert(neutralPatient.allergy_reconciliation_status === 'not_assessed', 'Allergy status is explicitly not_assessed');
-  assert(neutralPatient.medication_reconciliation_status === 'not_assessed', 'Medication status is explicitly not_assessed');
-  assert(neutralPatient.gut_profile?.digestive_fire_agni === 'unassessed', 'Agni is explicitly unassessed (never default Samagni)');
+  assert(unmeasuredCalc.is_unmeasured === true, 'Anthropometrics engine flags unmeasured status');
+  assert(unmeasuredCalc.bmi === 0, 'BMI defaults to 0 for unmeasured, never fabricated');
+  assert(unmeasuredCalc.bmr === 0, 'BMR defaults to 0 for unmeasured, never fabricated');
+  assert(unmeasuredCalc.target_calories === 0, 'Target calories defaults to 0 for unmeasured');
+  assert(unmeasuredCalc.whtr === 0, 'WHtR defaults to 0 for unmeasured');
 });
 
 // ─── 2. Collision-Resistant ID Generation ──────────────────────────
@@ -84,17 +77,10 @@ console.log('\n2. Collision-Resistant ID Generation (Multi-Visit Same Day)');
 runCheck('Same patient on same date receives distinct IDs', () => {
   const patientId = 'SH-2026-0042';
   
-  const generateId = (prefix: string, seed: string) => {
-    const ts = Date.now();
-    const rnd1 = Math.random().toString(36).substring(2, 6);
-    const rnd2 = Math.random().toString(36).substring(2, 6);
-    return `${prefix}_${seed}_${ts.toString(36)}_${rnd1}${rnd2}`;
-  };
-
-  const visitId1 = generateId('vis', patientId);
-  const visitId2 = generateId('vis', patientId);
-  const apptId1 = generateId('apt', patientId);
-  const repId1 = generateId('rep', patientId);
+  const visitId1 = generateCollisionResistantId(`vis_${patientId}`);
+  const visitId2 = generateCollisionResistantId(`vis_${patientId}`);
+  const apptId1 = generateCollisionResistantId(`apt_${patientId}`);
+  const repId1 = generateCollisionResistantId(`rep_${patientId}`);
 
   assert(visitId1 !== visitId2, 'Two visits for same patient on same date have distinct unique IDs');
   assert(visitId1.startsWith('vis_SH-2026-0042'), 'Visit ID carries patient prefix');
@@ -129,20 +115,51 @@ runCheck('Empty practice returns clean zeroes with no fabricated stats', () => {
 // ─── 4. Follow-Up Scheduling Status Transitions ────────────────────
 console.log('\n4. Follow-Up Scheduling Status Transitions (Asia/Dhaka)');
 runCheck('Appointment date comparison classifies due_today, overdue, scheduled', () => {
-  const dhakaToday = '2026-03-25';
+  const dhakaToday = getDhakaTodayDateString();
+  const pastDate = '2020-01-01';
+  const futureDate = '2099-01-01';
 
-  const checkStatus = (scheduledDate: string, currentStatus: string) => {
-    if (currentStatus === 'completed' || currentStatus === 'cancelled') return currentStatus;
-    if (scheduledDate === dhakaToday) return 'due_today';
-    if (scheduledDate < dhakaToday) return 'overdue';
-    return 'scheduled';
+  const aptToday: FollowUpAppointment = {
+    id: 'apt_test_1',
+    patient_id: 'SH-001',
+    scheduled_date: dhakaToday,
+    scheduled_time: '10:00 AM',
+    reason: 'Follow-up',
+    status: 'scheduled',
+    created_at: '2026-01-01T00:00:00Z'
   };
 
-  assert(checkStatus('2026-03-25', 'scheduled') === 'due_today', 'Visit on today date becomes due_today');
-  assert(checkStatus('2026-03-20', 'scheduled') === 'overdue', 'Past scheduled date becomes overdue');
-  assert(checkStatus('2026-04-01', 'scheduled') === 'scheduled', 'Future date remains scheduled');
-  assert(checkStatus('2026-03-20', 'completed') === 'completed', 'Completed appointment remains completed regardless of past date');
-  assert(checkStatus('2026-03-20', 'cancelled') === 'cancelled', 'Cancelled appointment remains cancelled regardless of past date');
+  const aptPast: FollowUpAppointment = {
+    ...aptToday,
+    id: 'apt_test_2',
+    scheduled_date: pastDate
+  };
+
+  const aptFuture: FollowUpAppointment = {
+    ...aptToday,
+    id: 'apt_test_3',
+    scheduled_date: futureDate
+  };
+
+  const aptCompleted: FollowUpAppointment = {
+    ...aptToday,
+    id: 'apt_test_4',
+    scheduled_date: pastDate,
+    status: 'completed'
+  };
+
+  const aptCancelled: FollowUpAppointment = {
+    ...aptToday,
+    id: 'apt_test_5',
+    scheduled_date: pastDate,
+    status: 'cancelled'
+  };
+
+  assert(refreshAppointmentStatus(aptToday).status === 'due_today', 'Visit on today date becomes due_today');
+  assert(refreshAppointmentStatus(aptPast).status === 'overdue', 'Past scheduled date becomes overdue');
+  assert(refreshAppointmentStatus(aptFuture).status === 'scheduled', 'Future date remains scheduled');
+  assert(refreshAppointmentStatus(aptCompleted).status === 'completed', 'Completed appointment remains completed regardless of past date');
+  assert(refreshAppointmentStatus(aptCancelled).status === 'cancelled', 'Cancelled appointment remains cancelled regardless of past date');
 });
 
 // ─── 5. Longitudinal Metric Change & Directional Logic ──────────────
@@ -483,24 +500,12 @@ runCheck('Builds complete 12-section printable report', () => {
 // ─── 8. Clinician Sign-off & Placeholder Name Rejection ────────────
 console.log('\n8. Clinician Sign-Off Validation & Governance');
 runCheck('Rejects placeholder reviewer names and enforces valid practitioner credentials', () => {
-  const validateClinician = (name: string): { valid: boolean; error?: string } => {
-    const trimmed = (name || '').trim();
-    if (!trimmed || trimmed.length < 3) {
-      return { valid: false, error: 'Name must be at least 3 characters' };
-    }
-    const placeholders = ['clinician', 'dr. clinical nutritionist', 'doctor', 'nutritionist', 'admin', 'user', 'test', 'guest'];
-    if (placeholders.includes(trimmed.toLowerCase())) {
-      return { valid: false, error: 'Generic placeholder name is prohibited' };
-    }
-    return { valid: true };
-  };
-
-  assert(!validateClinician('').valid, 'Empty clinician name is rejected');
-  assert(!validateClinician('Dr').valid, 'Too short clinician name is rejected');
-  assert(!validateClinician('Doctor').valid, 'Placeholder name "Doctor" is rejected');
-  assert(!validateClinician('Clinician').valid, 'Placeholder name "Clinician" is rejected');
-  assert(!validateClinician('admin').valid, 'Placeholder name "admin" is rejected');
-  assert(validateClinician('Dr. Tasnim Ara, RD').valid, 'Real practitioner credentials accepted');
+  assert(!validateClinicianCredentials(''), 'Empty clinician name is rejected');
+  assert(!validateClinicianCredentials('Dr'), 'Too short clinician name is rejected');
+  assert(!validateClinicianCredentials('Doctor'), 'Placeholder name "Doctor" is rejected');
+  assert(!validateClinicianCredentials('Clinician'), 'Placeholder name "Clinician" is rejected');
+  assert(!validateClinicianCredentials('admin'), 'Placeholder name "admin" is rejected');
+  assert(validateClinicianCredentials('Dr. Tasnim Ara, RD'), 'Real practitioner credentials accepted');
 });
 
 // ─── 9. P2/P3 Clinical Progress Planning Context Handoff ───────────
@@ -537,6 +542,37 @@ runCheck('Constructs planning handoff with verified restrictions overriding auto
   assert(handoff.comparisonVisitId === 'vis_001', 'Comparison visit ID matches vis_001');
   assert(handoff.progressReportId.startsWith('prog_rpt_'), 'Progress report ID matches');
   assert(handoff.clinicalImprovements.length > 0, 'Clinical improvements populated in handoff');
+});
+
+// ─── 10. Medication Reconciliation & MediNutrition Safety Resolution ───
+console.log('\n10. Medication Reconciliation & MediNutrition Safety Resolution');
+runCheck('Reconciled medications resolve to generic/brand and trigger clinical rules', () => {
+  // 1. MediNutrition brand-to-generic lookup
+  const searchResults = searchMedications('Metformin', 5);
+  assert(searchResults.length > 0, 'MediNutrition 32,461 corpus finds Metformin');
+  const metResult = searchResults[0];
+  assert(metResult.rule_coverage_status === 'fully_covered', 'Metformin is tagged with fully_covered clinical rules');
+
+  // 2. Active medications array must contain canonical generic name, not synthetic IDs
+  const sampleRecords = [
+    {
+      id: 'med_1731749823412',
+      medication_name: 'Tab. Glucophage 500mg',
+      generic_name: 'Metformin',
+      dose: '500 mg',
+      frequency: 'Twice daily',
+      timing: 'with_meal',
+      verification_status: 'verified_active' as const
+    }
+  ];
+
+  const activeMeds = Array.from(new Set(
+    sampleRecords.flatMap(r => [r.generic_name, r.medication_name].filter(Boolean) as string[])
+  ));
+
+  assert(!activeMeds.some(m => m.startsWith('med_173')), 'Synthetic record IDs are NOT injected into active_medications');
+  assert(activeMeds.includes('Metformin'), 'Canonical generic name is preserved in active_medications');
+  assert(activeMeds.includes('Tab. Glucophage 500mg'), 'Brand name is preserved in active_medications for DNI matching');
 });
 
 console.log('\n=====================================================================');

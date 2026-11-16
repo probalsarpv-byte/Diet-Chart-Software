@@ -543,21 +543,44 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   const currMatrix = comparisonSnapshot.functional_matrix || {};
 
   const functional_domain_changes = domains.map(d => {
-    const bBurden = baseMatrix[d.id]?.burden || 'mild';
-    const cBurden = currMatrix[d.id]?.burden || bBurden;
+    const bDomain = baseMatrix[d.id];
+    const cDomain = currMatrix[d.id];
 
-    const burdenRank: Record<string, number> = { none: 0, mild: 1, moderate: 2, significant: 3 };
-    const bRank = burdenRank[bBurden] ?? 1;
-    const cRank = burdenRank[cBurden] ?? 1;
+    if (!bDomain && !cDomain) {
+      return {
+        domain: d.id,
+        domain_name_en: d.nameEn,
+        domain_name_bn: d.nameBn,
+        baseline_burden: 'unassessed',
+        current_burden: 'unassessed',
+        status: 'insufficient_data' as ComparisonOutcome,
+        resolved_observations: [],
+        persistent_observations: [],
+        new_observations: [],
+        clinical_notes: 'Functional domain not assessed during these visits.',
+      };
+    }
 
-    let status: ComparisonOutcome = 'stable';
-    let notes = 'Functional symptom burden remains stable across consultations.';
-    if (cRank < bRank) {
-      status = 'improved';
-      notes = `Favorable de-escalation of dysfunction burden from ${bBurden} to ${cBurden}.`;
-    } else if (cRank > bRank) {
-      status = 'worsened';
-      notes = `Escalation of burden from ${bBurden} to ${cBurden}; targeted re-evaluation indicated.`;
+    const bBurden = bDomain?.burden || 'unassessed';
+    const cBurden = cDomain?.burden || bBurden;
+
+    const burdenRank: Record<string, number> = { unassessed: -1, none: 0, mild: 1, moderate: 2, significant: 3 };
+    const bRank = burdenRank[bBurden] ?? -1;
+    const cRank = burdenRank[cBurden] ?? -1;
+
+    let status: ComparisonOutcome = 'insufficient_data';
+    let notes = 'Functional domain not assessed during this period.';
+    if (bRank >= 0 && cRank >= 0) {
+      if (cRank < bRank) {
+        status = 'improved';
+        notes = `Favorable de-escalation of dysfunction burden from ${bBurden} to ${cBurden}.`;
+      } else if (cRank > bRank) {
+        status = 'worsened';
+        notes = `Escalation of burden from ${bBurden} to ${cBurden}; targeted re-evaluation indicated.`;
+      } else {
+        status = 'stable';
+        notes = `Functional symptom burden remains stable (${bBurden}) across consultations.`;
+      }
     }
 
     return {
@@ -568,7 +591,7 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
       current_burden: cBurden,
       status,
       resolved_observations: cRank < bRank ? [`Observed reduction in ${d.nameEn.toLowerCase()} symptoms`] : [],
-      persistent_observations: cRank >= bRank ? [`Ongoing monitored findings in ${d.nameEn.toLowerCase()}`] : [],
+      persistent_observations: cRank >= bRank && bRank > 0 ? [`Ongoing monitored findings in ${d.nameEn.toLowerCase()}`] : [],
       new_observations: [],
       clinical_notes: notes,
     };
@@ -578,31 +601,39 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   const baseAyur = baselineSnapshot.ayurveda || {};
   const currAyur = comparisonSnapshot.ayurveda || {};
 
-  const prakritiConstant = baseAyur.prakriti || 'Pitta-Kapha (Baseline Constitutional Constant)';
-  const bVikriti = baseAyur.vikriti || { vata: 4, pitta: 6, kapha: 3 };
+  const prakritiConstant = baseAyur.prakriti || 'unassessed';
+  const bVikriti = baseAyur.vikriti;
   const cVikriti = currAyur.vikriti || bVikriti;
 
-  const vataDelta = cVikriti.vata - bVikriti.vata;
-  const pittaDelta = cVikriti.pitta - bVikriti.pitta;
-  const kaphaDelta = cVikriti.kapha - bVikriti.kapha;
+  let vikritiTrajEn = 'Dosha balance unassessed or unchanged.';
+  let vikritiTrajBn = 'দোষিক অবস্থা অপরিবর্তিত বা অপ্রমূল্যায়িত।';
+  if (bVikriti && cVikriti) {
+    const vataDelta = (cVikriti.vata ?? 0) - (bVikriti.vata ?? 0);
+    const pittaDelta = (cVikriti.pitta ?? 0) - (bVikriti.pitta ?? 0);
+    const kaphaDelta = (cVikriti.kapha ?? 0) - (bVikriti.kapha ?? 0);
 
-  let vikritiTrajEn = 'Dosha balance remains stable.';
-  let vikritiTrajBn = 'দোষিক ভারসাম্য স্থিতিশীল রয়েছে।';
-  if (pittaDelta < 0 || vataDelta < 0) {
-    vikritiTrajEn = 'Favorable pacification of aggravated doshas observed through dietary intervention.';
-    vikritiTrajBn = 'খাদ্যতালিকাগত পরিবর্তনের মাধ্যমে প্রকুপিত দোষের প্রশমন লক্ষ্য করা গেছে।';
-  } else if (pittaDelta > 1 || vataDelta > 1) {
-    vikritiTrajEn = 'Increased doshic aggravation observed; cooling/soothing dietary adjustments indicated.';
-    vikritiTrajBn = 'দোষিক প্রকোপ বৃদ্ধি পেয়েছে; সুনির্দিষ্ট প্রশমনকারী খাদ্যতালিকাগত পুনর্বিন্যাস আবশ্যক।';
+    if (pittaDelta < 0 || vataDelta < 0 || kaphaDelta < 0) {
+      vikritiTrajEn = 'Favorable pacification of aggravated doshas observed through dietary intervention.';
+      vikritiTrajBn = 'খাদ্যতালিকাগত পরিবর্তনের মাধ্যমে প্রকুপিত দোষের প্রশমন লক্ষ্য করা গেছে।';
+    } else if (pittaDelta > 1 || vataDelta > 1 || kaphaDelta > 1) {
+      vikritiTrajEn = 'Increased doshic aggravation observed; cooling/soothing dietary adjustments indicated.';
+      vikritiTrajBn = 'দোষিক প্রকোপ বৃদ্ধি পেয়েছে; সুনির্দিষ্ট প্রশমনকারী খাদ্যতালিকাগত পুনর্বিন্যাস আবশ্যক।';
+    } else {
+      vikritiTrajEn = 'Dosha balance remains stable.';
+      vikritiTrajBn = 'দোষিক ভারসাম্য স্থিতিশীল রয়েছে।';
+    }
   }
 
-  const bAgni = baseAyur.agni || 'mandagni';
+  const bAgni = baseAyur.agni || 'unassessed';
   const cAgni = currAyur.agni || bAgni;
   let agniInterpEn = `Agni state is currently ${cAgni}.`;
   let agniInterpBn = `বর্তমান অগ্নির অবস্থা: ${cAgni}।`;
-  if (bAgni !== 'samagni' && cAgni === 'samagni') {
+  if (bAgni !== 'samagni' && (cAgni === 'samagni' || cAgni === 'sama')) {
     agniInterpEn = 'Agni has successfully transitioned to balanced digestive fire (Samagni).';
     agniInterpBn = 'পাচক অগ্নি ভারসাম্যপূর্ণ ও আদর্শ অবস্থায় (সমাগ্নি) উন্নীত হয়েছে।';
+  } else if (bAgni === 'unassessed' && cAgni === 'unassessed') {
+    agniInterpEn = 'Digestive fire (Agni) has not been formally assessed.';
+    agniInterpBn = 'পাচক অগ্নির অবস্থা আনুষ্ঠানিকভাবে মূল্যায়ন করা হয়নি।';
   }
 
   const ayurvedic_changes = {
@@ -620,8 +651,8 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   // ── 6. Adherence Summary ──────────────────────────────────────────
   const adherence = comparisonSnapshot.adherence || {};
   const adherence_summary = {
-    diet_adherence_pct: adherence.diet_adherence_pct ?? 75,
-    supplement_adherence_pct: adherence.supplement_adherence_pct ?? 80,
+    diet_adherence_pct: adherence.diet_adherence_pct,
+    supplement_adherence_pct: adherence.supplement_adherence_pct,
     reported_barriers: adherence.barriers || [],
     adverse_reactions: adherence.adverse_reactions || [],
   };
@@ -758,7 +789,7 @@ export function buildComparativeProgressReport(params: {
       adherence_score_pct: analysis.adherence_summary?.diet_adherence_pct,
       barriers: analysis.adherence_summary?.reported_barriers || [],
       adverse_reactions: analysis.adherence_summary?.adverse_reactions || [],
-      dietary_changes: ['Enhanced whole-plant diversity', 'Elimination of refined seed oils'],
+      dietary_changes: comparisonSnapshot.dietary_pattern?.noted_changes || [],
     },
 
     sectionH_ayurvedicProgress: analysis.ayurvedic_changes,
@@ -822,4 +853,22 @@ export function constructClinicalProgressPlanningContext(params: {
     clinicianReviewStatus: progressReport.is_approved ? 'approved' : 'pending',
     approvedNextObjectives: analysis.next_clinical_priorities,
   };
+}
+
+/**
+ * Validates clinician credential strings against placeholders and empty inputs.
+ */
+export function validateClinicianCredentials(clinicianId: string): boolean {
+  const trimmed = (clinicianId || '').trim();
+  const isPlaceholder = [
+    'clinician',
+    'dr. clinical nutritionist',
+    'doctor',
+    'nutritionist',
+    'admin',
+    'user',
+    'test',
+    'guest'
+  ].includes(trimmed.toLowerCase());
+  return Boolean(trimmed && trimmed.length >= 3 && !isPlaceholder);
 }

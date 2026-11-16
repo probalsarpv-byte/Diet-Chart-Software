@@ -50,7 +50,8 @@ import { ClinicalAssessment } from '@/types/assessment';
 import { 
   executeLongitudinalComparison, 
   buildComparativeProgressReport, 
-  constructClinicalProgressPlanningContext 
+  constructClinicalProgressPlanningContext,
+  validateClinicianCredentials
 } from '@/engine/longitudinal/comparisonEngine';
 
 export function generateCollisionResistantId(prefix: string): string {
@@ -1327,98 +1328,9 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (migrated.current_supplements && migrated.current_supplements.length > 0) {
         setCandidateSupplements(migrated.current_supplements);
       }
+      setCurrentClinicalAssessment(null);
     }
   }, [savedPatients]);
-
-  const createNewPatient = useCallback(() => {
-    const newId = generateCollisionResistantId('pt');
-    const today = getDhakaTodayDateString();
-    const initialVisitId = generateCollisionResistantId(`vis_${newId}`);
-
-    const freshCalculated = calculateAnthropometrics(
-      40, 'female', 155, 65, 80, 'sedentary', 
-      [], 'adult_standard', undefined, 'clamped_to_bmr'
-    );
-
-    const freshPatient: PatientProfile = {
-      schema_version: CURRENT_SCHEMA_VERSION,
-      id: newId,
-      name: "New Patient / নতুন রোগী",
-      age: 40,
-      gender: 'female',
-      phone: "",
-      visit_date: today,
-      current_visit_id: initialVisitId,
-      current_phase: 1,
-      height_cm: 155,
-      weight_kg: 65,
-      waist_cm: 80,
-      activity_level: 'sedentary',
-      sleep_hours: 7,
-      shift_worker: false,
-      population_group: 'adult_standard',
-      bmr_floor_strategy: 'clamped_to_bmr',
-      confirmed_allergies: [],
-      allergy_reconciliation_status: 'not_assessed',
-      clinician_disallowed_foods: [],
-      clinician_disallowed_tags: [],
-      selected_conditions: [],
-      active_medications: [],
-      medication_records: [],
-      medication_reconciliation_status: 'not_assessed',
-      gut_profile: {
-        bloating: 'none',
-        acid_reflux_hypoacidity: false,
-        bristol_stool_score: 4,
-        energy_score: 7,
-        sleep_quality_score: 7,
-        digestive_fire_agni: 'unassessed'
-      },
-      labs: {
-        lab_flags: []
-      },
-      calculated: freshCalculated,
-      is_diet_plan_dirty: false,
-      assessment_last_updated_at: new Date().toISOString(),
-      diet_plan_generated_at: new Date().toISOString(),
-      manual_edits_preserved: false
-    };
-
-    const initialVisit: ClinicalVisit = {
-      visit_id: initialVisitId,
-      id: initialVisitId,
-      patient_id: newId,
-      visit_number: 1,
-      visit_type: 'initial_consultation',
-      visit_date: today,
-      created_at: new Date().toISOString(),
-      status: 'in_progress',
-      notes: 'Initial clinical visit'
-    };
-
-    const freshTrafficLight = resolveConflicts(
-      allFoods,
-      freshPatient.selected_conditions,
-      [],
-      freshPatient.confirmed_allergies,
-      freshPatient.clinician_disallowed_foods,
-      freshPatient.clinician_disallowed_tags,
-      freshPatient.current_phase
-    );
-
-    const freshChart = buildAutoScaledDietChart(freshPatient, allFoods, freshTrafficLight);
-
-    setPatient(freshPatient);
-    setVisits([]);
-    setClinicalVisits([initialVisit]);
-    setCurrentVisit(initialVisit);
-    setFollowUpAppointments([]);
-    setVisitSnapshots([]);
-    setProgressReports([]);
-    setCurrentProgressReport(null);
-    setDietChart(freshChart);
-    setCandidateSupplements([]);
-  }, []);
 
   // Dedicated Patient Registration without fictional labs or placeholder anthropometrics
   const registerNewPatient = useCallback((adminData: Partial<PatientProfile>): PatientProfile => {
@@ -1536,6 +1448,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     return freshPatient;
   }, []);
+
+  const createNewPatient = useCallback(() => {
+    return registerNewPatient({
+      name: "New Patient / নতুন রোগী",
+      gender: 'female',
+    });
+  }, [registerNewPatient]);
 
   // Longitudinal Visits Management
   const startNewVisit = useCallback((patientId: string, visitType: ClinicalVisitType = 'routine_followup', notes?: string): ClinicalVisit => {
@@ -1811,12 +1730,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [visitSnapshots, patient, captureVisitSnapshot]);
 
   const approveProgressReport = useCallback((reportId: string, clinicianId: string, notes?: string): boolean => {
-    const trimmed = (clinicianId || '').trim();
-    const isPlaceholder = ['clinician', 'dr. clinical nutritionist', 'doctor', 'nutritionist', 'admin', 'user', 'test', 'guest'].includes(trimmed.toLowerCase());
-    if (!trimmed || trimmed.length < 3 || isPlaceholder) {
+    if (!validateClinicianCredentials(clinicianId)) {
       console.warn('Progress report approval rejected: Invalid licensed clinician ID.');
       return false;
     }
+    const trimmed = clinicianId.trim();
 
     const timestamp = new Date().toISOString();
     let updatedReport: ComparativeProgressReport | null = null;
@@ -1931,6 +1849,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setDietChart(buildAutoScaledDietChart(seedPatient, allFoods, freshTrafficLight));
     const p2 = runP2Analysis(seedPatient);
     setP2AnalysisResult(p2);
+    setCurrentClinicalAssessment(null);
   }, []);
 
   return (

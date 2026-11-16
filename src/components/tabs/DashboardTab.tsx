@@ -61,6 +61,33 @@ export const DashboardTab: React.FC = () => {
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
 
+  // Practice-wide aggregated appointments and visits
+  const allPracticeAppointments = useMemo(() => {
+    const map = new Map<string, FollowUpAppointment>();
+    savedPatients.forEach(p => {
+      (p.follow_up_appointments || []).forEach(a => {
+        map.set(a.id, a);
+      });
+    });
+    followUpAppointments.forEach(a => {
+      map.set(a.id, a);
+    });
+    return Array.from(map.values());
+  }, [savedPatients, followUpAppointments]);
+
+  const allPracticeVisits = useMemo(() => {
+    const map = new Map<string, ClinicalVisit>();
+    savedPatients.forEach(p => {
+      (p.clinical_visits || []).forEach(v => {
+        map.set(v.visit_id || v.id, v);
+      });
+    });
+    clinicalVisits.forEach(v => {
+      map.set(v.visit_id || v.id, v);
+    });
+    return Array.from(map.values());
+  }, [savedPatients, clinicalVisits]);
+
   // ── 1. Calculate Real Dynamic KPIs ─────────────────────────────────
   const kpis = useMemo(() => {
     const totalPatients = savedPatients.length;
@@ -73,22 +100,22 @@ export const DashboardTab: React.FC = () => {
     }).length;
 
     // Consultations today across clinicalVisits
-    const visitsToday = clinicalVisits.filter(v => v.visit_date === today).length;
+    const visitsToday = allPracticeVisits.filter(v => v.visit_date === today).length;
 
     // Follow-ups due today
-    const dueToday = followUpAppointments.filter(a => a.status === 'due_today' || a.scheduled_date === today).length;
+    const dueToday = allPracticeAppointments.filter(a => a.status === 'due_today' || a.scheduled_date === today).length;
 
     // Upcoming in next 7 days
     const nextWeekDate = new Date();
     nextWeekDate.setDate(nextWeekDate.getDate() + 7);
     const nextWeekStr = nextWeekDate.toISOString().split('T')[0];
 
-    const upcoming7Days = followUpAppointments.filter(a => {
+    const upcoming7Days = allPracticeAppointments.filter(a => {
       return a.scheduled_date > today && a.scheduled_date <= nextWeekStr && a.status !== 'completed' && a.status !== 'cancelled';
     }).length;
 
     // Overdue follow-ups
-    const overdue = followUpAppointments.filter(a => a.status === 'overdue' || (a.scheduled_date < today && a.status !== 'completed' && a.status !== 'cancelled')).length;
+    const overdue = allPracticeAppointments.filter(a => a.status === 'overdue' || (a.scheduled_date < today && a.status !== 'completed' && a.status !== 'cancelled')).length;
 
     // Pending assessments: patients with unassessed status or unmeasured anthropometrics
     const pendingAssessments = savedPatients.filter(p => {
@@ -112,7 +139,7 @@ export const DashboardTab: React.FC = () => {
       pendingAssessments,
       pendingReports
     };
-  }, [savedPatients, clinicalVisits, followUpAppointments, today]);
+  }, [savedPatients, allPracticeVisits, allPracticeAppointments, today]);
 
   // Filtered patients list
   const filteredPatients = useMemo(() => {
@@ -127,10 +154,10 @@ export const DashboardTab: React.FC = () => {
     });
   }, [savedPatients, searchTerm]);
 
-  // Today's appointments
+  // Today's appointments (practice-wide)
   const todayAppointments = useMemo(() => {
-    return followUpAppointments.filter(a => a.scheduled_date === today && a.status !== 'cancelled');
-  }, [followUpAppointments, today]);
+    return allPracticeAppointments.filter(a => a.scheduled_date === today && a.status !== 'cancelled');
+  }, [allPracticeAppointments, today]);
 
   const handleOpenPatient = (pId: string) => {
     loadPatient(pId);

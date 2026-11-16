@@ -10,7 +10,8 @@ import {
   Trash2,
   Clock,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  Search
 } from 'lucide-react';
 import {
   ReconciledMedicationRecord,
@@ -18,6 +19,7 @@ import {
   MedicationReconciliationOverallStatus,
   MedicationVerificationStatus
 } from '@/types';
+import { searchMedications, MedicationSearchResult } from '@/engine/medicationSearch';
 
 interface MedicationReconciliationEditorProps {
   onSave?: (summary: MedicationReconciliationSummary) => void;
@@ -44,6 +46,29 @@ export const MedicationReconciliationEditor: React.FC<MedicationReconciliationEd
   const [frequency, setFrequency] = useState('Once daily');
   const [timing, setTiming] = useState('with_meal');
   const [verificationStatus, setVerificationStatus] = useState<MedicationVerificationStatus>('verified_active');
+  const [searchResults, setSearchResults] = useState<MedicationSearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const handleMedNameChange = (val: string) => {
+    setMedName(val);
+    if (val.trim().length >= 2) {
+      const res = searchMedications(val, 8);
+      setSearchResults(res);
+      setShowDropdown(true);
+    } else {
+      setSearchResults([]);
+      setShowDropdown(false);
+    }
+  };
+
+  const handleSelectMedication = (item: MedicationSearchResult) => {
+    setMedName(item.brandName || item.name);
+    setGenericName(item.genericName || item.generic_name || '');
+    if (item.strength) {
+      setDose(item.strength);
+    }
+    setShowDropdown(false);
+  };
 
   // Compute overall status and missing elements
   const computedSummary = useMemo((): MedicationReconciliationSummary => {
@@ -120,11 +145,15 @@ export const MedicationReconciliationEditor: React.FC<MedicationReconciliationEd
       missing_elements: missing
     };
 
+    const activeMeds = Array.from(new Set(
+      newRecords.flatMap(r => [r.generic_name, r.medication_name].filter(Boolean) as string[])
+    ));
+
     updatePatient({
       medication_records: noMeds ? [] : newRecords,
       medication_reconciliation: summary,
       medication_reconciliation_status: overallStatus,
-      active_medications: noMeds ? [] : newRecords.map(r => r.id || r.medication_name)
+      active_medications: noMeds ? [] : activeMeds
     });
 
     if (onSave) onSave(summary);
@@ -230,18 +259,62 @@ export const MedicationReconciliationEditor: React.FC<MedicationReconciliationEd
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <div>
+              <div className="relative">
                 <label className="text-[11px] text-muted-foreground block mb-1">
                   {bn ? 'ওষুধের নাম / ব্র্যান্ড *' : 'Medication / Brand *'}
                 </label>
-                <input
-                  type="text"
-                  required
-                  value={medName}
-                  onChange={e => setMedName(e.target.value)}
-                  placeholder={bn ? 'উদা: Metformin / Tab. Glucophage' : 'e.g. Metformin 500mg'}
-                  className="w-full px-3 py-1.5 rounded-xl border bg-background text-xs"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={medName}
+                    onChange={e => handleMedNameChange(e.target.value)}
+                    placeholder={bn ? 'উদা: Metformin / Tab. Glucophage' : 'Search brand or generic...'}
+                    className="w-full px-3 py-1.5 pl-8 rounded-xl border bg-background text-xs"
+                  />
+                  <Search className="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted-foreground pointer-events-none" />
+                </div>
+
+                {/* Live 32,461 MediNutrition search dropdown */}
+                {showDropdown && searchResults.length > 0 && (
+                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-card border rounded-xl shadow-lg max-h-56 overflow-y-auto divide-y divide-border/60">
+                    {searchResults.map((item, idx) => (
+                      <button
+                        key={`${item.name}_${idx}`}
+                        type="button"
+                        onClick={() => handleSelectMedication(item)}
+                        className="w-full text-left px-3 py-2 hover:bg-muted/50 transition-colors flex items-start justify-between gap-2"
+                      >
+                        <div>
+                          <div className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                            <span>{item.brandName || item.name}</span>
+                            {item.strength && (
+                              <span className="text-[10px] text-muted-foreground font-normal">({item.strength})</span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {item.genericName || item.generic_name} {item.manufacturer ? `• ${item.manufacturer}` : ''}
+                          </div>
+                        </div>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${
+                            item.rule_coverage_status === 'fully_covered'
+                              ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                              : item.rule_coverage_status === 'partially_covered'
+                              ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {item.rule_coverage_status === 'fully_covered'
+                            ? (bn ? 'ক্লিনিক্যাল রুলস সক্রিয়' : 'Rules Active')
+                            : item.rule_coverage_status === 'partially_covered'
+                            ? (bn ? 'আংশিক রুলস' : 'Partial')
+                            : (bn ? 'ক্লিনিক্যাল নোট আবশ্যক' : 'Clinician Note Req.')}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>

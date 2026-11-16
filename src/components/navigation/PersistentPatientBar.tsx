@@ -54,8 +54,9 @@ export const PersistentPatientBar: React.FC = () => {
   if (!isClinicalTab) return null;
 
   // Baseline visit determination
-  const baselineVisit = clinicalVisits.find(v => v.visit_type === 'initial') || clinicalVisits[0];
-  const isFollowUp = currentVisit && currentVisit.visit_type !== 'initial';
+  const isBaseline = ['initial', 'initial_consultation', 'baseline_consultation'].includes(currentVisit?.visit_type || '');
+  const baselineVisit = clinicalVisits.find(v => ['initial', 'initial_consultation', 'baseline_consultation'].includes(v.visit_type || '')) || clinicalVisits[0];
+  const isFollowUp = currentVisit && !isBaseline;
 
   // Allergy safety state
   const allergyStatus = patient.allergy_reconciliation_status || 'not_assessed';
@@ -107,12 +108,12 @@ export const PersistentPatientBar: React.FC = () => {
                 <Calendar className="h-3 w-3 text-emerald-400" />
                 <span className="text-slate-300 font-medium">{currentVisit?.visit_date || patient.visit_date}</span>
                 <span className="text-[10px] uppercase font-semibold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/50">
-                  {currentVisit?.visit_type === 'initial' ? (bn ? 'প্রথম ভিজিট' : 'Initial') : (bn ? 'ফলো-আপ' : 'Follow-up')}
+                  {isBaseline ? (bn ? 'প্রথম ভিজিট' : 'Initial') : (bn ? 'ফলো-আপ' : 'Follow-up')}
                 </span>
                 <span className="font-mono text-[10px] text-slate-400">({currentVisit?.visit_id || 'Active'})</span>
               </span>
 
-              {isFollowUp && baselineVisit && (
+              {isFollowUp && baselineVisit && baselineVisit.visit_id !== currentVisit?.visit_id && (
                 <>
                   <span className="text-slate-600">|</span>
                   <span className="text-slate-400 text-[10px]">

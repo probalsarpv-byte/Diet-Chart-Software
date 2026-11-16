@@ -97,10 +97,13 @@ export const PatientsTab: React.FC = () => {
     const snap = visitSnapshots.find(s => s.visit_id === (v.visit_id || v.id));
     if (snap) {
       setSelectedSnapshot(snap);
-    } else {
-      // Create on-the-fly snapshot for inspection
+    } else if (v.visit_id === currentVisit?.visit_id || v.id === currentVisit?.id) {
+      // Capture live snapshot for the currently active visit
       const tempSnap = captureVisitSnapshot(v.is_baseline);
       setSelectedSnapshot(tempSnap);
+    } else {
+      // Historical visit without captured snapshot - do not fabricate retroactively
+      alert(bn ? 'এই পূর্ববর্তী ভিজিটের জন্য কোনো সংরক্ষিত স্ন্যাপশট পাওয়া যায়নি।' : 'No recorded clinical snapshot found for this historical visit.');
     }
   };
 

@@ -132,6 +132,13 @@ export const ComparativeProgressReportView: React.FC<ComparativeProgressReportVi
 
       {/* ── A4 Printable Document Container ────────────────────────── */}
       <div className="bg-card border rounded-3xl p-6 sm:p-10 shadow-sm space-y-8 text-foreground print:border-none print:shadow-none print:p-0">
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media print {
+            body { font-size: 11px; }
+            .print-table th, .print-table td { font-size: 9px; padding: 3px 4px; word-break: break-word; }
+            @page { margin: 12mm 15mm; size: A4 portrait; }
+          }
+        `}} />
         
         {/* ── Institutional Header ───────────────────────────────────── */}
         <div className="border-b-2 border-primary/30 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -270,7 +277,7 @@ export const ComparativeProgressReportView: React.FC<ComparativeProgressReportVi
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-xs print-table">
               <thead>
                 <tr className="border-b text-muted-foreground text-left">
                   <th className="pb-2 font-medium">{bn ? 'পরিমাপক (Metric)' : 'Parameter'}</th>
