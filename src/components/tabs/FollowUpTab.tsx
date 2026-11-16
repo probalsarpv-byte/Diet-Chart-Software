@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { usePractice, getDhakaTodayDateString } from '@/context/PracticeContext';
 import { CLINICAL_PHASES, compareLongitudinalProgress } from '@/engine/phaseProgression';
+import { getApprovedBaselineSnapshot } from '@/engine/snapshot/snapshotManager';
 import { 
   TrendingUp, 
   ArrowRight, 
@@ -105,24 +106,51 @@ export const FollowUpTab: React.FC = () => {
     return progressReports.find(r => r.report_id === selectedReportId) || progressReports[0] || null;
   }, [progressReports, selectedReportId]);
 
-  // Baseline comparison for Phase Pipeline
-  const comparison = compareLongitudinalProgress([
-    {
-      visit_id: 'v_baseline',
-      visit_date: patient.visit_date,
+  // Baseline snapshot for immutable comparison
+  const baselineSnapshot = useMemo(() => {
+    return getApprovedBaselineSnapshot(visitSnapshots) || visitSnapshots.find(s => s.is_baseline);
+  }, [visitSnapshots]);
+
+  const baselineVisitEntry = useMemo((): LongitudinalVisit => {
+    if (!baselineSnapshot) {
+      return {
+        visit_id: 'v_baseline',
+        visit_date: patient.visit_date,
+        phase: 1,
+        weight_kg: patient.weight_kg,
+        waist_cm: patient.waist_cm,
+        whtr: patient.calculated.whtr,
+        bristol_stool: patient.gut_profile.bristol_stool_score,
+        energy_score: patient.gut_profile.energy_score,
+        symptom_relief_pct: 0,
+        homa_ir: patient.labs.homa_ir,
+        tg_hdl_ratio: patient.labs.tg_hdl_ratio,
+        hba1c: patient.labs.hba1c
+      };
+    }
+    return {
+      visit_id: baselineSnapshot.visit_id,
+      visit_date: baselineSnapshot.visit_date,
       phase: 1,
-      weight_kg: patient.weight_kg,
-      waist_cm: patient.waist_cm,
-      whtr: patient.calculated.whtr,
-      bristol_stool: patient.gut_profile.bristol_stool_score,
-      energy_score: patient.gut_profile.energy_score,
+      weight_kg: baselineSnapshot.anthropometrics?.weight_kg ?? patient.weight_kg,
+      waist_cm: baselineSnapshot.anthropometrics?.waist_cm ?? patient.waist_cm,
+      whtr: baselineSnapshot.anthropometrics?.whtr ?? patient.calculated.whtr,
+      bristol_stool: baselineSnapshot.gut_metrics?.bristol_stool_score ?? patient.gut_profile.bristol_stool_score,
+      energy_score: baselineSnapshot.gut_metrics?.energy_score ?? patient.gut_profile.energy_score,
       symptom_relief_pct: 0,
-      homa_ir: patient.labs.homa_ir,
-      tg_hdl_ratio: patient.labs.tg_hdl_ratio,
-      hba1c: patient.labs.hba1c
-    },
-    ...visits
-  ]);
+      homa_ir: baselineSnapshot.biomarkers?.homa_ir,
+      tg_hdl_ratio: baselineSnapshot.biomarkers?.tg_hdl_ratio,
+      hba1c: baselineSnapshot.biomarkers?.hba1c
+    };
+  }, [baselineSnapshot, patient]);
+
+  // Baseline comparison for Phase Pipeline
+  const comparison = useMemo(() => {
+    return compareLongitudinalProgress([
+      baselineVisitEntry,
+      ...visits
+    ]);
+  }, [baselineVisitEntry, visits]);
 
   const handleSaveVisit = () => {
     const whtr = patient.height_cm > 0 ? Math.round((newWaist / patient.height_cm) * 100) / 100 : 0;

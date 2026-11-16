@@ -9,6 +9,8 @@ import type {
 export * from './clinical';
 export * from './assessment';
 
+export const CURRENT_SCHEMA_VERSION = 2;
+
 export type FoodCategory = 
   | 'grain'
   | 'protein'
@@ -692,8 +694,8 @@ export interface ClinicalVisitSnapshot {
     ama?: string;
   };
   functional_matrix?: Record<string, { burden: string; score?: number }>;
-  medications: MedicationReconciliationSummary;
-  allergies: AllergyReconciliationRecord;
+  medications?: MedicationReconciliationSummary;
+  allergies?: AllergyReconciliationRecord;
   adherence?: {
     diet_adherence_pct?: number;
     supplement_adherence_pct?: number;
@@ -701,8 +703,8 @@ export interface ClinicalVisitSnapshot {
     adverse_reactions?: string[];
     clinician_observations?: string;
   };
-  clinical_priorities: string[];
-  approved_goals: string[];
+  clinical_priorities?: string[];
+  approved_goals?: string[];
 }
 
 // ─── Longitudinal Comparison Engine Models ────────────────────────

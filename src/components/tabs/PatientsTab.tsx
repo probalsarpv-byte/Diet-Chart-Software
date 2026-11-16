@@ -82,9 +82,7 @@ export const PatientsTab: React.FC = () => {
   }, [clinicalVisits, patient.id]);
 
   const handleStartNewVisit = () => {
-    const newVisit = startNewVisit(patient.id, 'routine_followup', 'Follow-up clinical consultation');
-    captureVisitSnapshot(false);
-    saveCurrentPatient();
+    startNewVisit(patient.id, 'routine_followup', 'Follow-up clinical consultation');
     setActiveTab('assessment');
   };
 

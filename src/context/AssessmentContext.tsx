@@ -19,6 +19,7 @@ import {
 } from "../questionnaire/registry";
 import { usePractice } from "./PracticeContext";
 import { filterVisibleQuestions } from "../engine/questionEngine";
+import { safeStorage } from "../utils/storageManager";
 import {
   AssessmentMode,
   AssessmentStepId,
@@ -186,8 +187,9 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
   const [populationData, setPopulationData] = useState<PopulationSpecificData>({});
   const [completed, setCompleted] = useState<boolean>(false);
 
-  // Prevents saving stale state from previous patient during patient switch
+  // Prevents saving stale state from previous patient/visit during patient/visit switch
   const loadedPatientIdRef = useRef<string>(patientId);
+  const loadedVisitIdRef = useRef<string>(visitId);
 
   const storageKey = `shuddho_assessment_${patientId}_${visitId}`;
 
@@ -197,12 +199,12 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
 
     setIsHydrated(false);
     loadedPatientIdRef.current = patientId;
+    loadedVisitIdRef.current = visitId;
 
-    const stored = localStorage.getItem(storageKey);
-    if (stored) {
+    const parsed = safeStorage.getItem<FullAssessmentPersistedState>(storageKey);
+    if (parsed) {
       try {
-        const parsed = JSON.parse(stored) as FullAssessmentPersistedState;
-        if (parsed.patientId === patientId) {
+        if (parsed.patientId === patientId && (!parsed.visitId || parsed.visitId === visitId)) {
           setModeState(parsed.mode || 'quick');
           setCurrentStep(parsed.currentStep || 'step_category');
           setFunctionalAnswers(parsed.answers || {});
@@ -241,12 +243,12 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
     setPopulationData({});
     setCompleted(false);
     setIsHydrated(true);
-  }, [patientId, storageKey]);
+  }, [patientId, visitId, storageKey]);
 
   // 2. Debounced Auto-Save
   useEffect(() => {
     if (typeof window === "undefined" || !isHydrated) return;
-    if (loadedPatientIdRef.current !== patientId) return; // Prevent saving stale state
+    if (loadedPatientIdRef.current !== patientId || loadedVisitIdRef.current !== visitId) return; // Prevent saving stale state across patient/visit switch
 
     const handler = setTimeout(() => {
       try {
@@ -267,7 +269,7 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
           completed,
           lastUpdated: new Date().toISOString()
         };
-        localStorage.setItem(storageKey, JSON.stringify(stateToSave));
+        safeStorage.setItem(storageKey, stateToSave);
       } catch (e) {
         console.error("Auto-save assessment error:", e);
       }
@@ -353,7 +355,7 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
         completed,
         lastUpdated: new Date().toISOString()
       };
-      localStorage.setItem(storageKey, JSON.stringify(stateToSave));
+      safeStorage.setItem(storageKey, stateToSave);
     }
   }, [
     isHydrated,

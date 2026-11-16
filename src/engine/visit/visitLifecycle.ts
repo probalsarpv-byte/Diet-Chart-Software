@@ -16,6 +16,7 @@ export interface CreateVisitTransitionParams {
   existingVisits: ClinicalVisit[];
   visitType?: ClinicalVisitType;
   notes?: string;
+  visitDate?: string;
 }
 
 export interface CreateVisitTransitionResult {
@@ -29,14 +30,15 @@ export function createNewVisitTransition(params: CreateVisitTransitionParams): C
     patient,
     existingVisits,
     visitType = 'routine_followup',
-    notes
+    notes,
+    visitDate
   } = params;
 
   if (!patient || !patient.id) {
     throw new Error('INVALID_PATIENT: Cannot initiate visit without authoritative patient ID');
   }
 
-  const today = new Intl.DateTimeFormat('en-CA', {
+  const today = visitDate || new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Dhaka',
     year: 'numeric',
     month: '2-digit',
