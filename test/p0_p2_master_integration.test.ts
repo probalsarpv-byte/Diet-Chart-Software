@@ -64,8 +64,10 @@ runCheck('Neutral registration preserves unmeasured anthropometrics', () => {
     medication_reconciliation_status: 'not_assessed',
     gut_profile: {
       bloating: 'none',
-      bowel_regularity: 'regular',
+      acid_reflux_hypoacidity: false,
       bristol_stool_score: 4,
+      energy_score: 5,
+      sleep_quality_score: 5,
       digestive_fire_agni: 'unassessed'
     }
   };
@@ -231,47 +233,66 @@ runCheck('Calculates quantitative changes accurately', () => {
 console.log('\n6. Full Longitudinal Comparison Engine (Modes A–D)');
 
 const createSamplePatient = (): PatientProfile => ({
+  schema_version: 2,
   id: 'SH-TEST-001',
   name: 'Kazi Nazrul Islam',
   age: 48,
   gender: 'male',
+  phone: '01712-345678',
   visit_date: '2026-03-15',
+  current_phase: 2,
   height_cm: 165,
   weight_kg: 79,
-  waist_circumference_cm: 90,
+  waist_cm: 90,
+  activity_level: 'sedentary',
+  sleep_hours: 7,
+  shift_worker: false,
+  population_group: 'adult_standard',
+  bmr_floor_strategy: 'clamped_to_bmr',
+  confirmed_allergies: ['shrimp'],
+  clinician_disallowed_foods: [],
+  clinician_disallowed_tags: [],
+  selected_conditions: ['t2d_ir', 'hypertension_ckd'],
+  active_medications: ['Metformin 500mg'],
+  allergy_reconciliation_status: 'allergies_confirmed',
+  medication_reconciliation_status: 'fully_reconciled',
+  gut_profile: {
+    bloating: 'none',
+    acid_reflux_hypoacidity: false,
+    bristol_stool_score: 4,
+    energy_score: 8,
+    sleep_quality_score: 8,
+    digestive_fire_agni: 'samagni'
+  },
+  labs: {
+    hba1c: 7.2,
+    homa_ir: 2.4,
+    serum_creatinine: 1.1,
+    egfr: 75,
+    lab_flags: []
+  },
   calculated: {
     bmi: 29.0,
     bmi_category_en: 'Overweight',
     bmi_category_bn: 'অতিরিক্ত ওজন',
     whtr: 0.55,
+    whtr_risk_en: 'Elevated Risk',
+    whtr_risk_bn: 'উচ্চ ঝুঁকি',
     ibw_kg: 61,
     adjusted_bw_kg: 68,
+    bmr: 1650,
+    tdee: 1980,
     bmr_safe_calorie_floor: 1450,
     target_calories: 1650,
     target_protein_g: 80,
     target_carbs_g: 180,
-    target_fat_g: 50
-  },
-  selected_conditions: ['type_2_diabetes', 'hypertension'],
-  active_medications: ['Metformin 500mg'],
-  confirmed_allergies: ['shrimp'],
-  allergy_reconciliation_status: 'allergies_confirmed',
-  medication_reconciliation_status: 'fully_reconciled',
-  clinician_disallowed_foods: [],
-  current_phase: 2,
-  labs: {
-    hba1c: 7.2,
-    homa_ir: 2.4,
-    serum_creatinine: 1.1,
-    egfr: 75
-  },
-  gut_profile: {
-    bloating: 'none',
-    bowel_regularity: 'regular',
-    bristol_stool_score: 4,
-    digestive_fire_agni: 'sama'
-  },
-  longitudinal_visits: []
+    target_fat_g: 50,
+    protein_ratio_used: '1.2 g/kg',
+    population_group: 'adult_standard',
+    bmr_floor_strategy: 'clamped_to_bmr',
+    is_estimated: true,
+    energy_calculation_method: 'Mifflin-St Jeor'
+  }
 });
 
 const createSampleSnapshot = (
@@ -288,13 +309,15 @@ const createSampleSnapshot = (
   snapshot_id: `snap_${visitId}`,
   patient_id: 'SH-TEST-001',
   visit_id: visitId,
+  is_baseline: visitId === 'v_baseline',
   visit_date: dateStr,
-  phase,
   anthropometrics: {
     weight_kg: weight,
     height_cm: 165,
     bmi: Number((weight / (1.65 * 1.65)).toFixed(1)),
-    waist_cm: 92,
+    waist_cm: 92
+  },
+  vitals: {
     systolic_bp: 135,
     diastolic_bp: 85
   },
@@ -324,10 +347,10 @@ const createSampleSnapshot = (
   },
   allergies: {
     status: 'allergies_confirmed',
-    confirmed_allergens: ['shrimp'],
+    reconciled: true,
+    confirmed_allergies: ['shrimp'],
     reconciled_by: 'Dr. Nutritionist',
-    reconciled_at: '2026-01-10T10:00:00Z',
-    verified_no_allergies: false
+    reconciled_at: '2026-01-10T10:00:00Z'
   },
   medications: {
     status: 'fully_reconciled',
