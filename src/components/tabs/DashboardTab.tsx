@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { usePractice, getDhakaTodayDateString } from '@/context/PracticeContext';
+import { usePractice } from '@/context/PracticeContext';
+import { calculatePracticeKPIs, getDhakaTodayDateString } from '@/utils/dhakaDate';
 import {
   Users,
   UserPlus,
@@ -40,6 +41,7 @@ export const DashboardTab: React.FC = () => {
     cancelFollowUp,
     completeFollowUp,
     startNewVisit,
+    startFollowUpConsultation,
     registerNewPatient
   } = usePractice();
 
@@ -92,58 +94,10 @@ export const DashboardTab: React.FC = () => {
     return Array.from(map.values());
   }, [savedPatients, clinicalVisits]);
 
-  // ── 1. Calculate Real Dynamic KPIs ─────────────────────────────────
+  // ── 1. Calculate Real Dynamic KPIs (Deterministic & Asia/Dhaka-Safe) ────
   const kpis = useMemo(() => {
-    const totalPatients = savedPatients.length;
-
-    // Patients created this month
-    const currentMonth = today.substring(0, 7); // YYYY-MM
-    const newThisMonth = savedPatients.filter(p => {
-      const pMonth = (p.created_at || p.patient.visit_date || '').substring(0, 7);
-      return pMonth === currentMonth;
-    }).length;
-
-    // Consultations today across clinicalVisits
-    const visitsToday = allPracticeVisits.filter(v => v.visit_date === today).length;
-
-    // Follow-ups due today
-    const dueToday = allPracticeAppointments.filter(a => a.status === 'due_today' || a.scheduled_date === today).length;
-
-    // Upcoming in next 7 days
-    const nextWeekDate = new Date();
-    nextWeekDate.setDate(nextWeekDate.getDate() + 7);
-    const nextWeekStr = nextWeekDate.toISOString().split('T')[0];
-
-    const upcoming7Days = allPracticeAppointments.filter(a => {
-      return a.scheduled_date > today && a.scheduled_date <= nextWeekStr && a.status !== 'completed' && a.status !== 'cancelled';
-    }).length;
-
-    // Overdue follow-ups
-    const overdue = allPracticeAppointments.filter(a => a.status === 'overdue' || (a.scheduled_date < today && a.status !== 'completed' && a.status !== 'cancelled')).length;
-
-    // Pending assessments: patients with unassessed status or unmeasured anthropometrics
-    const pendingAssessments = savedPatients.filter(p => {
-      return !p.patient.calculated?.is_estimated && (p.patient.weight_kg === 0 || p.patient.allergy_reconciliation_status === 'not_assessed');
-    }).length;
-
-    // Pending clinical reports: unapproved P2 reports or pending reviews
-    const pendingReports = savedPatients.filter(p => {
-      const hasProgressReports = p.progress_reports && p.progress_reports.length > 0;
-      const unapprovedProgress = hasProgressReports && p.progress_reports?.some(r => !r.is_approved);
-      return unapprovedProgress || (!hasProgressReports && p.patient.selected_conditions.length > 0);
-    }).length;
-
-    return {
-      totalPatients,
-      newThisMonth,
-      visitsToday,
-      dueToday,
-      upcoming7Days,
-      overdue,
-      pendingAssessments,
-      pendingReports
-    };
-  }, [savedPatients, allPracticeVisits, allPracticeAppointments, today]);
+    return calculatePracticeKPIs(savedPatients);
+  }, [savedPatients]);
 
   // Filtered patients list
   const filteredPatients = useMemo(() => {
@@ -169,13 +123,13 @@ export const DashboardTab: React.FC = () => {
   };
 
   const handleStartFollowUpForAppointment = (apt: FollowUpAppointment) => {
-    loadPatient(apt.patient_id);
-    const newVisit = startNewVisit(apt.patient_id, 'routine_followup', `Follow-up from appointment ${apt.appointment_id}`);
+    // Start consultation cleanly without premature completion; links actual_visit_id
+    const newVisit = startFollowUpConsultation(apt.appointment_id, apt.patient_id);
     if (!newVisit) {
-      alert("Failed to start follow-up visit: Storage persistence error or quota exceeded.");
+      alert(bn ? "ফলো-আপ ভিজিট শুরু করা যায়নি: স্টোরেজ সীমা বা এরর।" : "Failed to start follow-up visit: Storage persistence error or quota exceeded.");
       return;
     }
-    completeFollowUp(apt.appointment_id, newVisit.visit_id);
+    loadPatient(apt.patient_id);
     setActiveTab('assessment');
   };
 
@@ -336,6 +290,41 @@ export const DashboardTab: React.FC = () => {
           <div className="text-[10px] text-muted-foreground">{bn ? 'রিপোর্ট রিভিউ' : 'Awaiting review'}</div>
         </div>
       </div>
+
+      {/* ── Empty State Banner (Clean & Zero-Safe) ─────────────────── */}
+      {savedPatients.length === 0 && (
+        <div className="bg-gradient-to-br from-card via-card to-primary/10 border-2 border-dashed border-primary/20 rounded-3xl p-8 sm:p-10 text-center shadow-sm space-y-4">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+            <Users className="h-8 w-8" />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="text-base sm:text-lg font-bold text-foreground">
+              {bn ? 'প্র্যাকটিসে কোনো রোগী নিবন্ধিত নেই' : 'No Patients Registered Yet'}
+            </h3>
+            <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+              {bn
+                ? 'আপনার ক্লিনিক্যাল প্র্যাকটিস শুরু করতে প্রথম রোগী নিবন্ধন করুন অথবা একটি সম্পূর্ণ ডেমো রোগীর রেকর্ড লোড করে কার্যপদ্ধতি পর্যালোচনা করুন।'
+                : 'Begin by registering your first patient or load a demonstration clinical record.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => setShowRegisterModal(true)}
+              className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-xs flex items-center gap-2 hover:opacity-90 shadow-sm transition"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>{bn ? '+ নতুন রোগী নিবন্ধন' : '+ Register Patient'}</span>
+            </button>
+            <button
+              onClick={loadDemoPatient}
+              className="px-5 py-2.5 rounded-xl border bg-secondary/80 hover:bg-secondary text-foreground font-semibold text-xs flex items-center gap-2 transition"
+            >
+              <Sparkles className="h-4 w-4 text-amber-500" />
+              <span>{bn ? 'ডেমো কেস লোড করুন' : 'Load Demo Case'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Quick Action Launcher ──────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
