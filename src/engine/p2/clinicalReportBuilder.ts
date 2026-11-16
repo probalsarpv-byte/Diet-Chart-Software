@@ -214,8 +214,8 @@ export function buildClinicalHealthAssessmentReport(params: {
         pendingTests.push(entry.name_en || entry.marker_id);
       }
     }
-  } else if (!assessment || !assessment.labs?.entries || Object.keys(assessment.labs.entries).length === 0) {
-    // Fallback to legacy patient.labs ONLY when assessment is omitted or contains zero laboratory entries
+  } else if (!assessment) {
+    // Fallback to legacy patient.labs ONLY when assessment is omitted entirely
     const labs = patient.labs || {};
 
     if (labs.fasting_glucose !== undefined) {

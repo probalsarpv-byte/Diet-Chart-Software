@@ -179,6 +179,12 @@ async function runStep02BrowserE2E() {
     await step3Nav.click({ timeout: 5000 });
     await page.waitForTimeout(400);
 
+    // Chief Complaint
+    const chiefComplaintInput = page.locator('input[placeholder*="Postprandial bloating"], input[placeholder*="পেটে গ্যাস"]').first();
+    if (await chiefComplaintInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await chiefComplaintInput.fill('Evaluation of glycemic health and elevated HbA1c');
+    }
+
     // Explicit Allergy Reconciliation: None confirmed
     const allergyBtn = page.locator('[data-testid="allergy-none-confirmed"]');
     await allergyBtn.waitFor({ state: 'visible', timeout: 5000 });
@@ -208,10 +214,14 @@ async function runStep02BrowserE2E() {
     assert(true, 'Clinical Safety answered: Dysphagia = No');
 
     const fluidNo = page.locator('[data-testid="safety-fluid-limit-no"]');
-    if (await fluidNo.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await fluidNo.click();
-      assert(true, 'Clinical Safety answered: Fluid Restriction = No');
-    }
+    await fluidNo.waitFor({ state: 'visible', timeout: 5000 });
+    await fluidNo.click();
+    assert(true, 'Clinical Safety answered: Fluid Restriction = No');
+
+    const feedingRoute = page.locator('[data-testid="safety-feeding-route"]');
+    await feedingRoute.waitFor({ state: 'visible', timeout: 5000 });
+    await feedingRoute.selectOption('oral_standard');
+    assert(true, 'Clinical Safety answered: Feeding Route = oral_standard');
 
     // -------------------------------------------------------------------
     // 4. Step 8: Laboratory Biomarker Intake (Deterministic HbA1c 7.3%)
@@ -231,7 +241,7 @@ async function runStep02BrowserE2E() {
     const hba1cInput = page.locator('[data-testid="lab-input-hba1c"]');
     await hba1cInput.waitFor({ state: 'visible', timeout: 5000 });
     await hba1cInput.fill('7.3');
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(500); // Allow debounced auto-save to write state to safeStorage
 
     const enteredHbA1c = await hba1cInput.inputValue();
     assert(enteredHbA1c === '7.3', 'HbA1c 7.3% entered into P1 Step 8 laboratory intake');
@@ -284,26 +294,24 @@ async function runStep02BrowserE2E() {
     // -------------------------------------------------------------------
     console.log('--- Step 7: Unified Clinical Overview (Read-Only IntakeTab) ---');
     const toolsMenu = page.locator('[data-testid="nav-tools-menu"]');
-    if (await toolsMenu.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await toolsMenu.click();
-      await page.waitForTimeout(200);
-    }
+    await toolsMenu.waitFor({ state: 'visible', timeout: 5000 });
+    await toolsMenu.click();
+    await page.waitForTimeout(200);
 
     const clinicalOverviewSubtab = page.locator('[data-testid="nav-subtab-intake"]');
-    if (await clinicalOverviewSubtab.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await clinicalOverviewSubtab.click();
-      await page.waitForTimeout(400);
+    await clinicalOverviewSubtab.waitFor({ state: 'visible', timeout: 5000 });
+    await clinicalOverviewSubtab.click();
+    await page.waitForTimeout(400);
 
-      // Verify read-only badges and handoff buttons
-      const overviewTitle = page.getByText('Unified Clinical Assessment Overview').or(page.getByText('একীভূত ক্লিনিক্যাল ডেটা ব্যবস্থাপনা')).first();
-      assert(await overviewTitle.isVisible(), 'Clinical Overview Tab displays unified header with single source badge');
+    // Verify read-only badges and handoff buttons
+    const overviewTitle = page.getByText('Unified Clinical Assessment Overview').or(page.getByText('একীভূত ক্লিনিক্যাল ডেটা ব্যবস্থাপনা')).first();
+    assert(await overviewTitle.isVisible(), 'Clinical Overview Tab displays unified header with single source badge');
 
-      const registryHandoff = page.locator('button:has-text("Patient Registry"), button:has-text("রোগী রেজিস্ট্রি")').first();
-      assert(await registryHandoff.isVisible(), 'Clinical Overview provides one-click handoff button to Patient Registry');
+    const registryHandoff = page.locator('button:has-text("Patient Registry"), button:has-text("রোগী রেজিস্ট্রি")').first();
+    assert(await registryHandoff.isVisible(), 'Clinical Overview provides one-click handoff button to Patient Registry');
 
-      const assessmentHandoff = page.locator('button:has-text("Assessment Wizard"), button:has-text("অ্যাসেসমেন্ট উইজার্ড")').first();
-      assert(await assessmentHandoff.isVisible(), 'Clinical Overview provides one-click handoff button to Assessment Wizard');
-    }
+    const assessmentHandoff = page.locator('button:has-text("Assessment Wizard"), button:has-text("অ্যাসেসমেন্ট উইজার্ড")').first();
+    assert(await assessmentHandoff.isVisible(), 'Clinical Overview provides one-click handoff button to Assessment Wizard');
 
     // -------------------------------------------------------------------
     // 8. Browser Reload & Persistence Verification (HbA1c 7.3% Rehydration)

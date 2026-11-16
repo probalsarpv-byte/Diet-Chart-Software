@@ -741,6 +741,22 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (parsed && Array.isArray(parsed) && parsed.length > 0) {
         const migrated = parsed.map(migratePatientRecord);
         setSavedPatients(migrated);
+
+        const activeId = safeStorage.getItem<string>('shuddho_active_patient_id');
+        const match = activeId ? migrated.find(p => p.patient.id === activeId) : null;
+        if (match) {
+          setPatient(match.patient);
+          setVisits(match.visits || []);
+          setClinicalVisits(match.clinical_visits || []);
+          const activeVisit = (match.clinical_visits || []).find(
+            v => v.visit_id === match.patient.current_visit_id || v.id === match.patient.current_visit_id
+          ) || (match.clinical_visits && match.clinical_visits.length > 0 ? match.clinical_visits[0] : null);
+          setCurrentVisit(activeVisit);
+          setFollowUpAppointments(match.follow_up_appointments || []);
+          setVisitSnapshots(match.visit_snapshots || []);
+          setProgressReports(match.progress_reports || []);
+          setDietChart(match.current_diet_chart || []);
+        }
       }
     } catch (e) {
       console.warn("LocalStorage access issue:", e);
@@ -1320,6 +1336,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setCandidateSupplements(migrated.current_supplements);
       }
       setCurrentClinicalAssessment(null);
+      safeStorage.setItem('shuddho_active_patient_id', id);
     }
   }, [savedPatients, patient, saveCurrentPatient]);
 
@@ -1439,6 +1456,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setP2AnalysisResult(null);
     setCurrentClinicalAssessment(null);
     setSavedPatients(tx.committedPatientsList);
+    safeStorage.setItem('shuddho_active_patient_id', freshPatient.id);
 
     return freshPatient;
   }, [savedPatients]);

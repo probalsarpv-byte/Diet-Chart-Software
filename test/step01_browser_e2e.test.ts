@@ -108,10 +108,10 @@ async function runBrowserE2E() {
     console.log(`\n--- SCENARIO A: Two Patients Registration, Measurements & Isolation ---`);
 
     const navigateToIntake = async () => {
-      const advancedToolsBtn = page.locator('button:has-text("Advanced Tools"), button:has-text("অতিরিক্ত টুলস")').first();
+      const advancedToolsBtn = page.locator('[data-testid="nav-tools-menu"], button:has-text("Advanced Tools"), button:has-text("অতিরিক্ত টুলস")').first();
       await advancedToolsBtn.click();
       await page.waitForTimeout(200);
-      const intakeBtn = page.locator('button:has-text("Intake & Labs"), button:has-text("ইনটেক ও ল্যাব ডাটা")').first();
+      const intakeBtn = page.locator('[data-testid="nav-subtab-intake"], button:has-text("Clinical Overview"), button:has-text("Intake & Labs"), button:has-text("ইনটেক ও ল্যাব ডাটা")').first();
       await intakeBtn.click();
       await page.waitForTimeout(300);
     };

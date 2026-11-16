@@ -512,9 +512,12 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
       'safety_dysphagia_choking_risk'
     ];
 
-    const missingCritical = criticalSafetyQuestions.filter(
-      qId => functionalAnswers[qId] === undefined || functionalAnswers[qId] === null || functionalAnswers[qId] === ""
-    );
+    const missingCritical = criticalSafetyQuestions.filter(qId => {
+      if (qId === 'safety_hospital_feeding_route' && (functionalAnswers[qId] || patient?.feeding_status?.route)) {
+        return false;
+      }
+      return functionalAnswers[qId] === undefined || functionalAnswers[qId] === null || functionalAnswers[qId] === "";
+    });
 
     // 1. Allergies Reconciled Check
     // CLINICAL INTEGRITY RULE:
