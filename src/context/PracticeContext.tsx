@@ -178,6 +178,16 @@ export interface PracticeContextType {
   rescheduleFollowUp: (appointmentId: string, newDate: string, newTime?: string, reason?: string) => boolean;
   cancelFollowUp: (appointmentId: string, reason?: string) => boolean;
   completeFollowUp: (appointmentId: string, actualVisitId?: string) => boolean;
+  recordFollowUpVisit: (payload: {
+    weight_kg: number;
+    waist_cm: number;
+    whtr?: number;
+    bristol_stool: number;
+    energy_score: number;
+    symptom_relief_pct: number;
+    clinical_observations?: string;
+    notes?: string;
+  }) => boolean;
   captureVisitSnapshot: (isBaseline?: boolean, amendmentReason?: string, observationPayload?: ClinicalObservationsPayload) => ClinicalVisitSnapshot;
   generateProgressReport: (baselineVisitId: string, comparisonVisitId: string, comparisonMode?: 'baseline_vs_current' | 'previous_vs_current' | 'selected_pair' | 'trend_series') => ComparativeProgressReport | null;
   approveProgressReport: (reportId: string, clinicianId: string, notes?: string) => boolean;
