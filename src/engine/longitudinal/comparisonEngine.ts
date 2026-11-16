@@ -352,8 +352,23 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   ];
 
   // ── 2. Symptom Score Changes ──────────────────────────────────────
-  const baseSym = baselineSnapshot.symptoms || {};
-  const currSym = comparisonSnapshot.symptoms || {};
+  const normalizeSymptoms = (snap: ClinicalVisitSnapshot): Record<string, number | string> => {
+    const res: Record<string, number | string> = { ...(snap.symptoms || {}) };
+    if (snap.gut_metrics) {
+      if (snap.gut_metrics.bristol_stool_score !== undefined && res['bristol_stool'] === undefined) {
+        res['bristol_stool'] = snap.gut_metrics.bristol_stool_score;
+      }
+      if (snap.gut_metrics.energy_score !== undefined && res['energy_score'] === undefined) {
+        res['energy_score'] = snap.gut_metrics.energy_score;
+      }
+      if (snap.gut_metrics.sleep_quality_score !== undefined && res['sleep_quality'] === undefined) {
+        res['sleep_quality'] = snap.gut_metrics.sleep_quality_score;
+      }
+    }
+    return res;
+  };
+  const baseSym = normalizeSymptoms(baselineSnapshot);
+  const currSym = normalizeSymptoms(comparisonSnapshot);
   const symptomKeys = Array.from(new Set([...Object.keys(baseSym), ...Object.keys(currSym)]));
 
   const symptomMeta: Record<string, { nameEn: string; nameBn: string; polarity: 'lower_is_better' | 'higher_is_better' }> = {
@@ -370,9 +385,9 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   const symptom_changes: QuantitativeChange[] = [];
 
   for (const symKey of symptomKeys) {
-    if (symKey === 'bristol_stool') {
-      const bVal = Number(baseSym['bristol_stool']);
-      const cVal = Number(currSym['bristol_stool']);
+    if (symKey === 'bristol_stool' || symKey === 'bristol_stool_score') {
+      const bVal = Number(baseSym[symKey] ?? baseSym['bristol_stool']);
+      const cVal = Number(currSym[symKey] ?? currSym['bristol_stool']);
       if (!isNaN(bVal) && !isNaN(cVal)) {
         const stoolInterp = interpretBristolStoolChange(bVal, cVal);
         symptom_changes.push({
@@ -420,8 +435,24 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   }
 
   // ── 3. Laboratory Biomarker Changes ───────────────────────────────
-  const baseLabs = baselineSnapshot.labs || {};
-  const currLabs = comparisonSnapshot.labs || {};
+  const normalizeLabs = (snap: ClinicalVisitSnapshot): Record<string, { value: number; unit?: string; test_date?: string }> => {
+    const res: Record<string, { value: number; unit?: string; test_date?: string }> = {};
+    if (snap.labs) {
+      for (const [k, v] of Object.entries(snap.labs)) {
+        if (v && typeof v.value === 'number') res[k] = v;
+      }
+    }
+    if (snap.biomarkers) {
+      for (const [k, v] of Object.entries(snap.biomarkers)) {
+        if (typeof v === 'number' && res[k] === undefined) {
+          res[k] = { value: v, test_date: snap.visit_date };
+        }
+      }
+    }
+    return res;
+  };
+  const baseLabs = normalizeLabs(baselineSnapshot);
+  const currLabs = normalizeLabs(comparisonSnapshot);
   const labKeys = Array.from(new Set([...Object.keys(baseLabs), ...Object.keys(currLabs)]));
 
   const labMeta: Record<string, { nameEn: string; nameBn: string; unit: string; direction: 'lower_is_better' | 'higher_is_better' | 'range_bound'; range?: [number, number] }> = {
@@ -611,9 +642,13 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   const newMeds = currMeds.filter(m => !baseMedNames.has(m.medication_name.toLowerCase())).map(m => `New: ${m.medication_name} (${m.dose || 'unspecified dose'})`);
   const discontinuedMeds = baseMeds.filter(m => !currMedNames.has(m.medication_name.toLowerCase())).map(m => `Discontinued: ${m.medication_name}`);
 
+  const baseAllergies: string[] = baselineSnapshot.allergies?.confirmed_allergies || (baselineSnapshot.allergies as any)?.confirmed_allergens || [];
+  const currAllergies: string[] = comparisonSnapshot.allergies?.confirmed_allergies || (comparisonSnapshot.allergies as any)?.confirmed_allergens || [];
+  const newAllergies = currAllergies.filter(a => !baseAllergies.includes(a));
+
   const clinical_safety_review = {
     new_red_flags: [],
-    new_allergies: comparisonSnapshot.allergies?.confirmed_allergies.filter(a => !baselineSnapshot.allergies?.confirmed_allergies.includes(a)) || [],
+    new_allergies: newAllergies,
     medication_changes: [...newMeds, ...discontinuedMeds],
     new_contraindications: [],
   };

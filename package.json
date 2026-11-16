@@ -12,7 +12,8 @@
     "test:p2": "tsx test/p2_clinical_intelligence.test.ts",
     "test:p2:advanced": "tsx test/p2_advanced_intelligence.test.ts",
     "test:p2:gate": "tsx test/p2_final_integration_gate.test.ts",
-    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate"
+    "test:master": "tsx test/p0_p2_master_integration.test.ts",
+    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate && npm run test:master"
   },
   "dependencies": {
     "clsx": "^2.1.1",
