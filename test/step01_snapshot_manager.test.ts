@@ -99,6 +99,16 @@ assert(rev2.revision === 2, 'Revision 2 incremented to 2');
 assert(rev2.anthropometrics.waist_cm === 88, 'Revision 2 waist is 88 cm');
 assert(rev2.amended_from_snapshot_id === snap1.snapshot_id, 'Revision 2 references ancestor snapshot');
 
+// 2b. Draft Amendment In-Place Update (No Spurious Revision 3)
+const snap2ReEdited = {
+  ...snap2,
+  anthropometrics: { ...snap2.anthropometrics, waist_cm: 87 }
+};
+const updatedWithSecondDraftEdit = appendSnapshotWithRevisionPolicy(updatedSnapshots, snap2ReEdited);
+assert(updatedWithSecondDraftEdit.length === 2, 'Still exactly 2 snapshots (no spurious revision 3)');
+const rev2Updated = updatedWithSecondDraftEdit.find(s => s.revision === 2)!;
+assert(rev2Updated.anthropometrics.waist_cm === 87, 'Revision 2 waist updated in place to 87 cm');
+
 // 3. Draft Snapshot Replacement
 console.log('\n3. Draft Snapshot In-Place Update');
 const draftSnapshots = [snap2];

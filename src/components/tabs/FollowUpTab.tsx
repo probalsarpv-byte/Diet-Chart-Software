@@ -111,41 +111,38 @@ export const FollowUpTab: React.FC = () => {
     return getApprovedBaselineSnapshot(visitSnapshots) || visitSnapshots.find(s => s.is_baseline);
   }, [visitSnapshots]);
 
-  const baselineVisitEntry = useMemo((): LongitudinalVisit => {
-    if (!baselineSnapshot) {
+  const baselineVisitEntry = useMemo((): LongitudinalVisit | null => {
+    if (baselineSnapshot) {
       return {
-        visit_id: 'v_baseline',
-        visit_date: patient.visit_date,
+        visit_id: baselineSnapshot.visit_id,
+        visit_date: baselineSnapshot.visit_date,
         phase: 1,
-        weight_kg: patient.weight_kg,
-        waist_cm: patient.waist_cm,
-        whtr: patient.calculated.whtr,
-        bristol_stool: patient.gut_profile.bristol_stool_score,
-        energy_score: patient.gut_profile.energy_score,
+        weight_kg: baselineSnapshot.anthropometrics?.weight_kg ?? (visits[0]?.weight_kg || 0),
+        waist_cm: baselineSnapshot.anthropometrics?.waist_cm ?? (visits[0]?.waist_cm || 0),
+        whtr: baselineSnapshot.anthropometrics?.whtr ?? (visits[0]?.whtr || 0),
+        bristol_stool: baselineSnapshot.gut_metrics?.bristol_stool_score ?? (visits[0]?.bristol_stool || 4),
+        energy_score: baselineSnapshot.gut_metrics?.energy_score ?? (visits[0]?.energy_score || 5),
         symptom_relief_pct: 0,
-        homa_ir: patient.labs.homa_ir,
-        tg_hdl_ratio: patient.labs.tg_hdl_ratio,
-        hba1c: patient.labs.hba1c
+        homa_ir: baselineSnapshot.biomarkers?.homa_ir,
+        tg_hdl_ratio: baselineSnapshot.biomarkers?.tg_hdl_ratio,
+        hba1c: baselineSnapshot.biomarkers?.hba1c
       };
     }
-    return {
-      visit_id: baselineSnapshot.visit_id,
-      visit_date: baselineSnapshot.visit_date,
-      phase: 1,
-      weight_kg: baselineSnapshot.anthropometrics?.weight_kg ?? patient.weight_kg,
-      waist_cm: baselineSnapshot.anthropometrics?.waist_cm ?? patient.waist_cm,
-      whtr: baselineSnapshot.anthropometrics?.whtr ?? patient.calculated.whtr,
-      bristol_stool: baselineSnapshot.gut_metrics?.bristol_stool_score ?? patient.gut_profile.bristol_stool_score,
-      energy_score: baselineSnapshot.gut_metrics?.energy_score ?? patient.gut_profile.energy_score,
-      symptom_relief_pct: 0,
-      homa_ir: baselineSnapshot.biomarkers?.homa_ir,
-      tg_hdl_ratio: baselineSnapshot.biomarkers?.tg_hdl_ratio,
-      hba1c: baselineSnapshot.biomarkers?.hba1c
-    };
-  }, [baselineSnapshot, patient]);
+
+    // Fall back to first historical visit in record, NEVER live mutable patient
+    const earliestLegacy = visits.length > 0 ? visits[0] : null;
+    if (earliestLegacy) {
+      return earliestLegacy;
+    }
+
+    return null;
+  }, [baselineSnapshot, visits]);
 
   // Baseline comparison for Phase Pipeline
   const comparison = useMemo(() => {
+    if (!baselineVisitEntry) {
+      return compareLongitudinalProgress(visits);
+    }
     return compareLongitudinalProgress([
       baselineVisitEntry,
       ...visits

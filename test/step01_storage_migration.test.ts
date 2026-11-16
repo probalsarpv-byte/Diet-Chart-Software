@@ -100,4 +100,27 @@ assert(migrated2.visit_snapshots![0].snapshot_id === migrated1.visit_snapshots![
 assert(migrated2.visit_snapshots![0].revision === migrated1.visit_snapshots![0].revision, "Idempotent: revision unchanged");
 assert(migrated2.clinical_visits![0].visit_id === migrated1.clinical_visits![0].visit_id, "Idempotent: visit_id unchanged");
 
+// 4. Legacy v1 Record with only `visits` (LongitudinalVisit[])
+console.log("\n4. Legacy v1 Record with only LongitudinalVisit[]");
+const legacyV1 = {
+  patient: {
+    id: 'pt_v1_only',
+    name: 'Legacy V1 Patient'
+  },
+  visits: [
+    { visit_id: 'v_base', visit_date: '2025-06-01', weight_kg: 82, waist_cm: 98 },
+    { visit_id: 'v_fup', visit_date: '2025-07-01', weight_kg: 79, waist_cm: 94 }
+  ]
+};
+
+const migratedV1 = migratePatientRecord(legacyV1);
+assert(migratedV1.clinical_visits!.length === 2, "Migrated 2 clinical visits from legacy visits");
+assert(migratedV1.clinical_visits![0].visit_id === 'v_base', "First visit ID preserved");
+assert(migratedV1.clinical_visits![0].visit_type === 'baseline_consultation', "First visit marked baseline");
+assert(migratedV1.clinical_visits![1].visit_id === 'v_fup', "Second visit ID preserved");
+assert(migratedV1.visit_snapshots!.length === 2, "Created 2 snapshots from legacy measurements");
+assert(migratedV1.visit_snapshots![0].anthropometrics?.weight_kg === 82, "Baseline weight preserved");
+assert(migratedV1.visit_snapshots![1].anthropometrics?.weight_kg === 79, "Follow-up weight preserved");
+assert(migratedV1.patient.current_visit_id === 'v_base', "patient.current_visit_id populated");
+
 console.log("\nALL STORAGE & MIGRATION TESTS PASSED!\n");

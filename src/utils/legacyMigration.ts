@@ -92,7 +92,26 @@ export function migratePatientRecord(record: any): PatientRecord {
   };
 
   // 2. Normalize Clinical Visits
-  const rawClinicalVisits = Array.isArray(record.clinical_visits) ? record.clinical_visits : [];
+  let rawClinicalVisits = Array.isArray(record.clinical_visits) ? record.clinical_visits : [];
+
+  // If clinical_visits is empty but legacy visits (LongitudinalVisit[]) exist, migrate them
+  if (rawClinicalVisits.length === 0 && Array.isArray(record.visits) && record.visits.length > 0) {
+    rawClinicalVisits = record.visits.map((lv: any, idx: number) => {
+      const vid = lv.visit_id || lv.id || `vis_legacy_${patientId}_${idx + 1}`;
+      return {
+        visit_id: vid,
+        id: vid,
+        patient_id: patientId,
+        visit_number: idx + 1,
+        visit_type: idx === 0 ? 'baseline_consultation' : 'routine_followup',
+        visit_date: lv.visit_date || migratedPatient.visit_date,
+        created_at: lv.created_at || new Date().toISOString(),
+        status: 'completed',
+        clinical_notes: lv.notes_en || lv.notes_bn || lv.notes || 'Migrated from legacy longitudinal visits'
+      };
+    });
+  }
+
   const migratedClinicalVisits: ClinicalVisit[] = rawClinicalVisits.map((v: any, idx: number) => {
     const visitId = v.visit_id || v.id || generateEntityId(`vis_${patientId}`);
     return {
@@ -114,7 +133,42 @@ export function migratePatientRecord(record: any): PatientRecord {
   }
 
   // 3. Normalize Visit Snapshots
-  const rawSnapshots = Array.isArray(record.visit_snapshots) ? record.visit_snapshots : [];
+  let rawSnapshots = Array.isArray(record.visit_snapshots) ? record.visit_snapshots : [];
+
+  // If no snapshots exist but we migrated legacy visits with measurements, preserve historical measurements as snapshots
+  if (rawSnapshots.length === 0 && Array.isArray(record.visits) && record.visits.length > 0) {
+    rawSnapshots = record.visits.map((lv: any, idx: number) => {
+      const matchingVisit = migratedClinicalVisits[idx];
+      const vid = matchingVisit?.visit_id || lv.visit_id || `vis_legacy_${patientId}_${idx + 1}`;
+      return {
+        snapshot_id: `snap_migrated_${patientId}_${idx + 1}`,
+        patient_id: patientId,
+        visit_id: vid,
+        visit_number: idx + 1,
+        visit_date: lv.visit_date || migratedPatient.visit_date,
+        is_baseline: idx === 0,
+        schema_version: CURRENT_SCHEMA_VERSION,
+        revision: 1,
+        approval_status: 'draft',
+        created_at: lv.created_at || new Date().toISOString(),
+        captured_at: lv.created_at || new Date().toISOString(),
+        anthropometrics: {
+          weight_kg: lv.weight_kg,
+          waist_cm: lv.waist_cm,
+          whtr: lv.whtr
+        },
+        gut_metrics: {
+          bristol_stool_score: lv.bristol_stool,
+          energy_score: lv.energy_score
+        },
+        biomarkers: {
+          homa_ir: lv.homa_ir,
+          tg_hdl_ratio: lv.tg_hdl_ratio,
+          hba1c: lv.hba1c
+        }
+      };
+    });
+  }
   const migratedSnapshots: ClinicalVisitSnapshot[] = rawSnapshots.map((s: any) => {
     const snapId = s.snapshot_id || s.id || generateEntityId(`snap_${patientId}`);
     const visitId = s.visit_id || migratedPatient.current_visit_id || migratedClinicalVisits[0]?.visit_id || generateEntityId(`vis_${patientId}`);

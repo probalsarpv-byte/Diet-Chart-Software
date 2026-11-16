@@ -172,6 +172,25 @@ export function appendSnapshotWithRevisionPolicy(
   const hasApprovedSnapshot = visitSnaps.some(s => s.approval_status === 'approved');
 
   if (hasApprovedSnapshot) {
+    // Check if the latest snapshot for this visit is already an unapproved draft amendment
+    const latestSnap = visitSnaps.sort((a, b) => (b.revision || 1) - (a.revision || 1))[0];
+
+    if (latestSnap.approval_status === 'draft') {
+      // An unapproved draft amendment already exists for this approved visit.
+      // Update this draft amendment in-place to avoid spurious revision increments.
+      const updatedDraft: ClinicalVisitSnapshot = {
+        ...candidateSnapshot,
+        snapshot_id: latestSnap.snapshot_id,
+        revision: latestSnap.revision || 1,
+        amended_from_snapshot_id: latestSnap.amended_from_snapshot_id,
+        captured_at: new Date().toISOString()
+      };
+      return [
+        updatedDraft,
+        ...existingSnapshots.filter(s => s.snapshot_id !== latestSnap.snapshot_id)
+      ];
+    }
+
     // Approved snapshots are IMMUTABLE. Mint a new revision.
     const maxRevision = Math.max(...visitSnaps.map(s => s.revision || 1));
     const latestApproved = visitSnaps

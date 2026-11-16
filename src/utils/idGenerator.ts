@@ -45,8 +45,8 @@ export function generateEntityId(prefix: string): string {
     uuid = `${ts}${pTime}${r1}${r2}`;
   }
 
-  // Clean UUID format without hyphens, truncated to 16 chars for clean UI display
-  const cleanSuffix = uuid.replace(/-/g, '').substring(0, 16);
+  // Clean UUID format without hyphens (24 characters of entropy)
+  const cleanSuffix = uuid.replace(/-/g, '').substring(0, 24);
   return `${prefix}_${cleanSuffix}`;
 }
 

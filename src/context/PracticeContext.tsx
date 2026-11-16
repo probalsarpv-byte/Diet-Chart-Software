@@ -55,6 +55,7 @@ import {
 } from '@/engine/longitudinal/comparisonEngine';
 import { safeStorage } from '@/utils/storageManager';
 import { migratePatientRecord } from '@/utils/legacyMigration';
+import { validateReferentialIntegrity } from '@/utils/referentialIntegrity';
 import { createNewVisitTransition, completeVisitTransition } from '@/engine/visit/visitLifecycle';
 import { 
   createClinicalSnapshot, 
@@ -178,7 +179,7 @@ export interface PracticeContextType {
 
   // Patient Records Persistence
   savedPatients: PatientRecord[];
-  saveCurrentPatient: () => void;
+  saveCurrentPatient: () => boolean;
   loadPatient: (id: string) => void;
   createNewPatient: () => void;
 
@@ -1221,7 +1222,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [patient, visits, dietChart, candidateSupplements, dniResult.timeline]);
 
   // Persistence Actions
-  const saveCurrentPatient = useCallback(() => {
+  const saveCurrentPatient = useCallback((): boolean => {
     const record: PatientRecord = {
       schema_version: CURRENT_SCHEMA_VERSION,
       patient,
@@ -1236,6 +1237,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updated_at: new Date().toISOString()
     };
 
+    // Strict referential integrity validation before persistence boundary
+    const integrity = validateReferentialIntegrity(record);
+    if (!integrity.isValid) {
+      console.error('[Integrity Error] Blocked saving contaminated patient record:', integrity.errors);
+      return false;
+    }
+
+    let saveSuccess = true;
     setSavedPatients(prev => {
       const idx = prev.findIndex(p => p.patient.id === patient.id);
       let updated: PatientRecord[];
@@ -1245,9 +1254,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       } else {
         updated = [record, ...prev];
       }
-      safeStorage.setItem('shuddho_saved_patients', updated);
+      saveSuccess = safeStorage.setItem('shuddho_saved_patients', updated);
       return updated;
     });
+
+    return saveSuccess;
   }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline]);
 
   const loadPatient = useCallback((id: string) => {
@@ -1506,7 +1517,23 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const completed = updatedVisits.find(v => v.visit_id === visitId || v.id === visitId) || null;
     setCurrentVisit(completed);
     setClinicalVisits(updatedVisits);
-  }, [currentVisit, clinicalVisits]);
+
+    // Atomically persist completed visit state to savedPatients
+    setSavedPatients(prev => {
+      const idx = prev.findIndex(p => p.patient.id === patient.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          clinical_visits: updatedVisits,
+          updated_at: new Date().toISOString()
+        };
+        safeStorage.setItem('shuddho_saved_patients', updated);
+        return updated;
+      }
+      return prev;
+    });
+  }, [currentVisit, clinicalVisits, patient.id]);
 
   // Follow-Up Appointments Management
   const scheduleFollowUp = useCallback((
@@ -1614,8 +1641,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return null;
     }
 
-    const baselineSnap = visitSnapshots.find(s => s.visit_id === baselineVisitId);
-    const compSnap = visitSnapshots.find(s => s.visit_id === comparisonVisitId);
+    const baselineSnap = getLatestVisitSnapshot(visitSnapshots, baselineVisitId);
+    const compSnap = getLatestVisitSnapshot(visitSnapshots, comparisonVisitId);
 
     if (!baselineSnap) {
       console.warn('[ProgressReport] Comparison rejected: missing baseline snapshot for visit', baselineVisitId);
@@ -1660,36 +1687,36 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     const trimmed = clinicianId.trim();
 
+    const targetReport = progressReports.find(r => r.report_id === reportId);
+    if (!targetReport) {
+      console.warn('Progress report approval rejected: Target report not found:', reportId);
+      return false;
+    }
+
     const timestamp = new Date().toISOString();
-    let updatedReport: ComparativeProgressReport | null = null;
-
-    setProgressReports(prev => prev.map(r => {
-      if (r.report_id === reportId) {
-        updatedReport = {
-          ...r,
-          is_approved: true,
-          approved_by: trimmed,
-          approval_date: timestamp,
-          sectionL_nutritionistReview: {
-            ...r.sectionL_nutritionistReview,
-            status: 'fully_approved',
-            reviewing_nutritionist: trimmed,
-            review_date: timestamp.split('T')[0],
-            notes: notes || r.sectionL_nutritionistReview?.notes || '',
-          },
-          section_l_clinician_signoff: {
-            is_approved: true,
-            clinician_name: trimmed,
-            signoff_date: timestamp.split('T')[0],
-            notes: notes || r.section_l_clinician_signoff?.notes || ''
-          }
-        };
-        return updatedReport;
+    const updatedReport: ComparativeProgressReport = {
+      ...targetReport,
+      is_approved: true,
+      approved_by: trimmed,
+      approval_date: timestamp,
+      sectionL_nutritionistReview: {
+        ...targetReport.sectionL_nutritionistReview,
+        status: 'fully_approved',
+        reviewing_nutritionist: trimmed,
+        review_date: timestamp.split('T')[0],
+        notes: notes || targetReport.sectionL_nutritionistReview?.notes || '',
+      },
+      section_l_clinician_signoff: {
+        is_approved: true,
+        clinician_name: trimmed,
+        signoff_date: timestamp.split('T')[0],
+        notes: notes || targetReport.section_l_clinician_signoff?.notes || ''
       }
-      return r;
-    }));
+    };
 
-    if (currentProgressReport && currentProgressReport.report_id === reportId && updatedReport) {
+    setProgressReports(prev => prev.map(r => r.report_id === reportId ? updatedReport : r));
+
+    if (currentProgressReport && currentProgressReport.report_id === reportId) {
       setCurrentProgressReport(updatedReport);
     }
 
@@ -1701,7 +1728,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     return true;
-  }, [currentProgressReport, patient.id]);
+  }, [progressReports, currentProgressReport, patient.id]);
 
   const loadDemoPatient = useCallback(() => {
     const seed = createInitialSeedPatient();
