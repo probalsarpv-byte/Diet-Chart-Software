@@ -12,11 +12,12 @@ import {
   AllergyReconciliationRecord,
   AllergyReconciliationStatus,
   MedicationReconciliationSummary,
+  MedicationReconciliationOverallStatus,
 } from './index';
 import { ClinicalPathway, FeedingStatus, DoshaProfile, AyurvedicAssessmentContext } from './clinical';
 
 // ── 1. Assessment Modes & Navigation Steps ──────────────────────────
-export type AssessmentMode = 'quick' | 'comprehensive';
+export type AssessmentMode = 'quick' | 'comprehensive' | 'followup';
 
 export type AssessmentStepId =
   | 'step_category'       // Step 1: Patient Category & Clinical Pathways
@@ -423,7 +424,7 @@ export interface AssessmentCompletionStatus {
   allergies_reconciled?: boolean;
   allergy_status?: AllergyReconciliationStatus;
   medication_reconciliation_completed?: boolean;
-  medication_status?: 'fully_reconciled' | 'partially_reconciled' | 'unreconciled' | 'no_medications';
+  medication_status?: MedicationReconciliationOverallStatus;
   unreconciled_medication_elements?: string[];
   feeding_route_verified?: boolean;
   population_risks_resolved?: boolean;

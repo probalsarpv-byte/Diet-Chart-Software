@@ -52,6 +52,34 @@ export function calculateAnthropometrics(
     population_warning = "স্তন্যদানকারী মায়ের জন্য দৈনিক অতিরিক্ত ৪০০-৫০০ কিলোক্যালোরি ও পর্যাপ্ত তরল নিশ্চিত করুন। / Lactation requires an additional ~400-500 kcal/day for milk synthesis.";
   }
 
+  // Safe handling for incomplete/unmeasured anthropometrics during registration
+  if (!weight_kg || !height_cm || weight_kg <= 0 || height_cm <= 0) {
+    return {
+      bmi: 0,
+      bmi_category_en: "Unmeasured / Assessment Pending",
+      bmi_category_bn: "পরিমাপ করা হয়নি / মূল্যায়ন বাকি",
+      ibw_kg: 0,
+      adjusted_bw_kg: 0,
+      whtr: 0,
+      whtr_risk_en: "Unmeasured",
+      whtr_risk_bn: "পরিমাপ করা হয়নি",
+      bmr: 0,
+      tdee: 0,
+      bmr_safe_calorie_floor: 0,
+      target_calories: 0,
+      target_protein_g: 0,
+      target_carbs_g: 0,
+      target_fat_g: 0,
+      protein_ratio_used: "Unmeasured",
+      population_group,
+      population_warning,
+      bmr_floor_strategy,
+      is_estimated: true,
+      energy_calculation_method: "Unmeasured",
+      is_unmeasured: true,
+    };
+  }
+
   // 2. BMI Calculation (Asian WHO cut-offs)
   const bmi = Math.round((weight_kg / (height_m * height_m)) * 10) / 10;
   let bmi_category_en = "Normal Weight";

@@ -158,7 +158,7 @@ export interface ActivityLevelConfig {
 }
 
 export type ActivityLevel = 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active';
-export type AgniType = 'mandagni' | 'tikshnagni' | 'vishamagni' | 'samagni';
+export type AgniType = 'mandagni' | 'tikshnagni' | 'vishamagni' | 'samagni' | 'unassessed';
 export type PopulationGroup =
   | 'adult_standard'
   | 'pediatric'
@@ -214,6 +214,7 @@ export interface CalculatedAnthropometrics {
   bmr_floor_strategy: BmrFloorStrategy;
   is_estimated: boolean;
   energy_calculation_method: string;
+  is_unmeasured?: boolean;
 }
 
 export interface LabFlag {
@@ -232,6 +233,15 @@ export interface FunctionalLabs {
   hba1c?: number;
   fasting_glucose?: number;
   fasting_insulin?: number;
+  two_hour_post_prandial?: number;
+  total_cholesterol?: number;
+  ldl?: number;
+  serum_creatinine?: number;
+  egfr?: number;
+  potassium?: number;
+  sodium?: number;
+  hemoglobin?: number;
+  hs_crp?: number;
   homa_ir?: number;
   homa_ir_status_en?: string;
   homa_ir_status_bn?: string;
@@ -305,7 +315,8 @@ export type MedicationReconciliationOverallStatus =
   | 'fully_reconciled'
   | 'partially_reconciled'
   | 'unreconciled'
-  | 'no_medications';
+  | 'no_medications'
+  | 'not_assessed';
 
 export interface MedicationReconciliationSummary {
   status: MedicationReconciliationOverallStatus;
@@ -346,12 +357,21 @@ export interface PatientProfile {
   custom_calorie_floor?: number;
   confirmed_allergies: string[]; // e.g. ['peanut', 'egg', 'shrimp', 'gluten', 'dairy']
   allergy_reconciliation?: AllergyReconciliationRecord;
+  allergy_reconciliation_status?: AllergyReconciliationStatus;
   clinician_disallowed_foods: string[]; // food IDs or keywords explicitly forbidden by clinician
   clinician_disallowed_tags: string[]; // tags explicitly blocked by clinician
   selected_conditions: ClinicalConditionId[];
   confirmed_conditions?: string[]; // verified clinical diagnoses from licensed provider
   active_medications: string[]; // medicine IDs or generic names
   medication_reconciliation?: MedicationReconciliationSummary;
+  medication_reconciliation_status?: MedicationReconciliationOverallStatus;
+  medication_records?: ReconciledMedicationRecord[];
+  vitals?: {
+    systolic_bp?: number;
+    diastolic_bp?: number;
+    resting_hr_bpm?: number;
+    temperature_c?: number;
+  };
   gut_profile: GutAndAyurvedicProfile;
   labs: FunctionalLabs;
   calculated: CalculatedAnthropometrics;
@@ -531,4 +551,310 @@ export interface PatientRecord {
   updated_at: string;
   created_at?: string;
   is_demo_patient?: boolean;
+  clinical_visits?: ClinicalVisit[];
+  follow_up_appointments?: FollowUpAppointment[];
+  visit_snapshots?: ClinicalVisitSnapshot[];
+  progress_reports?: ComparativeProgressReport[];
+}
+
+// ─── Unified Clinical Visit & Scheduling Management ──────────────
+export type ClinicalVisitType =
+  | 'baseline_consultation'
+  | 'routine_followup'
+  | 'comprehensive_reassessment'
+  | 'urgent_clinical_review'
+  | 'initial_consultation'
+  | 'follow_up_consultation'
+  | 'initial'
+  | 'followup'
+  | 'acute';
+
+export type ClinicalVisitStatus =
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+
+export interface ClinicalVisit {
+  id?: string;
+  visit_id: string;
+  patient_id: string;
+  visit_number?: number;
+  visit_date: string; // YYYY-MM-DD
+  visit_time?: string; // HH:mm
+  visit_type: ClinicalVisitType;
+  status: ClinicalVisitStatus;
+  assessment_id?: string;
+  report_id?: string;
+  progress_report_id?: string;
+  clinician_id?: string;
+  chief_complaint?: string;
+  clinical_notes?: string;
+  clinical_summary?: string;
+  notes?: string;
+  created_at: string;
+  completed_at?: string;
+  is_baseline?: boolean;
+}
+
+export type AppointmentStatus =
+  | 'scheduled'
+  | 'due_today'
+  | 'overdue'
+  | 'completed'
+  | 'rescheduled'
+  | 'cancelled';
+
+export interface FollowUpAppointment {
+  id?: string;
+  appointment_id: string;
+  patient_id: string;
+  patient_name?: string;
+  related_visit_id?: string;
+  scheduled_date: string; // YYYY-MM-DD
+  scheduled_time?: string; // HH:mm
+  reason?: string;
+  reason_en?: string;
+  reason_bn?: string;
+  appointment_type?: 'routine_followup' | 'lab_review' | 'acute_flare_review' | 'comprehensive_reassessment';
+  status: AppointmentStatus;
+  clinician_notes?: string;
+  notes?: string;
+  rescheduled_from?: string;
+  cancellation_reason?: string;
+  actual_visit_id?: string;
+  completed_visit_id?: string;
+  rescheduled_history?: {
+    previous_date: string;
+    previous_time?: string;
+    rescheduled_at: string;
+    reason?: string;
+  }[];
+  created_at: string;
+  timezone?: string;
+}
+
+// ─── Longitudinal Visit Snapshots ─────────────────────────────────
+export interface ClinicalVisitSnapshot {
+  snapshot_id: string;
+  patient_id: string;
+  visit_id: string;
+  visit_number?: number;
+  visit_date: string;
+  visit_type?: ClinicalVisitType;
+  is_baseline: boolean;
+  schema_version?: number;
+  revision?: number;
+  created_at?: string;
+  captured_at?: string;
+  approved_by?: string;
+  approval_status?: 'draft' | 'approved' | 'invalidated';
+  anthropometrics: {
+    weight_kg?: number;
+    height_cm?: number;
+    waist_cm?: number;
+    bmi?: number;
+    whtr?: number;
+    weight_trend?: string;
+    bmr_kcal?: number;
+    tdee_kcal?: number;
+    target_calories?: number;
+    target_protein_g?: number;
+    target_carbs_g?: number;
+    target_fat_g?: number;
+  };
+  vitals?: {
+    systolic_bp?: number;
+    diastolic_bp?: number;
+    resting_hr_bpm?: number;
+    temperature_c?: number;
+  };
+  biomarkers?: Record<string, number | undefined>;
+  gut_metrics?: Record<string, any>;
+  ayurvedic_state?: Record<string, any>;
+  clinical_safety?: Record<string, any>;
+  report_approval_status?: Record<string, any>;
+  symptoms?: Record<string, number | string>;
+  labs?: Record<string, { value: number; unit: string; test_date?: string; status?: string }>;
+  dietary_pattern?: {
+    diversity_score?: number;
+    meal_frequency?: string;
+    ffq_summary?: Record<string, string>;
+  };
+  ayurveda?: {
+    prakriti?: string;
+    vikriti?: { vata: number; pitta: number; kapha: number };
+    agni?: string;
+    ama?: string;
+  };
+  functional_matrix?: Record<string, { burden: string; score?: number }>;
+  medications: MedicationReconciliationSummary;
+  allergies: AllergyReconciliationRecord;
+  adherence?: {
+    diet_adherence_pct?: number;
+    supplement_adherence_pct?: number;
+    barriers?: string[];
+    adverse_reactions?: string[];
+    clinician_observations?: string;
+  };
+  clinical_priorities: string[];
+  approved_goals: string[];
+}
+
+// ─── Longitudinal Comparison Engine Models ────────────────────────
+export type ComparisonOutcome = 'improved' | 'worsened' | 'stable' | 'insufficient_data';
+
+export interface QuantitativeChange {
+  marker_id: string;
+  marker_name_en: string;
+  marker_name_bn: string;
+  baseline_value?: number;
+  previous_value?: number;
+  current_value?: number;
+  absolute_change?: number;
+  percentage_change?: number;
+  unit: string;
+  comparability: 'comparable' | 'different_units' | 'different_scale' | 'missing_baseline' | 'missing_current';
+  outcome: ComparisonOutcome;
+  clinical_interpretation_en: string;
+  clinical_interpretation_bn: string;
+  baseline_date?: string;
+  current_date?: string;
+}
+
+export interface LongitudinalProgressAnalysis {
+  patient_id: string;
+  baseline_visit_id: string;
+  comparison_visit_id: string;
+  comparison_mode: 'baseline_vs_current' | 'previous_vs_current' | 'selected_vs_selected' | 'multi_visit_trend';
+  generated_at: string;
+  anthropometric_changes: QuantitativeChange[];
+  symptom_changes: QuantitativeChange[];
+  laboratory_changes: QuantitativeChange[];
+  functional_domain_changes: {
+    domain: string;
+    domain_name_en: string;
+    domain_name_bn: string;
+    baseline_burden: string;
+    current_burden: string;
+    status: ComparisonOutcome;
+    resolved_observations: string[];
+    persistent_observations: string[];
+    new_observations: string[];
+    clinical_notes: string;
+  }[];
+  ayurvedic_changes: {
+    prakriti_constant: string;
+    baseline_vikriti: { vata: number; pitta: number; kapha: number };
+    current_vikriti: { vata: number; pitta: number; kapha: number };
+    vikriti_trajectory_en: string;
+    vikriti_trajectory_bn: string;
+    baseline_agni: string;
+    current_agni: string;
+    agni_interpretation_en: string;
+    agni_interpretation_bn: string;
+  };
+  adherence_summary?: {
+    diet_adherence_pct?: number;
+    supplement_adherence_pct?: number;
+    reported_barriers: string[];
+    adverse_reactions: string[];
+  };
+  overall_summary: {
+    improved_areas: string[];
+    worsened_areas: string[];
+    stable_areas: string[];
+    unresolved_problems: string[];
+    insufficient_data_areas: string[];
+  };
+  clinical_safety_review: {
+    new_red_flags: string[];
+    new_allergies: string[];
+    medication_changes: string[];
+    new_contraindications: string[];
+  };
+  next_clinical_priorities: string[];
+}
+
+// ─── Comparative Clinical Progress Report ─────────────────────────
+export interface ComparativeProgressReport {
+  report_id: string;
+  patient_id: string;
+  baseline_visit_id: string;
+  comparison_visit_id: string;
+  generated_at: string;
+  revision: number;
+  is_approved: boolean;
+  approved_by?: string;
+  approval_date?: string;
+  clinician_notes?: string;
+  sectionA_patientAndConsultation: {
+    patient_name: string;
+    patient_id: string;
+    age: number;
+    gender: string;
+    baseline_date: string;
+    comparison_date: string;
+    days_elapsed: number;
+    reviewing_nutritionist: string;
+  };
+  sectionB_overallSummary: {
+    improved: string[];
+    worsened: string[];
+    stable: string[];
+    unresolved: string[];
+    insufficient_data: string[];
+  };
+  sectionC_anthropometricComparison: QuantitativeChange[];
+  sectionD_symptomProgress: QuantitativeChange[];
+  sectionE_laboratoryTrends: QuantitativeChange[];
+  sectionF_functionalMatrixChanges: LongitudinalProgressAnalysis['functional_domain_changes'];
+  sectionG_dietaryPatternAndAdherence: {
+    adherence_score_pct?: number;
+    barriers: string[];
+    adverse_reactions: string[];
+    dietary_changes: string[];
+  };
+  sectionH_ayurvedicProgress: LongitudinalProgressAnalysis['ayurvedic_changes'];
+  sectionI_clinicalSafetyReview: LongitudinalProgressAnalysis['clinical_safety_review'];
+  sectionJ_clinicalOutcomeInterpretation: {
+    achieved_goals: string[];
+    partially_achieved_goals: string[];
+    unachieved_goals: string[];
+    unassessable_goals: string[];
+    causality_caveat_en: string;
+    causality_caveat_bn: string;
+  };
+  sectionK_nextClinicalPriorities: string[];
+  sectionL_nutritionistReview: {
+    reviewing_nutritionist: string;
+    review_date: string;
+    status: 'draft' | 'fully_approved';
+    notes: string;
+    revision: number;
+  };
+  section_l_clinician_signoff?: {
+    is_approved?: boolean;
+    clinician_name?: string;
+    signoff_date?: string;
+    notes?: string;
+  };
+}
+
+// ─── Future P3/P4 Clinical Progress Planning Context ──────────────
+export interface ClinicalProgressPlanningContext {
+  patientId: string;
+  currentVisitId: string;
+  comparisonVisitId: string;
+  progressReportId: string;
+  generatedAt: string;
+  clinicalImprovements: string[];
+  clinicalDeteriorations: string[];
+  persistentConcerns: string[];
+  newlyDetectedRestrictions: string[];
+  medicationChanges: string[];
+  laboratoryTrends: { marker: string; delta: number; unit: string; outcome: string }[];
+  dietaryAdherencePct?: number;
+  clinicianReviewStatus: 'approved' | 'pending';
+  approvedNextObjectives: string[];
 }

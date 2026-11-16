@@ -20,7 +20,16 @@ import {
   InterventionLockState,
   FeedingStatus,
   ClinicalPathway,
-  InterventionApprovalStatus
+  InterventionApprovalStatus,
+  ClinicalVisitType,
+  ClinicalVisitStatus,
+  ClinicalVisit,
+  AppointmentStatus,
+  FollowUpAppointment,
+  ClinicalVisitSnapshot,
+  ComparativeProgressReport,
+  LongitudinalProgressAnalysis,
+  ClinicalProgressPlanningContext
 } from '@/types';
 import { 
   validateInterventionPlan, 
@@ -38,6 +47,39 @@ import { advanceToNextPhase, recordFollowUpVisit, TransitionOptions } from '@/en
 import { runP2Analysis } from '@/engine/p2';
 import { P2AnalysisResult, ClinicianDecision } from '@/engine/p2/types';
 import { ClinicalAssessment } from '@/types/assessment';
+import { 
+  executeLongitudinalComparison, 
+  buildComparativeProgressReport, 
+  constructClinicalProgressPlanningContext 
+} from '@/engine/longitudinal/comparisonEngine';
+
+export function generateCollisionResistantId(prefix: string): string {
+  const ts = Date.now();
+  const rnd = Math.random().toString(36).substring(2, 8);
+  return `${prefix}_${ts}_${rnd}`;
+}
+
+export function getDhakaTodayDateString(): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  } catch {
+    return new Date().toISOString().split('T')[0];
+  }
+}
+
+export function refreshAppointmentStatus(apt: FollowUpAppointment): FollowUpAppointment {
+  if (apt.status === 'completed' || apt.status === 'cancelled') {
+    return apt;
+  }
+  const today = getDhakaTodayDateString();
+  if (apt.scheduled_date === today) {
+    return { ...apt, status: 'due_today' };
+  } else if (apt.scheduled_date < today) {
+    return { ...apt, status: 'overdue' };
+  } else {
+    return { ...apt, status: apt.rescheduled_from ? 'rescheduled' : 'scheduled' };
+  }
+}
 
 const CURRENT_SCHEMA_VERSION = 2;
 
@@ -50,8 +92,8 @@ export interface PracticeContextType {
   setLanguage: (lang: 'bn' | 'en') => void;
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
-  activeTab: 'intake' | 'assessment' | 'clinical_intelligence' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report';
-  setActiveTab: (tab: 'intake' | 'assessment' | 'clinical_intelligence' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report') => void;
+  activeTab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni';
+  setActiveTab: (tab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni') => void;
 
   allFoods: FoodItem[];
   allMedicines: MedicineItem[];
@@ -103,6 +145,27 @@ export interface PracticeContextType {
   visits: LongitudinalVisit[];
   addVisit: (visit: Partial<LongitudinalVisit>) => void;
   advancePatientPhase: (options?: TransitionOptions) => void;
+
+  // Longitudinal Visits, Appointments, Snapshots & Reports
+  clinicalVisits: ClinicalVisit[];
+  currentVisit: ClinicalVisit | null;
+  followUpAppointments: FollowUpAppointment[];
+  visitSnapshots: ClinicalVisitSnapshot[];
+  progressReports: ComparativeProgressReport[];
+  currentProgressReport: ComparativeProgressReport | null;
+
+  registerNewPatient: (adminData: Partial<PatientProfile>) => PatientProfile;
+  startNewVisit: (patientId: string, visitType?: ClinicalVisitType, notes?: string) => ClinicalVisit;
+  selectVisit: (visitId: string) => void;
+  completeCurrentVisit: (summary?: string) => void;
+  scheduleFollowUp: (appointmentData: Omit<FollowUpAppointment, 'id' | 'appointment_id' | 'created_at' | 'status'> & { appointment_id?: string; status?: AppointmentStatus }) => FollowUpAppointment;
+  rescheduleFollowUp: (appointmentId: string, newDate: string, newTime?: string, reason?: string) => boolean;
+  cancelFollowUp: (appointmentId: string, reason?: string) => boolean;
+  completeFollowUp: (appointmentId: string, actualVisitId?: string) => boolean;
+  captureVisitSnapshot: (isBaseline?: boolean) => ClinicalVisitSnapshot;
+  generateProgressReport: (baselineVisitId: string, comparisonVisitId: string, comparisonMode?: 'baseline_vs_current' | 'previous_vs_current' | 'selected_pair' | 'trend_series') => ComparativeProgressReport | null;
+  approveProgressReport: (reportId: string, clinicianId: string, notes?: string) => boolean;
+  loadDemoPatient: () => void;
 
   // Patient Records Persistence
   savedPatients: PatientRecord[];
@@ -190,15 +253,16 @@ function migratePatientRecord(record: any): PatientRecord {
     schema_version: CURRENT_SCHEMA_VERSION,
     id: p.id || `pt_${Date.now()}`,
     name: p.name || "Patient",
-    age: p.age || 40,
+    age: p.age ?? 0,
     gender: p.gender || 'female',
     phone: p.phone || "",
     email: p.email,
-    visit_date: p.visit_date || new Date().toISOString().split('T')[0],
+    visit_date: p.visit_date || getDhakaTodayDateString(),
+    current_visit_id: p.current_visit_id,
     current_phase: p.current_phase || 1,
-    height_cm: p.height_cm || 155,
-    weight_kg: p.weight_kg || 65,
-    waist_cm: p.waist_cm || 80,
+    height_cm: p.height_cm ?? 0,
+    weight_kg: p.weight_kg ?? 0,
+    waist_cm: p.waist_cm ?? 0,
     activity_level: p.activity_level || 'sedentary',
     sleep_hours: p.sleep_hours || 7,
     shift_worker: Boolean(p.shift_worker),
@@ -207,20 +271,23 @@ function migratePatientRecord(record: any): PatientRecord {
     bmr_floor_strategy: p.bmr_floor_strategy || 'clamped_to_bmr',
     custom_calorie_floor: p.custom_calorie_floor,
     confirmed_allergies: Array.isArray(p.confirmed_allergies) ? p.confirmed_allergies : [],
+    allergy_reconciliation_status: p.allergy_reconciliation_status || 'not_assessed',
     clinician_disallowed_foods: Array.isArray(p.clinician_disallowed_foods) ? p.clinician_disallowed_foods : [],
     clinician_disallowed_tags: Array.isArray(p.clinician_disallowed_tags) ? p.clinician_disallowed_tags : [],
-    selected_conditions: Array.isArray(p.selected_conditions) ? p.selected_conditions : ['t2d_ir'],
+    selected_conditions: Array.isArray(p.selected_conditions) ? p.selected_conditions : [],
     active_medications: Array.isArray(p.active_medications) ? p.active_medications : [],
+    medication_records: Array.isArray(p.medication_records) ? p.medication_records : [],
+    medication_reconciliation_status: p.medication_reconciliation_status || 'not_assessed',
     gut_profile: p.gut_profile || {
       bloating: 'none',
       acid_reflux_hypoacidity: false,
       bristol_stool_score: 4,
       energy_score: 7,
       sleep_quality_score: 7,
-      digestive_fire_agni: 'samagni'
+      digestive_fire_agni: 'unassessed'
     },
     labs: p.labs || { lab_flags: [] },
-    calculated: p.calculated || calculateAnthropometrics(p.age || 40, p.gender || 'female', p.height_cm || 155, p.weight_kg || 65, p.waist_cm || 80, p.activity_level || 'sedentary', p.selected_conditions || ['t2d_ir']),
+    calculated: p.calculated || calculateAnthropometrics(p.age ?? 0, p.gender || 'female', p.height_cm ?? 0, p.weight_kg ?? 0, p.waist_cm ?? 0, p.activity_level || 'sedentary', p.selected_conditions || []),
     custom_clinical_notes: p.custom_clinical_notes || "",
     is_diet_plan_dirty: Boolean(p.is_diet_plan_dirty),
     assessment_last_updated_at: p.assessment_last_updated_at || new Date().toISOString(),
@@ -232,6 +299,10 @@ function migratePatientRecord(record: any): PatientRecord {
     schema_version: CURRENT_SCHEMA_VERSION,
     patient: migratedPatient,
     visits: Array.isArray(record.visits) ? record.visits : [],
+    clinical_visits: Array.isArray(record.clinical_visits) ? record.clinical_visits : [],
+    follow_up_appointments: Array.isArray(record.follow_up_appointments) ? record.follow_up_appointments.map(refreshAppointmentStatus) : [],
+    visit_snapshots: Array.isArray(record.visit_snapshots) ? record.visit_snapshots : [],
+    progress_reports: Array.isArray(record.progress_reports) ? record.progress_reports : [],
     current_diet_chart: Array.isArray(record.current_diet_chart) ? record.current_diet_chart : [],
     current_supplements: Array.isArray(record.current_supplements) ? record.current_supplements : [],
     timeline: Array.isArray(record.timeline) ? record.timeline : [],
@@ -243,10 +314,16 @@ function migratePatientRecord(record: any): PatientRecord {
 export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [activeTab, setActiveTab] = useState<'intake' | 'assessment' | 'clinical_intelligence' | 'conditions' | 'dni' | 'diet' | 'followup' | 'report'>('intake');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni'>('dashboard');
 
   const [patient, setPatient] = useState<PatientProfile>(createInitialSeedPatient);
   const [visits, setVisits] = useState<LongitudinalVisit[]>([]);
+  const [clinicalVisits, setClinicalVisits] = useState<ClinicalVisit[]>([]);
+  const [currentVisit, setCurrentVisit] = useState<ClinicalVisit | null>(null);
+  const [followUpAppointments, setFollowUpAppointments] = useState<FollowUpAppointment[]>([]);
+  const [visitSnapshots, setVisitSnapshots] = useState<ClinicalVisitSnapshot[]>([]);
+  const [progressReports, setProgressReports] = useState<ComparativeProgressReport[]>([]);
+  const [currentProgressReport, setCurrentProgressReport] = useState<ComparativeProgressReport | null>(null);
   const [dietChart, setDietChart] = useState<DietChartMeal[]>([]);
   const [candidateSupplements, setCandidateSupplements] = useState<CandidateSupplement[]>([]);
   const [savedPatients, setSavedPatients] = useState<PatientRecord[]>([]);
@@ -1206,6 +1283,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       schema_version: CURRENT_SCHEMA_VERSION,
       patient,
       visits,
+      clinical_visits: clinicalVisits,
+      follow_up_appointments: followUpAppointments,
+      visit_snapshots: visitSnapshots,
+      progress_reports: progressReports,
       current_diet_chart: dietChart,
       current_supplements: candidateSupplements,
       timeline: dniResult.timeline,
@@ -1228,7 +1309,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
-  }, [patient, visits, dietChart, candidateSupplements, dniResult.timeline]);
+  }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline]);
 
   const loadPatient = useCallback((id: string) => {
     const match = savedPatients.find(p => p.patient.id === id);
@@ -1236,6 +1317,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const migrated = migratePatientRecord(match);
       setPatient(migrated.patient);
       setVisits(migrated.visits || []);
+      setClinicalVisits(migrated.clinical_visits || []);
+      setCurrentVisit(migrated.clinical_visits && migrated.clinical_visits.length > 0 ? migrated.clinical_visits[0] : null);
+      setFollowUpAppointments(migrated.follow_up_appointments || []);
+      setVisitSnapshots(migrated.visit_snapshots || []);
+      setProgressReports(migrated.progress_reports || []);
+      setCurrentProgressReport(migrated.progress_reports && migrated.progress_reports.length > 0 ? migrated.progress_reports[0] : null);
       setDietChart(migrated.current_diet_chart || []);
       if (migrated.current_supplements && migrated.current_supplements.length > 0) {
         setCandidateSupplements(migrated.current_supplements);
@@ -1244,7 +1331,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [savedPatients]);
 
   const createNewPatient = useCallback(() => {
-    const newId = `pt_${Date.now()}`;
+    const newId = generateCollisionResistantId('pt');
+    const today = getDhakaTodayDateString();
+    const initialVisitId = generateCollisionResistantId(`vis_${newId}`);
+
     const freshCalculated = calculateAnthropometrics(
       40, 'female', 155, 65, 80, 'sedentary', 
       [], 'adult_standard', undefined, 'clamped_to_bmr'
@@ -1257,7 +1347,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       age: 40,
       gender: 'female',
       phone: "",
-      visit_date: new Date().toISOString().split('T')[0],
+      visit_date: today,
+      current_visit_id: initialVisitId,
       current_phase: 1,
       height_cm: 155,
       weight_kg: 65,
@@ -1268,17 +1359,20 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       population_group: 'adult_standard',
       bmr_floor_strategy: 'clamped_to_bmr',
       confirmed_allergies: [],
+      allergy_reconciliation_status: 'not_assessed',
       clinician_disallowed_foods: [],
       clinician_disallowed_tags: [],
-      selected_conditions: [], // Patient isolation: New patients start with no pre-assigned conditions
+      selected_conditions: [],
       active_medications: [],
+      medication_records: [],
+      medication_reconciliation_status: 'not_assessed',
       gut_profile: {
         bloating: 'none',
         acid_reflux_hypoacidity: false,
         bristol_stool_score: 4,
         energy_score: 7,
         sleep_quality_score: 7,
-        digestive_fire_agni: 'samagni'
+        digestive_fire_agni: 'unassessed'
       },
       labs: {
         lab_flags: []
@@ -1290,7 +1384,18 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       manual_edits_preserved: false
     };
 
-    // Calculate fresh traffic light ISOLATED for this new patient!
+    const initialVisit: ClinicalVisit = {
+      visit_id: initialVisitId,
+      id: initialVisitId,
+      patient_id: newId,
+      visit_number: 1,
+      visit_type: 'initial_consultation',
+      visit_date: today,
+      created_at: new Date().toISOString(),
+      status: 'in_progress',
+      notes: 'Initial clinical visit'
+    };
+
     const freshTrafficLight = resolveConflicts(
       allFoods,
       freshPatient.selected_conditions,
@@ -1305,8 +1410,527 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setPatient(freshPatient);
     setVisits([]);
+    setClinicalVisits([initialVisit]);
+    setCurrentVisit(initialVisit);
+    setFollowUpAppointments([]);
+    setVisitSnapshots([]);
+    setProgressReports([]);
+    setCurrentProgressReport(null);
     setDietChart(freshChart);
     setCandidateSupplements([]);
+  }, []);
+
+  // Dedicated Patient Registration without fictional labs or placeholder anthropometrics
+  const registerNewPatient = useCallback((adminData: Partial<PatientProfile>): PatientProfile => {
+    const newId = generateCollisionResistantId('pt');
+    const today = getDhakaTodayDateString();
+    const initialVisitId = generateCollisionResistantId(`vis_${newId}`);
+
+    const unmeasuredCalc = calculateAnthropometrics(
+      adminData.age ?? 0,
+      adminData.gender || 'female',
+      adminData.height_cm ?? 0,
+      adminData.weight_kg ?? 0,
+      adminData.waist_cm ?? 0,
+      adminData.activity_level || 'sedentary',
+      [],
+      adminData.population_group || 'adult_standard',
+      adminData.trimester,
+      'clamped_to_bmr'
+    );
+
+    const freshPatient: PatientProfile = {
+      schema_version: CURRENT_SCHEMA_VERSION,
+      id: newId,
+      name: adminData.name || "New Patient",
+      age: adminData.age ?? 0,
+      gender: adminData.gender || 'female',
+      phone: adminData.phone || "",
+      email: adminData.email || "",
+      visit_date: today,
+      current_visit_id: initialVisitId,
+      current_phase: 1,
+      height_cm: adminData.height_cm ?? 0,
+      weight_kg: adminData.weight_kg ?? 0,
+      waist_cm: adminData.waist_cm ?? 0,
+      activity_level: adminData.activity_level || 'sedentary',
+      sleep_hours: adminData.sleep_hours || 7,
+      shift_worker: Boolean(adminData.shift_worker),
+      population_group: adminData.population_group || 'adult_standard',
+      bmr_floor_strategy: 'clamped_to_bmr',
+      confirmed_allergies: [],
+      allergy_reconciliation_status: 'not_assessed',
+      clinician_disallowed_foods: [],
+      clinician_disallowed_tags: [],
+      selected_conditions: [],
+      active_medications: [],
+      medication_records: [],
+      medication_reconciliation_status: 'not_assessed',
+      gut_profile: {
+        bloating: 'none',
+        acid_reflux_hypoacidity: false,
+        bristol_stool_score: 4,
+        energy_score: 7,
+        sleep_quality_score: 7,
+        digestive_fire_agni: 'unassessed'
+      },
+      labs: {
+        lab_flags: []
+      },
+      calculated: unmeasuredCalc,
+      is_diet_plan_dirty: false,
+      assessment_last_updated_at: new Date().toISOString(),
+      diet_plan_generated_at: new Date().toISOString(),
+      manual_edits_preserved: false
+    };
+
+    const initialVisit: ClinicalVisit = {
+      visit_id: initialVisitId,
+      id: initialVisitId,
+      patient_id: newId,
+      visit_number: 1,
+      visit_type: 'baseline_consultation',
+      visit_date: today,
+      created_at: new Date().toISOString(),
+      status: 'in_progress',
+      notes: 'Initial clinical registration'
+    };
+
+    const newRecord: PatientRecord = {
+      schema_version: CURRENT_SCHEMA_VERSION,
+      patient: freshPatient,
+      visits: [],
+      clinical_visits: [initialVisit],
+      follow_up_appointments: [],
+      visit_snapshots: [],
+      progress_reports: [],
+      current_diet_chart: [],
+      current_supplements: [],
+      timeline: [],
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+
+    setPatient(freshPatient);
+    setClinicalVisits([initialVisit]);
+    setCurrentVisit(initialVisit);
+    setFollowUpAppointments([]);
+    setVisitSnapshots([]);
+    setProgressReports([]);
+    setCurrentProgressReport(null);
+    setVisits([]);
+    setDietChart([]);
+    setCandidateSupplements([]);
+    setP2AnalysisResult(null);
+    setCurrentClinicalAssessment(null);
+
+    setSavedPatients(prev => {
+      const updated = [newRecord, ...prev.filter(p => p.patient.id !== newId)];
+      try {
+        localStorage.setItem('shuddho_saved_patients', JSON.stringify(updated));
+      } catch (e) {
+        console.warn("Storage error saving new patient:", e);
+      }
+      return updated;
+    });
+
+    return freshPatient;
+  }, []);
+
+  // Longitudinal Visits Management
+  const startNewVisit = useCallback((patientId: string, visitType: ClinicalVisitType = 'routine_followup', notes?: string): ClinicalVisit => {
+    const today = getDhakaTodayDateString();
+    const newVisitId = generateCollisionResistantId(`vis_${patientId}`);
+
+    const newVisit: ClinicalVisit = {
+      visit_id: newVisitId,
+      id: newVisitId,
+      patient_id: patientId,
+      visit_number: clinicalVisits.length + 1,
+      visit_type: visitType,
+      visit_date: today,
+      created_at: new Date().toISOString(),
+      status: 'in_progress',
+      clinical_notes: notes || `${visitType === 'routine_followup' ? 'Follow-up' : 'Clinical'} consultation initiated`,
+      notes: notes || `${visitType === 'routine_followup' ? 'Follow-up' : 'Clinical'} consultation initiated`
+    };
+
+    setClinicalVisits(prev => [newVisit, ...prev]);
+    setCurrentVisit(newVisit);
+
+    setPatient(prev => ({
+      ...prev,
+      current_visit_id: newVisitId,
+      visit_date: today,
+      is_diet_plan_dirty: true,
+      assessment_last_updated_at: new Date().toISOString()
+    }));
+
+    invalidateP2Approval(`New visit initiated: ${newVisitId}`);
+    return newVisit;
+  }, [clinicalVisits.length, invalidateP2Approval]);
+
+  const selectVisit = useCallback((visitId: string) => {
+    const match = clinicalVisits.find(v => v.visit_id === visitId || v.id === visitId);
+    if (match) {
+      setCurrentVisit(match);
+      setPatient(prev => ({
+        ...prev,
+        current_visit_id: match.visit_id || match.id,
+        visit_date: match.visit_date
+      }));
+    }
+  }, [clinicalVisits]);
+
+  const completeCurrentVisit = useCallback((summary?: string) => {
+    if (!currentVisit) return;
+    const completedVisit: ClinicalVisit = {
+      ...currentVisit,
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      clinical_notes: summary || currentVisit.clinical_notes,
+      clinical_summary: summary || currentVisit.clinical_summary
+    };
+
+    setCurrentVisit(completedVisit);
+    setClinicalVisits(prev => prev.map(v => (v.visit_id === completedVisit.visit_id || v.id === completedVisit.id) ? completedVisit : v));
+  }, [currentVisit]);
+
+  // Follow-Up Appointments Management
+  const scheduleFollowUp = useCallback((
+    appointmentData: Omit<FollowUpAppointment, 'id' | 'appointment_id' | 'created_at' | 'status'> & { status?: AppointmentStatus }
+  ): FollowUpAppointment => {
+    const newAptId = generateCollisionResistantId(`apt_${appointmentData.patient_id}`);
+    const rawStatus = appointmentData.status || 'scheduled';
+    const tempApt: FollowUpAppointment = {
+      ...appointmentData,
+      appointment_id: newAptId,
+      id: newAptId,
+      appointment_type: appointmentData.appointment_type || 'routine_followup',
+      reason: appointmentData.reason || appointmentData.reason_en || 'Routine follow-up',
+      created_at: new Date().toISOString(),
+      status: rawStatus
+    };
+    const refreshed = refreshAppointmentStatus(tempApt);
+
+    setFollowUpAppointments(prev => [refreshed, ...prev]);
+    return refreshed;
+  }, []);
+
+  const rescheduleFollowUp = useCallback((appointmentId: string, newDate: string, newTime?: string, reason?: string): boolean => {
+    let found = false;
+    setFollowUpAppointments(prev => prev.map(apt => {
+      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+        found = true;
+        const updated: FollowUpAppointment = {
+          ...apt,
+          scheduled_date: newDate,
+          scheduled_time: newTime || apt.scheduled_time,
+          rescheduled_from: apt.scheduled_date,
+          status: 'rescheduled',
+          notes: reason ? `${apt.notes ? apt.notes + ' | ' : ''}Rescheduled: ${reason}` : apt.notes,
+          clinician_notes: reason ? `${apt.clinician_notes ? apt.clinician_notes + ' | ' : ''}Rescheduled: ${reason}` : apt.clinician_notes
+        };
+        return refreshAppointmentStatus(updated);
+      }
+      return apt;
+    }));
+    return found;
+  }, []);
+
+  const cancelFollowUp = useCallback((appointmentId: string, reason?: string): boolean => {
+    let found = false;
+    setFollowUpAppointments(prev => prev.map(apt => {
+      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+        found = true;
+        return {
+          ...apt,
+          status: 'cancelled',
+          cancellation_reason: reason || 'Cancelled by clinician'
+        };
+      }
+      return apt;
+    }));
+    return found;
+  }, []);
+
+  const completeFollowUp = useCallback((appointmentId: string, actualVisitId?: string): boolean => {
+    let found = false;
+    setFollowUpAppointments(prev => prev.map(apt => {
+      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+        found = true;
+        return {
+          ...apt,
+          status: 'completed',
+          actual_visit_id: actualVisitId || currentVisit?.visit_id || currentVisit?.id,
+          completed_visit_id: actualVisitId || currentVisit?.visit_id || currentVisit?.id
+        };
+      }
+      return apt;
+    }));
+    return found;
+  }, [currentVisit]);
+
+  // Visit Snapshots
+  const captureVisitSnapshot = useCallback((isBaseline: boolean = false): ClinicalVisitSnapshot => {
+    const today = getDhakaTodayDateString();
+    const visitId = patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id || generateCollisionResistantId(`vis_${patient.id}`);
+    const snapId = generateCollisionResistantId(`snap_${patient.id}`);
+
+    const snapshot: ClinicalVisitSnapshot = {
+      snapshot_id: snapId,
+      patient_id: patient.id,
+      visit_id: visitId,
+      visit_number: clinicalVisits.length + 1,
+      visit_date: patient.visit_date || today,
+      visit_type: currentVisit?.visit_type || (isBaseline ? 'baseline_consultation' : 'routine_followup'),
+      is_baseline: isBaseline,
+      schema_version: CURRENT_SCHEMA_VERSION,
+      revision: 1,
+      created_at: new Date().toISOString(),
+      captured_at: new Date().toISOString(),
+      approval_status: p2AnalysisResult?.report?.isApproved ? 'approved' : 'draft',
+      approved_by: p2AnalysisResult?.report?.approvedBy,
+      anthropometrics: {
+        weight_kg: patient.weight_kg,
+        height_cm: patient.height_cm,
+        bmi: patient.calculated.bmi,
+        waist_cm: patient.waist_cm,
+        whtr: patient.calculated.whtr,
+        bmr_kcal: patient.calculated.bmr,
+        tdee_kcal: patient.calculated.tdee,
+        target_calories: patient.calculated.target_calories,
+        target_protein_g: patient.calculated.target_protein_g,
+        target_carbs_g: patient.calculated.target_carbs_g,
+        target_fat_g: patient.calculated.target_fat_g
+      },
+      vitals: patient.vitals || {},
+      biomarkers: {
+        fbs: patient.labs.fasting_glucose,
+        ppbs: patient.labs.two_hour_post_prandial,
+        hba1c: patient.labs.hba1c,
+        fasting_insulin: patient.labs.fasting_insulin,
+        homa_ir: patient.labs.homa_ir,
+        total_cholesterol: patient.labs.total_cholesterol,
+        triglycerides: patient.labs.triglycerides,
+        hdl: patient.labs.hdl,
+        ldl: patient.labs.ldl,
+        tg_hdl_ratio: patient.labs.tg_hdl_ratio,
+        serum_creatinine: patient.labs.serum_creatinine,
+        egfr: patient.labs.egfr,
+        serum_uric_acid: patient.labs.uric_acid,
+        sgpt_alt: patient.labs.alt,
+        sgot_ast: patient.labs.ast,
+        serum_potassium: patient.labs.potassium,
+        serum_sodium: patient.labs.sodium,
+        tsh: patient.labs.tsh,
+        hemoglobin: patient.labs.hemoglobin,
+        serum_ferritin: patient.labs.ferritin,
+        vitamin_d3: patient.labs.vitamin_d3,
+        vitamin_b12: patient.labs.vitamin_b12,
+        hs_crp: patient.labs.hs_crp
+      },
+      gut_metrics: {
+        bloating_severity: patient.gut_profile.bloating,
+        acid_reflux_present: patient.gut_profile.acid_reflux_hypoacidity,
+        bristol_stool_score: patient.gut_profile.bristol_stool_score,
+        energy_score: patient.gut_profile.energy_score,
+        sleep_quality_score: patient.gut_profile.sleep_quality_score,
+        agni_status: patient.gut_profile.digestive_fire_agni
+      },
+      ayurvedic_state: {
+        agni_classification: patient.gut_profile.digestive_fire_agni
+      },
+      medications: patient.medication_reconciliation || {
+        status: patient.medication_reconciliation_status || 'unreconciled',
+        reconciled_records: patient.medication_records || [],
+        verified_no_medications: false,
+        missing_elements: []
+      },
+      allergies: patient.allergy_reconciliation || {
+        status: patient.allergy_reconciliation_status || 'not_assessed',
+        reconciled: Boolean(patient.allergy_reconciliation_status === 'allergies_confirmed' || patient.allergy_reconciliation_status === 'none_confirmed'),
+        confirmed_allergies: patient.confirmed_allergies
+      },
+      clinical_safety: {
+        allergy_reconciliation_status: patient.allergy_reconciliation_status || 'not_assessed',
+        medication_reconciliation_status: patient.medication_reconciliation_status || 'not_assessed',
+        has_hard_stops: Boolean(clinicalSafetyEvaluation?.overallDecision === 'HARD_STOP'),
+        hard_stop_reasons: clinicalSafetyEvaluation?.hardStops?.map(h => h.title_en || h.clinical_explanation_en || 'Contraindication') || []
+      },
+      report_approval_status: {
+        is_approved: Boolean(p2AnalysisResult?.report?.isApproved),
+        approved_by: p2AnalysisResult?.report?.approvedBy,
+        approved_at: p2AnalysisResult?.report?.approvalDate
+      },
+      clinical_priorities: (p2AnalysisResult?.p3PlanningContext?.approvedInterventionGoals || []).map(g => g.title_en),
+      approved_goals: (p2AnalysisResult?.p3PlanningContext?.approvedInterventionGoals || []).map(g => g.title_en)
+    };
+
+    setVisitSnapshots(prev => {
+      const filtered = prev.filter(s => s.visit_id !== visitId);
+      return [snapshot, ...filtered];
+    });
+
+    return snapshot;
+  }, [patient, currentVisit, clinicalVisits.length, clinicalSafetyEvaluation, p2AnalysisResult]);
+
+  // Longitudinal Progress Reports
+  const generateProgressReport = useCallback((
+    baselineVisitId: string,
+    comparisonVisitId: string,
+    comparisonMode: 'baseline_vs_current' | 'previous_vs_current' | 'selected_pair' | 'trend_series' = 'baseline_vs_current'
+  ): ComparativeProgressReport | null => {
+    let baselineSnap = visitSnapshots.find(s => s.visit_id === baselineVisitId);
+    let compSnap = visitSnapshots.find(s => s.visit_id === comparisonVisitId);
+
+    if (!baselineSnap || !compSnap) {
+      const currentSnap = captureVisitSnapshot(false);
+      if (!baselineSnap) baselineSnap = currentSnap;
+      if (!compSnap) compSnap = currentSnap;
+    }
+
+    const mode = comparisonMode === 'selected_pair' ? 'selected_vs_selected' : (comparisonMode === 'trend_series' ? 'multi_visit_trend' : comparisonMode);
+    const analysis = executeLongitudinalComparison({
+      patient,
+      baselineSnapshot: baselineSnap,
+      comparisonSnapshot: compSnap,
+      comparisonMode: mode,
+    });
+
+    const report = buildComparativeProgressReport({
+      patient,
+      baselineSnapshot: baselineSnap,
+      comparisonSnapshot: compSnap,
+      analysis,
+    });
+
+    setCurrentProgressReport(report);
+    setProgressReports(prev => [report, ...prev.filter(r => r.report_id !== report.report_id)]);
+    return report;
+  }, [visitSnapshots, patient, captureVisitSnapshot]);
+
+  const approveProgressReport = useCallback((reportId: string, clinicianId: string, notes?: string): boolean => {
+    const trimmed = (clinicianId || '').trim();
+    const isPlaceholder = ['clinician', 'dr. clinical nutritionist', 'doctor', 'nutritionist', 'admin', 'user', 'test', 'guest'].includes(trimmed.toLowerCase());
+    if (!trimmed || trimmed.length < 3 || isPlaceholder) {
+      console.warn('Progress report approval rejected: Invalid licensed clinician ID.');
+      return false;
+    }
+
+    const timestamp = new Date().toISOString();
+    let updatedReport: ComparativeProgressReport | null = null;
+
+    setProgressReports(prev => prev.map(r => {
+      if (r.report_id === reportId) {
+        updatedReport = {
+          ...r,
+          is_approved: true,
+          approved_by: trimmed,
+          approval_date: timestamp,
+          sectionL_nutritionistReview: {
+            ...r.sectionL_nutritionistReview,
+            status: 'fully_approved',
+            reviewing_nutritionist: trimmed,
+            review_date: timestamp.split('T')[0],
+            notes: notes || r.sectionL_nutritionistReview?.notes || '',
+          },
+          section_l_clinician_signoff: {
+            is_approved: true,
+            clinician_name: trimmed,
+            signoff_date: timestamp.split('T')[0],
+            notes: notes || r.section_l_clinician_signoff?.notes || ''
+          }
+        };
+        return updatedReport;
+      }
+      return r;
+    }));
+
+    if (currentProgressReport && currentProgressReport.report_id === reportId && updatedReport) {
+      setCurrentProgressReport(updatedReport);
+    }
+
+    try {
+      if (typeof window !== 'undefined') {
+        const storageKey = `shuddho_progress_report_${patient.id}_${reportId}`;
+        localStorage.setItem(storageKey, JSON.stringify(updatedReport));
+      }
+    } catch (err) {
+      console.error('Failed to persist progress report approval:', err);
+      return false;
+    }
+
+    return true;
+  }, [currentProgressReport, patient.id]);
+
+  const loadDemoPatient = useCallback(() => {
+    const seed = createInitialSeedPatient();
+    const baseVisitId = `vis_${seed.id}_initial`;
+    const followUpVisitId = `vis_${seed.id}_fup1`;
+    const today = getDhakaTodayDateString();
+
+    const visit1: ClinicalVisit = {
+      visit_id: baseVisitId,
+      id: baseVisitId,
+      patient_id: seed.id,
+      visit_number: 1,
+      visit_type: 'baseline_consultation',
+      visit_date: '2026-10-15',
+      created_at: '2026-10-15T10:00:00Z',
+      status: 'completed',
+      clinical_summary: 'Initial consultation: MetS, T2D, Hypothyroid, Fatty Liver.'
+    };
+
+    const visit2: ClinicalVisit = {
+      visit_id: followUpVisitId,
+      id: followUpVisitId,
+      patient_id: seed.id,
+      visit_number: 2,
+      visit_type: 'routine_followup',
+      visit_date: today,
+      created_at: new Date().toISOString(),
+      status: 'in_progress',
+      notes: '1-Month Follow-Up: Reviewing symptom relief, Bristol stool improvement, and weight reduction.'
+    };
+
+    const apptToday: FollowUpAppointment = {
+      appointment_id: `apt_${seed.id}_01`,
+      id: `apt_${seed.id}_01`,
+      patient_id: seed.id,
+      scheduled_date: today,
+      scheduled_time: '11:00 AM',
+      reason: '1-Month Dietary Compliance and Glycemic Review',
+      reason_en: '1-Month Dietary Compliance and Glycemic Review',
+      reason_bn: '১ মাস পর খাদ্যতালিকা অনুসরণ ও রক্তে শর্করার মাত্রা পর্যালোচনা',
+      appointment_type: 'routine_followup',
+      status: 'due_today',
+      created_at: '2026-10-15T10:30:00Z'
+    };
+
+    const seedPatient: PatientProfile = {
+      ...seed,
+      current_visit_id: followUpVisitId,
+      visit_date: today
+    };
+
+    setPatient(seedPatient);
+    setClinicalVisits([visit2, visit1]);
+    setCurrentVisit(visit2);
+    setFollowUpAppointments([apptToday]);
+
+    const freshTrafficLight = resolveConflicts(
+      allFoods,
+      seedPatient.selected_conditions,
+      allMedicines.filter(m => seedPatient.active_medications.includes(m.id)),
+      seedPatient.confirmed_allergies,
+      seedPatient.clinician_disallowed_foods,
+      seedPatient.clinician_disallowed_tags,
+      seedPatient.current_phase
+    );
+    setDietChart(buildAutoScaledDietChart(seedPatient, allFoods, freshTrafficLight));
+    const p2 = runP2Analysis(seedPatient);
+    setP2AnalysisResult(p2);
   }, []);
 
   return (
@@ -1358,6 +1982,24 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         visits,
         addVisit,
         advancePatientPhase,
+        clinicalVisits,
+        currentVisit,
+        followUpAppointments,
+        visitSnapshots,
+        progressReports,
+        currentProgressReport,
+        registerNewPatient,
+        startNewVisit,
+        selectVisit,
+        completeCurrentVisit,
+        scheduleFollowUp,
+        rescheduleFollowUp,
+        cancelFollowUp,
+        completeFollowUp,
+        captureVisitSnapshot,
+        generateProgressReport,
+        approveProgressReport,
+        loadDemoPatient,
         savedPatients,
         saveCurrentPatient,
         loadPatient,

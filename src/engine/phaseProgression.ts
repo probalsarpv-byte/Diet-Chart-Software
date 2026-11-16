@@ -79,7 +79,9 @@ export function compareLongitudinalProgress(visits: LongitudinalVisit[]): Longit
   const latest = sorted[sorted.length - 1];
 
   const weightDeltaKg = Math.round((latest.weight_kg - baseline.weight_kg) * 10) / 10;
-  const weightDeltaPct = Math.round(((latest.weight_kg - baseline.weight_kg) / baseline.weight_kg) * 1000) / 10;
+  const weightDeltaPct = baseline.weight_kg > 0 
+    ? Math.round(((latest.weight_kg - baseline.weight_kg) / baseline.weight_kg) * 1000) / 10 
+    : 0;
   const whtrDelta = Math.round((latest.whtr - baseline.whtr) * 100) / 100;
   const bristolStoolDelta = latest.bristol_stool - baseline.bristol_stool;
   const symptomScoreDelta = (latest.symptom_relief_pct !== undefined && baseline.symptom_relief_pct !== undefined)

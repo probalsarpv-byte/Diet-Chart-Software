@@ -1,78 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { useAssessment } from '@/context/AssessmentContext';
-import { searchMedications, MedicationSearchResult } from '@/engine/medicationSearch';
 import { FeedingRouteType } from '@/types/clinical';
 import {
-  ShieldAlert,
-  AlertTriangle,
-  Pill,
-  Search,
-  CheckCircle2,
-  XCircle,
   FileText,
   AlertOctagon
 } from 'lucide-react';
-
-const COMMON_ALLERGENS = [
-  { id: 'egg', label_en: 'Egg (Hen/Duck)', label_bn: 'ডিম' },
-  { id: 'shrimp', label_en: 'Shrimp / Prawn / Shellfish', label_bn: 'চিংড়ি / কাঁকড়া' },
-  { id: 'peanut', label_en: 'Peanuts', label_bn: 'চিনাবাদাম' },
-  { id: 'dairy', label_en: 'Cow Milk / Dairy Protein', label_bn: 'গরুর দুধের প্রোটিন' },
-  { id: 'gluten', label_en: 'Wheat Gluten / Celiac', label_bn: 'গমের গ্লুটেন' },
-  { id: 'beef', label_en: 'Beef', label_bn: 'গরুর মাংস' },
-  { id: 'hilsa', label_en: 'Hilsa / Ilish Fish', label_bn: 'ইলিশ মাছ' },
-  { id: 'soy', label_en: 'Soy / Soybean', label_bn: 'সয়াবিন' }
-];
+import { AllergyReconciliationEditor } from '@/components/reconciliation/AllergyReconciliationEditor';
+import { MedicationReconciliationEditor } from '@/components/reconciliation/MedicationReconciliationEditor';
 
 export const StepHistorySafety: React.FC = () => {
   const { patient, updatePatient, language } = usePractice();
   const { setCurrentStep, setAnswer, functionalAnswers } = useAssessment();
   const bn = language === 'bn';
-
-  // Medication search state
-  const [medQuery, setMedQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<MedicationSearchResult[]>([]);
-
-  const handleMedSearch = (q: string) => {
-    setMedQuery(q);
-    if (q.trim().length >= 2) {
-      const res = searchMedications(q, 8);
-      setSearchResults(res);
-    } else {
-      setSearchResults([]);
-    }
-  };
-
-  const handleAddMedication = (med: MedicationSearchResult) => {
-    const canonicalName = med.genericName || med.generic_name || med.brandName || '';
-    if (canonicalName && !patient.active_medications.includes(canonicalName)) {
-      updatePatient({
-        active_medications: [...patient.active_medications, canonicalName]
-      });
-    }
-    setMedQuery('');
-    setSearchResults([]);
-  };
-
-  const handleRemoveMedication = (name: string) => {
-    updatePatient({
-      active_medications: patient.active_medications.filter(m => m !== name)
-    });
-  };
-
-  const handleToggleAllergy = (allergyId: string) => {
-    let updated: string[];
-    if (patient.confirmed_allergies.includes(allergyId)) {
-      updated = patient.confirmed_allergies.filter(a => a !== allergyId);
-    } else {
-      updated = [...patient.confirmed_allergies, allergyId];
-    }
-    updatePatient({ confirmed_allergies: updated });
-    setAnswer('safety_confirmed_allergies', updated);
-  };
 
   return (
     <div className="space-y-6">
@@ -82,8 +24,8 @@ export const StepHistorySafety: React.FC = () => {
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
           {bn
-            ? 'প্রধান অভিযোগ, সক্রিয় ওষুধ, নিশ্চিত অ্যালার্জি এবং ইনসুলিন/হাইপোগ্লাইসেমিয়া সংক্রান্ত উচ্চ-ঝুঁকিপূর্ণ নিরাপত্তা প্রশ্নাবলি পূরণ করুন।'
-            : 'Capture chief complaints, active medications, confirmed allergies, and high-priority medication safety checks.'}
+            ? 'প্রধান অভিযোগ, নিশ্চিত অ্যালার্জি রিকনসিলিয়েশন, প্রেসক্রিপশন ড্রাগ রিকনসিলিয়েশন এবং ক্লিনিক্যাল নিরাপত্তা প্রশ্নাবলি পূরণ করুন।'
+            : 'Capture chief complaints, explicit allergy reconciliation, full medication reconciliation, and high-priority medication safety checks.'}
         </p>
       </div>
 
@@ -145,131 +87,11 @@ export const StepHistorySafety: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Confirmed Allergies (Non-overridable) */}
-      <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
-            <ShieldAlert className="h-4 w-4 text-rose-500" />
-            {bn ? '২. নিশ্চিত খাদ্য অ্যালার্জি (অপরিবর্তনীয় রেড স্টপ)' : '2. Confirmed Food Allergies (Non-Overrideable HARD STOP)'}
-          </h4>
-          <span className="text-[10px] font-semibold text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded-full">
-            {patient.confirmed_allergies.length} {bn ? 'টি নিশ্চিত অ্যালার্জি' : 'Allergies Active'}
-          </span>
-        </div>
+      {/* 2. Explicit Allergy Reconciliation (4-State Lifecycle) */}
+      <AllergyReconciliationEditor />
 
-        <p className="text-[11px] text-muted-foreground">
-          {bn
-            ? 'রোগীর নিশ্চিত এলার্জিক খাদ্যসমূহ ক্লিক করে চিহ্নিত করুন। এসব খাবার ডায়েট চার্টে সম্পূর্ণ নিষিদ্ধ থাকবে এবং কোনো অবস্থাতেই বিকল্প হিসেবে দেওয়া হবে না।'
-            : 'Select any confirmed food allergies. These foods will be strictly blocked across all meal scaling and exchange engines.'}
-        </p>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-          {COMMON_ALLERGENS.map((allergy) => {
-            const isChecked = patient.confirmed_allergies.includes(allergy.id);
-            return (
-              <button
-                key={allergy.id}
-                type="button"
-                onClick={() => handleToggleAllergy(allergy.id)}
-                className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition-all flex items-center justify-between ${
-                  isChecked
-                    ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-400 font-bold shadow-sm'
-                    : 'border-border bg-card text-muted-foreground hover:bg-muted/40'
-                }`}
-              >
-                <span>{bn ? allergy.label_bn : allergy.label_en}</span>
-                {isChecked ? (
-                  <CheckCircle2 className="h-4 w-4 text-rose-500 flex-shrink-0" />
-                ) : (
-                  <div className="h-4 w-4 rounded-full border border-muted-foreground/30 flex-shrink-0" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. Medication Reconciliation (P0 Integrated) */}
-      <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-4">
-        <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
-          <Pill className="h-4 w-4 text-primary" />
-          {bn ? '৩. প্রেসক্রিপশন ওষুধ রিকনসিলিয়েশন (মেডিনিউট্রিশন ৩২,৪৬১ ব্র্যান্ড ইনডেক্স)' : '3. Medication Reconciliation (MediNutrition V5 Index)'}
-        </h4>
-
-        {/* Live Search Bar */}
-        <div className="relative">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-xl border bg-background">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              value={medQuery}
-              onChange={(e) => handleMedSearch(e.target.value)}
-              placeholder={bn ? "ব্র্যান্ড বা জেনেরিক নাম লিখুন (যেমন: Napa, Metfo, Thyrox, Seclo, Insulin)..." : "Search 32,461 Bangladesh brands or generics (e.g., Napa, Metfo, Thyrox, Seclo)..."}
-              className="w-full text-xs bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
-
-          {/* Search Dropdown */}
-          {searchResults.length > 0 && (
-            <div className="absolute z-20 left-0 right-0 mt-1 bg-card border rounded-xl shadow-lg max-h-56 overflow-y-auto divide-y divide-border">
-              {searchResults.map((m, idx) => (
-                <div
-                  key={`${m.brandName}_${idx}`}
-                  onClick={() => handleAddMedication(m)}
-                  className="p-2.5 hover:bg-muted/60 cursor-pointer flex items-center justify-between text-xs transition-colors"
-                >
-                  <div>
-                    <div className="font-bold text-foreground">
-                      {m.brandName}{' '}
-                      <span className="font-normal text-muted-foreground">({m.genericName})</span>
-                    </div>
-                    {m.manufacturer && (
-                      <div className="text-[10px] text-muted-foreground">{m.manufacturer}</div>
-                    )}
-                  </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    m.hasDedicatedRules
-                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {m.hasDedicatedRules ? 'Rules Active' : 'Verified Generic'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Active Meds List */}
-        {patient.active_medications.length > 0 ? (
-          <div className="space-y-1.5 pt-1">
-            <div className="text-[11px] font-semibold text-muted-foreground">
-              {bn ? 'সক্রিয় ওষুধসমূহ:' : 'Current Active Medications:'}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {patient.active_medications.map(name => (
-                <span
-                  key={name}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-primary/10 text-primary text-xs font-semibold border border-primary/20"
-                >
-                  <span>{name}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMedication(name)}
-                    className="hover:text-rose-500 transition-colors"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <p className="text-[11px] text-muted-foreground italic">
-            {bn ? 'কোনো ওষুধ যোগ করা হয়নি।' : 'No active medications currently selected.'}
-          </p>
-        )}
-      </div>
+      {/* 3. Medication Reconciliation (Full MediNutrition V5 Corpus & Administration Timing) */}
+      <MedicationReconciliationEditor />
 
       {/* 4. Mandatory Clinical Safety Screening */}
       <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-4">
