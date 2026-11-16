@@ -264,8 +264,10 @@ export interface FunctionalLabs {
   lab_flags: LabFlag[];
 }
 
+export type BloatingSeverity = 'none' | 'mild' | 'moderate' | 'severe';
+
 export interface GutAndAyurvedicProfile {
-  bloating: 'none' | 'mild' | 'severe';
+  bloating: BloatingSeverity;
   acid_reflux_hypoacidity: boolean;
   bristol_stool_score: number; // 1-7
   energy_score: number; // 1-10

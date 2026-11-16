@@ -71,7 +71,7 @@ export function validateReferentialIntegrity(
   }
 
   // 2. Verify Patient Current Visit Pointer
-  if (record.patient?.current_visit_id && visitIds.size > 0) {
+  if (record.patient?.current_visit_id) {
     if (!visitIds.has(record.patient.current_visit_id)) {
       if (options?.allowQuarantinedLegacy && isQuarantined) {
         warnings.push(`INVALID_CURRENT_VISIT: Legacy record current_visit_id '${record.patient.current_visit_id}' unverified`);
@@ -97,7 +97,9 @@ export function validateReferentialIntegrity(
         errors.push(`CROSS_PATIENT_SNAPSHOT: Snapshot ${snap.snapshot_id || index} patient_id '${snap.patient_id}' does not match record patient_id '${patientId}'`);
       }
 
-      if (snap.visit_id && !visitIds.has(snap.visit_id)) {
+      if (!snap.visit_id || !snap.visit_id.trim()) {
+        errors.push(`MISSING_SNAPSHOT_VISIT_ID: Snapshot ${snap.snapshot_id || index} lacks valid non-empty visit_id`);
+      } else if (!visitIds.has(snap.visit_id)) {
         if (options?.allowQuarantinedLegacy && isQuarantined) {
           warnings.push(`ORPHANED_SNAPSHOT_VISIT: Legacy snapshot ${snap.snapshot_id} references visit '${snap.visit_id}' not found in active clinical_visits list`);
         } else {

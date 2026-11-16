@@ -43,11 +43,14 @@ export const FollowUpTab: React.FC = () => {
     cancelFollowUp,
     completeFollowUp,
     clinicalVisits,
+    currentVisit,
+    startNewVisit,
     visitSnapshots,
     captureVisitSnapshot,
     progressReports,
     generateProgressReport,
-    approveProgressReport
+    approveProgressReport,
+    saveCurrentPatient
   } = usePractice();
 
   const bn = language === 'bn';
@@ -165,6 +168,12 @@ export const FollowUpTab: React.FC = () => {
       notes_en: newNotes || 'Routine follow-up consultation logged.'
     };
 
+    // Ensure a distinct follow-up clinical visit is active if currently on baseline or unstarted
+    const isCurrentlyBaseline = !currentVisit || currentVisit.is_baseline || currentVisit.visit_type === 'baseline_consultation';
+    if (isCurrentlyBaseline) {
+      startNewVisit(patient.id, 'routine_followup', newNotes || 'Routine follow-up consultation logged.');
+    }
+
     addVisit(newV);
     captureVisitSnapshot(false, undefined, {
       weight_kg: newWeight,
@@ -174,6 +183,9 @@ export const FollowUpTab: React.FC = () => {
       energy_score: newEnergy,
       notes: newNotes
     });
+
+    // Atomically persist updated visits, snapshots, and patient measurements
+    saveCurrentPatient();
     setShowAddVisitModal(false);
   };
 

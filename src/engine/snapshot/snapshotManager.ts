@@ -10,6 +10,7 @@
  */
 
 import { generateEntityId } from '../../utils/idGenerator';
+import { calculateAnthropometrics } from '../anthropometrics';
 import {
   ClinicalVisitSnapshot,
   PatientProfile,
@@ -89,6 +90,22 @@ export function createClinicalSnapshot(params: CreateSnapshotParams): ClinicalVi
     ? Math.round((waistCm / heightCm) * 100) / 100
     : (obs?.whtr ?? (isUnmeasured ? undefined : patient.calculated?.whtr));
 
+  let calculatedMetrics = patient.calculated;
+  if (weightKg !== undefined && heightCm !== undefined && (obs?.weight_kg !== undefined || obs?.waist_cm !== undefined)) {
+    calculatedMetrics = calculateAnthropometrics(
+      patient.age,
+      patient.gender,
+      heightCm,
+      weightKg,
+      waistCm ?? 0,
+      patient.activity_level || 'sedentary',
+      patient.selected_conditions || [],
+      patient.population_group || 'adult_standard',
+      patient.trimester,
+      patient.bmr_floor_strategy || 'clamped_to_bmr'
+    );
+  }
+
   return {
     snapshot_id: snapId,
     patient_id: patient.id,
@@ -108,15 +125,15 @@ export function createClinicalSnapshot(params: CreateSnapshotParams): ClinicalVi
     anthropometrics: {
       weight_kg: weightKg,
       height_cm: heightCm,
-      bmi: isUnmeasured ? undefined : patient.calculated?.bmi,
+      bmi: (weightKg && heightCm) ? calculatedMetrics?.bmi : (isUnmeasured ? undefined : patient.calculated?.bmi),
       waist_cm: waistCm,
       whtr: whtr,
-      bmr_kcal: isUnmeasured ? undefined : patient.calculated?.bmr,
-      tdee_kcal: isUnmeasured ? undefined : patient.calculated?.tdee,
-      target_calories: isUnmeasured ? undefined : patient.calculated?.target_calories,
-      target_protein_g: isUnmeasured ? undefined : patient.calculated?.target_protein_g,
-      target_carbs_g: isUnmeasured ? undefined : patient.calculated?.target_carbs_g,
-      target_fat_g: isUnmeasured ? undefined : patient.calculated?.target_fat_g
+      bmr_kcal: isUnmeasured && !weightKg ? undefined : calculatedMetrics?.bmr,
+      tdee_kcal: isUnmeasured && !weightKg ? undefined : calculatedMetrics?.tdee,
+      target_calories: isUnmeasured && !weightKg ? undefined : calculatedMetrics?.target_calories,
+      target_protein_g: isUnmeasured && !weightKg ? undefined : calculatedMetrics?.target_protein_g,
+      target_carbs_g: isUnmeasured && !weightKg ? undefined : calculatedMetrics?.target_carbs_g,
+      target_fat_g: isUnmeasured && !weightKg ? undefined : calculatedMetrics?.target_fat_g
     },
     vitals: obs?.vitals ? { ...(patient.vitals || {}), ...obs.vitals } : (patient.vitals || {}),
     biomarkers: {

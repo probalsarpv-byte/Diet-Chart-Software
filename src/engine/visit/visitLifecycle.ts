@@ -11,6 +11,7 @@
 
 import { generateEntityId } from '../../utils/idGenerator';
 import { validateReferentialIntegrity } from '../../utils/referentialIntegrity';
+import { calculateAnthropometrics } from '../anthropometrics';
 import {
   ClinicalVisit,
   ClinicalVisitType,
@@ -120,6 +121,23 @@ export function restoreVisitState(params: RestoreVisitStateParams): PatientProfi
   const { currentPatient, targetVisit, targetSnapshot } = params;
   const visitId = targetVisit.visit_id || targetVisit.id;
 
+  const weightKg = targetSnapshot?.anthropometrics?.weight_kg ?? 0;
+  const heightCm = targetSnapshot?.anthropometrics?.height_cm ?? currentPatient.height_cm;
+  const waistCm = targetSnapshot?.anthropometrics?.waist_cm ?? 0;
+
+  const calculated = calculateAnthropometrics(
+    currentPatient.age,
+    currentPatient.gender,
+    heightCm,
+    weightKg,
+    waistCm,
+    currentPatient.activity_level || 'sedentary',
+    currentPatient.selected_conditions || [],
+    currentPatient.population_group || 'adult_standard',
+    currentPatient.trimester,
+    currentPatient.bmr_floor_strategy || 'clamped_to_bmr'
+  );
+
   if (!targetSnapshot) {
     return {
       ...currentPatient,
@@ -127,6 +145,7 @@ export function restoreVisitState(params: RestoreVisitStateParams): PatientProfi
       visit_date: targetVisit.visit_date,
       weight_kg: 0,
       waist_cm: 0,
+      calculated,
       vitals: {},
       gut_profile: {
         bloating: 'none',
@@ -146,9 +165,10 @@ export function restoreVisitState(params: RestoreVisitStateParams): PatientProfi
     ...currentPatient,
     current_visit_id: visitId,
     visit_date: targetSnapshot.visit_date || targetVisit.visit_date,
-    weight_kg: targetSnapshot.anthropometrics?.weight_kg ?? 0,
-    height_cm: targetSnapshot.anthropometrics?.height_cm ?? currentPatient.height_cm,
-    waist_cm: targetSnapshot.anthropometrics?.waist_cm ?? 0,
+    weight_kg: weightKg,
+    height_cm: heightCm,
+    waist_cm: waistCm,
+    calculated,
     vitals: targetSnapshot.vitals ? { ...targetSnapshot.vitals } : {},
     gut_profile: {
       bloating: targetSnapshot.gut_metrics?.bloating_severity ?? 'none',

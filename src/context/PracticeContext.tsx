@@ -1382,19 +1382,6 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       created_at: new Date().toISOString()
     };
 
-    setPatient(freshPatient);
-    setClinicalVisits([initialVisit]);
-    setCurrentVisit(initialVisit);
-    setFollowUpAppointments([]);
-    setVisitSnapshots([]);
-    setProgressReports([]);
-    setCurrentProgressReport(null);
-    setVisits([]);
-    setDietChart([]);
-    setCandidateSupplements([]);
-    setP2AnalysisResult(null);
-    setCurrentClinicalAssessment(null);
-
     const tx = savePatientTransaction({
       currentRecord: newRecord,
       storageEngine: safeStorage,
@@ -1499,25 +1486,36 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const visitId = currentVisit.visit_id || currentVisit.id || '';
     const updatedVisits = completeVisitTransition(clinicalVisits, visitId, summary);
     const completed = updatedVisits.find(v => v.visit_id === visitId || v.id === visitId) || null;
-    setCurrentVisit(completed);
-    setClinicalVisits(updatedVisits);
 
-    // Atomically persist completed visit state to savedPatients
-    setSavedPatients(prev => {
-      const idx = prev.findIndex(p => p.patient.id === patient.id);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = {
-          ...updated[idx],
-          clinical_visits: updatedVisits,
-          updated_at: new Date().toISOString()
-        };
-        safeStorage.setItem('shuddho_saved_patients', updated);
-        return updated;
-      }
-      return prev;
+    const currentRecord: PatientRecord = {
+      schema_version: CURRENT_SCHEMA_VERSION,
+      patient,
+      visits,
+      clinical_visits: updatedVisits,
+      follow_up_appointments: followUpAppointments,
+      visit_snapshots: visitSnapshots,
+      progress_reports: progressReports,
+      current_diet_chart: dietChart,
+      current_supplements: candidateSupplements,
+      timeline: dniResult.timeline,
+      updated_at: new Date().toISOString()
+    };
+
+    const tx = savePatientTransaction({
+      currentRecord,
+      storageEngine: safeStorage,
+      action: { type: 'SAVE_RECORD', payload: { clinical_visits: updatedVisits } },
+      savedPatientsList: savedPatients
     });
-  }, [currentVisit, clinicalVisits, patient.id]);
+
+    if (tx.success) {
+      setCurrentVisit(completed);
+      setClinicalVisits(updatedVisits);
+      setSavedPatients(tx.committedPatientsList);
+    } else {
+      console.error('[Complete Visit Error] Failed to persist visit completion:', tx.error);
+    }
+  }, [currentVisit, clinicalVisits, patient, visits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients]);
 
   // Follow-Up Appointments Management
   const scheduleFollowUp = useCallback((
@@ -1625,7 +1623,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         waist_cm: clinicalObservationsPayload.waist_cm ?? prev.waist_cm,
         gut_profile: {
           ...prev.gut_profile,
-          bloating: (clinicalObservationsPayload.bloating_severity === 'moderate' ? 'mild' : (clinicalObservationsPayload.bloating_severity || prev.gut_profile.bloating)) as any,
+          bloating: clinicalObservationsPayload.bloating_severity ?? prev.gut_profile.bloating,
           acid_reflux_hypoacidity: clinicalObservationsPayload.acid_reflux_present ?? prev.gut_profile.acid_reflux_hypoacidity,
           bristol_stool_score: clinicalObservationsPayload.bristol_stool_score ?? prev.gut_profile.bristol_stool_score,
           energy_score: clinicalObservationsPayload.energy_score ?? prev.gut_profile.energy_score
