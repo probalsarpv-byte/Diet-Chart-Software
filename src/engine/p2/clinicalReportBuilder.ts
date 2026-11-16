@@ -20,6 +20,7 @@ import {
   ClinicalHealthAssessmentReport,
 } from './types';
 import { ClinicalAssessment } from '../../types/assessment';
+import { interpretGlucoseMarker } from '../assessment/p2HandoffAdapter';
 
 export function buildClinicalHealthAssessmentReport(params: {
   patient: PatientProfile;
@@ -154,67 +155,133 @@ export function buildClinicalHealthAssessmentReport(params: {
   };
 
   // Section H: Lab Findings
-  const availableResults: Array<{ marker: string; value: string | number; unit: string; flag?: string; normalRange: string }> = [];
-  const labs = patient.labs || {};
+  const availableResults: Array<{ marker: string; value: string | number; unit: string; flag?: string; normalRange: string; testDate?: string; status?: string }> = [];
+  const pendingTests: string[] = [];
 
-  if (labs.fasting_glucose !== undefined) {
-    availableResults.push({
-      marker: 'Fasting Blood Glucose',
-      value: labs.fasting_glucose,
-      unit: 'mg/dL',
-      flag: labs.fasting_glucose >= 126 ? 'HIGH' : labs.fasting_glucose >= 100 ? 'BORDERLINE' : 'NORMAL',
-      normalRange: '70–99 mg/dL',
-    });
-  }
-  if (labs.hba1c !== undefined) {
-    availableResults.push({
-      marker: 'HbA1c',
-      value: labs.hba1c,
-      unit: '%',
-      flag: labs.hba1c >= 6.5 ? 'HIGH' : labs.hba1c >= 5.7 ? 'PREDIABETIC' : 'OPTIMAL',
-      normalRange: '< 5.7%',
-    });
-  }
-  if (labs.fasting_insulin !== undefined) {
-    availableResults.push({
-      marker: 'Fasting Serum Insulin',
-      value: labs.fasting_insulin,
-      unit: 'uIU/mL',
-      flag: labs.fasting_insulin > 10 ? 'HIGH' : 'NORMAL',
-      normalRange: '2–6 uIU/mL (Functional)',
-    });
-  }
-  if (labs.triglycerides !== undefined) {
-    availableResults.push({
-      marker: 'Triglycerides',
-      value: labs.triglycerides,
-      unit: 'mg/dL',
-      flag: labs.triglycerides > 150 ? 'ELEVATED' : 'OPTIMAL',
-      normalRange: '< 150 mg/dL',
-    });
-  }
-  if (labs.uric_acid !== undefined) {
-    availableResults.push({
-      marker: 'Serum Uric Acid',
-      value: labs.uric_acid,
-      unit: 'mg/dL',
-      flag: labs.uric_acid > 6.5 ? 'HIGH' : 'NORMAL',
-      normalRange: '3.5–6.0 mg/dL',
-    });
-  }
-  if (labs.ferritin !== undefined) {
-    availableResults.push({
-      marker: 'Serum Ferritin',
-      value: labs.ferritin,
-      unit: 'ng/mL',
-      flag: labs.ferritin < 30 ? 'DEPLETED' : 'ADEQUATE',
-      normalRange: '50–100 ng/mL (Optimal)',
-    });
+  const hasAssessmentLabs = Boolean(assessment?.labs?.entries && Object.keys(assessment.labs.entries).length > 0);
+
+  if (hasAssessmentLabs && assessment?.labs?.entries) {
+    // Primary source of truth: P1 structured laboratory entries
+    for (const entry of Object.values(assessment.labs.entries)) {
+      if (entry.status === 'previously_tested' && entry.numeric_value !== undefined && !isNaN(entry.numeric_value)) {
+        let flag = 'NORMAL';
+        let normalRange = '-';
+
+        if (entry.marker_id === 'fbs' || entry.marker_id === 'ppbs') {
+          const interp = interpretGlucoseMarker(entry.marker_id, entry.numeric_value, entry.unit);
+          flag = interp.flag;
+          normalRange = interp.normalRange;
+        } else if (entry.marker_id === 'hba1c') {
+          flag = entry.numeric_value >= 6.5 ? 'HIGH' : entry.numeric_value >= 5.7 ? 'ELEVATED' : 'NORMAL';
+          normalRange = '< 5.7%';
+        } else if (entry.marker_id === 'fasting_insulin') {
+          flag = entry.numeric_value > 10 ? 'HIGH' : 'NORMAL';
+          normalRange = '2–6 uIU/mL (Functional)';
+        } else if (entry.marker_id === 'triglycerides') {
+          flag = entry.numeric_value > 150 ? 'ELEVATED' : 'OPTIMAL';
+          normalRange = '< 150 mg/dL';
+        } else if (entry.marker_id === 'serum_creatinine') {
+          const threshold = patient.gender === 'female' ? 1.1 : 1.2;
+          flag = entry.numeric_value > threshold ? 'HIGH' : 'NORMAL';
+          normalRange = patient.gender === 'female' ? '0.5–1.1 mg/dL' : '0.6–1.2 mg/dL';
+        } else if (entry.marker_id === 'serum_uric_acid') {
+          flag = entry.numeric_value > 6.5 ? 'HIGH' : 'NORMAL';
+          normalRange = '3.5–6.0 mg/dL';
+        } else if (entry.marker_id === 'serum_ferritin') {
+          flag = entry.numeric_value < 30 ? 'DEPLETED' : 'ADEQUATE';
+          normalRange = '50–100 ng/mL (Optimal)';
+        } else if (entry.conventional_high !== undefined || entry.conventional_low !== undefined) {
+          if (entry.conventional_high !== undefined && entry.numeric_value > entry.conventional_high) {
+            flag = 'HIGH';
+          } else if (entry.conventional_low !== undefined && entry.numeric_value < entry.conventional_low) {
+            flag = 'LOW';
+          } else {
+            flag = 'NORMAL';
+          }
+          normalRange = `${entry.conventional_low ?? ''}–${entry.conventional_high ?? ''} ${entry.unit}`;
+        }
+
+        availableResults.push({
+          marker: entry.name_en || entry.marker_id,
+          value: entry.numeric_value,
+          unit: entry.unit,
+          flag,
+          normalRange,
+          testDate: entry.test_date,
+          status: entry.status,
+        });
+      } else if (entry.status === 'pending_result' || (entry.status as string) === 'pending') {
+        pendingTests.push(entry.name_en || entry.marker_id);
+      }
+    }
+  } else if (!assessment || !assessment.labs?.entries || Object.keys(assessment.labs.entries).length === 0) {
+    // Fallback to legacy patient.labs ONLY when assessment is omitted or contains zero laboratory entries
+    const labs = patient.labs || {};
+
+    if (labs.fasting_glucose !== undefined) {
+      availableResults.push({
+        marker: 'Fasting Blood Glucose',
+        value: labs.fasting_glucose,
+        unit: 'mg/dL',
+        flag: labs.fasting_glucose >= 126 ? 'HIGH' : labs.fasting_glucose >= 100 ? 'BORDERLINE' : 'NORMAL',
+        normalRange: '70–99 mg/dL',
+      });
+    }
+    if (labs.hba1c !== undefined) {
+      availableResults.push({
+        marker: 'HbA1c',
+        value: labs.hba1c,
+        unit: '%',
+        flag: labs.hba1c >= 6.5 ? 'HIGH' : labs.hba1c >= 5.7 ? 'PREDIABETIC' : 'OPTIMAL',
+        normalRange: '< 5.7%',
+      });
+    }
+    if (labs.fasting_insulin !== undefined) {
+      availableResults.push({
+        marker: 'Fasting Serum Insulin',
+        value: labs.fasting_insulin,
+        unit: 'uIU/mL',
+        flag: labs.fasting_insulin > 10 ? 'HIGH' : 'NORMAL',
+        normalRange: '2–6 uIU/mL (Functional)',
+      });
+    }
+    if (labs.triglycerides !== undefined) {
+      availableResults.push({
+        marker: 'Triglycerides',
+        value: labs.triglycerides,
+        unit: 'mg/dL',
+        flag: labs.triglycerides > 150 ? 'ELEVATED' : 'OPTIMAL',
+        normalRange: '< 150 mg/dL',
+      });
+    }
+    if (labs.uric_acid !== undefined) {
+      availableResults.push({
+        marker: 'Serum Uric Acid',
+        value: labs.uric_acid,
+        unit: 'mg/dL',
+        flag: labs.uric_acid > 6.5 ? 'HIGH' : 'NORMAL',
+        normalRange: '3.5–6.0 mg/dL',
+      });
+    }
+    if (labs.ferritin !== undefined) {
+      availableResults.push({
+        marker: 'Serum Ferritin',
+        value: labs.ferritin,
+        unit: 'ng/mL',
+        flag: labs.ferritin < 30 ? 'DEPLETED' : 'ADEQUATE',
+        normalRange: '50–100 ng/mL (Optimal)',
+      });
+    }
   }
 
-  const pendingTests = labRecommendations
-    .filter(r => r.existingTestStatus === 'pending' && (r.priority === 'immediate_clinical_evaluation' || r.priority === 'high_priority'))
-    .map(r => r.testName_en);
+  // Include pending recommendations
+  for (const r of labRecommendations) {
+    if (r.existingTestStatus === 'pending' && (r.priority === 'immediate_clinical_evaluation' || r.priority === 'high_priority')) {
+      if (!pendingTests.includes(r.testName_en)) {
+        pendingTests.push(r.testName_en);
+      }
+    }
+  }
 
   const missingInformation: string[] = [];
   if (availableResults.length === 0) {
@@ -339,6 +406,7 @@ export function buildClinicalHealthAssessmentReport(params: {
   return {
     patientId: patient.id,
     visitId,
+    assessmentId: assessment?.assessment_id,
     reportId,
     reportMode,
     generatedAt: new Date().toISOString(),

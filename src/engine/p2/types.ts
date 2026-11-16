@@ -483,6 +483,7 @@ export type DietPlanningContext = P3NutritionPlanningContext;
 export interface ClinicalHealthAssessmentReport {
   patientId: string;
   visitId: string;
+  assessmentId?: string;
   reportId: string;
   reportMode: 'quick' | 'comprehensive';
   generatedAt: string;
@@ -529,7 +530,7 @@ export interface ClinicalHealthAssessmentReport {
   sectionF_ayurvedicAssessment: AyurvedicInterpretationResult;
   sectionG_pregnancyMasanumasika?: MasanumasikaPregnancyAnalysisResult;
   sectionH_laboratoryFindings: {
-    availableResults: Array<{ marker: string; value: string | number; unit: string; flag?: string; normalRange: string }>;
+    availableResults: Array<{ marker: string; value: string | number; unit: string; flag?: string; normalRange: string; testDate?: string; status?: string }>;
     pendingTests: string[];
     missingInformation: string[];
   };

@@ -623,7 +623,15 @@ export function runP2Analysis(
   if ('observations' in (inputOrPatient as any) && (inputOrPatient as P2EngineInput).observations && (inputOrPatient as P2EngineInput).observations!.length > 0) {
     observations = (inputOrPatient as P2EngineInput).observations!;
   } else {
-    const baseObs = aggregateEvidence(patient, rawAnswers);
+    const hasStructuredLabs = Boolean(assessment?.labs?.entries && Object.keys(assessment.labs.entries).length > 0);
+    const hasStructuredAnthro = Boolean(assessment?.anthropometrics && (assessment.anthropometrics.height_cm || assessment.anthropometrics.weight_kg));
+    let baseObs = aggregateEvidence(patient, rawAnswers);
+    if (hasStructuredLabs) {
+      baseObs = baseObs.filter(o => o.category !== 'lab');
+    }
+    if (hasStructuredAnthro) {
+      baseObs = baseObs.filter(o => o.category !== 'anthropometric');
+    }
     const derivedObs = assessment ? buildP2ClinicalObservations(assessment, patient) : [];
     const obsMap = new Map<string, ClinicalObservation>();
     baseObs.forEach(o => obsMap.set(o.id, o));
@@ -668,6 +676,7 @@ export function runP2Analysis(
 
   const report = buildClinicalHealthAssessmentReport({
     patient,
+    assessment,
     domainFindings,
     hypotheses: finalHypotheses,
     redFlags,

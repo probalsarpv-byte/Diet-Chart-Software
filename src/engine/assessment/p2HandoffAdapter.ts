@@ -24,6 +24,99 @@ export interface P2HandoffPackage {
   flattenedAnswersForP2: Record<string, any>;
 }
 
+export interface GlucoseInterpretation {
+  isValid: boolean;
+  status: 'normal' | 'elevated' | 'uninterpretable';
+  tags: string[];
+  severity: 'none' | 'mild' | 'moderate' | 'severe';
+  flag: 'NORMAL' | 'HIGH' | 'ELEVATED' | 'UNINTERPRETABLE';
+  normalRange: string;
+  warningNote?: string;
+}
+
+export function interpretGlucoseMarker(
+  marker: 'fbs' | 'ppbs',
+  value: number,
+  unit: string
+): GlucoseInterpretation {
+  const normUnit = (unit || '').trim().toLowerCase();
+  const isMmol = normUnit === 'mmol/l';
+  const isMgDl = normUnit === 'mg/dl';
+
+  if (!isMmol && !isMgDl) {
+    return {
+      isValid: false,
+      status: 'uninterpretable',
+      tags: ['lab_marker', marker, 'unsupported_unit'],
+      severity: 'none',
+      flag: 'UNINTERPRETABLE',
+      normalRange: 'N/A',
+      warningNote: `Unsupported or unknown unit: ${unit}`
+    };
+  }
+
+  // Non-positive or non-physiological check:
+  // Glucose <= 0 or > 1500 mg/dL (or > ~83.3 mmol/L)
+  if (typeof value !== 'number' || isNaN(value) || value <= 0 || (isMmol && value > 83.3) || (isMgDl && value > 1500)) {
+    return {
+      isValid: false,
+      status: 'uninterpretable',
+      tags: ['lab_marker', marker, 'uninterpretable_glucose_value'],
+      severity: 'none',
+      flag: 'UNINTERPRETABLE',
+      normalRange: isMmol ? (marker === 'fbs' ? '3.9–5.5 mmol/L' : '<= 7.8 mmol/L') : (marker === 'fbs' ? '70–99 mg/dL' : '< 140 mg/dL'),
+      warningNote: `Non-physiological glucose value: ${value}`
+    };
+  }
+
+  if (marker === 'fbs') {
+    const normalRange = isMmol ? '3.9–5.5 mmol/L' : '70–99 mg/dL';
+    const isElevated = isMmol ? value > 5.5 : value >= 100;
+    if (isElevated) {
+      return {
+        isValid: true,
+        status: 'elevated',
+        tags: ['lab_marker', 'fbs', 'elevated_fasting_glucose', 'fasting_hyperglycemia', 'obs_elevated_fasting_glucose'],
+        severity: 'moderate',
+        flag: 'HIGH',
+        normalRange
+      };
+    } else {
+      return {
+        isValid: true,
+        status: 'normal',
+        tags: ['lab_marker', 'fbs', 'normal_fasting_glucose', 'obs_normal_fasting_glucose'],
+        severity: 'none',
+        flag: 'NORMAL',
+        normalRange
+      };
+    }
+  } else {
+    // ppbs
+    const normalRange = isMmol ? '<= 7.8 mmol/L' : '< 140 mg/dL';
+    const isElevated = isMmol ? value > 7.8 : value >= 140;
+    if (isElevated) {
+      return {
+        isValid: true,
+        status: 'elevated',
+        tags: ['lab_marker', 'ppbs', 'elevated_postprandial_glucose', 'glycemic_instability'],
+        severity: 'moderate',
+        flag: 'HIGH',
+        normalRange
+      };
+    } else {
+      return {
+        isValid: true,
+        status: 'normal',
+        tags: ['lab_marker', 'ppbs', 'normal_postprandial_glucose'],
+        severity: 'none',
+        flag: 'NORMAL',
+        normalRange
+      };
+    }
+  }
+}
+
 export function buildP2ClinicalObservations(
   assessment: ClinicalAssessment,
   patient: PatientProfile
@@ -428,21 +521,12 @@ export function buildP2ClinicalObservations(
           tags.push('normal_hba1c', 'obs_normal_hba1c');
           severity = 'none';
         }
-      } else if (markerId === 'fbs') {
-        const isElevated = (entry.unit === 'mmol/L' && val > 5.5) || (entry.unit === 'mg/dL' && val >= 100) || val > 5.5;
-        if (isElevated) {
-          tags.push('elevated_fasting_glucose', 'fasting_hyperglycemia', 'obs_elevated_fasting_glucose');
-          severity = 'moderate';
-        } else {
-          tags.push('normal_fasting_glucose', 'obs_normal_fasting_glucose');
-          severity = 'none';
+      } else if (markerId === 'fbs' || markerId === 'ppbs') {
+        const interp = interpretGlucoseMarker(markerId, val, entry.unit);
+        for (const t of interp.tags) {
+          if (!tags.includes(t)) tags.push(t);
         }
-      } else if (markerId === 'ppbs') {
-        const isElevated = (entry.unit === 'mmol/L' && val > 7.8) || (entry.unit === 'mg/dL' && val >= 140) || val > 7.8;
-        if (isElevated) {
-          tags.push('elevated_postprandial_glucose', 'glycemic_instability');
-          severity = 'moderate';
-        }
+        severity = interp.severity;
       } else if (markerId === 'fasting_insulin') {
         if (val > 10) {
           tags.push('elevated_fasting_insulin', 'hyperinsulinemia', 'insulin_resistance_sign');

@@ -136,7 +136,11 @@ function createMockPatient(overrides: Partial<PatientProfile> = {}): PatientProf
 }
 
 // Helper mock assessment
-function createMockAssessment(overrides: Partial<ClinicalAssessment> = {}): ClinicalAssessment {
+type MockAssessmentOverrides = Omit<Partial<ClinicalAssessment>, 'labs'> & {
+  labs?: Partial<LabAssessmentData>;
+};
+
+function createMockAssessment(overrides: MockAssessmentOverrides = {}): ClinicalAssessment {
   const completeAyurveda: CompleteAyurvedicAssessment = {
     prakriti: {
       vata_score: 20,
@@ -293,15 +297,15 @@ function createMockAssessment(overrides: Partial<ClinicalAssessment> = {}): Clin
     },
     ayurveda: completeAyurveda,
     population_data: {},
-    labs: {
-      entries: labEntries,
-      last_updated: '2026-05-10T10:00:00Z',
-      total_tested_count: 2,
-      pending_count: 1,
-    },
     completion,
     safety_warnings_acknowledged: true,
     ...overrides,
+    labs: {
+      entries: overrides.labs?.entries || labEntries,
+      last_updated: overrides.labs?.last_updated || '2026-05-10T10:00:00Z',
+      total_tested_count: overrides.labs?.total_tested_count ?? Object.values(overrides.labs?.entries || labEntries).filter(e => e.status === 'previously_tested').length,
+      pending_count: overrides.labs?.pending_count ?? Object.values(overrides.labs?.entries || labEntries).filter(e => e.status === 'pending_result').length,
+    },
   };
 }
 
@@ -831,6 +835,266 @@ runSection('Scenario L: Full Draft State Persistence & Hydration', () => {
 
   // Clean up
   safeStorage.removeItem(storageKey);
+});
+
+// ===================================================================
+// FIX 1 REGRESSION SUITE: P1 Structured Labs in P2 Report (Tests A-D)
+// ===================================================================
+runSection('Scenario M: P1 Structured Labs in P2 Clinical Report Section H', () => {
+  const patient = createMockPatient({
+    id: 'pt_report_lab_01',
+    labs: {
+      hba1c: 6.1, // Stale legacy value
+      fasting_glucose: 110,
+      lab_flags: [],
+    }
+  });
+
+  // Test A & B: HbA1c 7.3% in current assessment must override stale legacy 6.1%
+  const assessmentWithHbA1c = createMockAssessment({
+    patient_id: 'pt_report_lab_01',
+    visit_id: 'vis_report_lab_01',
+    labs: {
+      entries: {
+        hba1c: {
+          marker_id: 'hba1c',
+          category: 'glycemic',
+          name_en: 'Glycated Hemoglobin (HbA1c)',
+          name_bn: 'হিমোগ্লোবিন এওয়ানসি (HbA1c)',
+          status: 'previously_tested',
+          numeric_value: 7.3,
+          unit: '%',
+          test_date: '2026-11-16'
+        },
+        vitamin_b12: {
+          marker_id: 'vitamin_b12',
+          category: 'vitamins_minerals',
+          name_en: 'Vitamin B12',
+          name_bn: 'ভিটামিন বি১২',
+          status: 'not_tested',
+          unit: 'pg/mL'
+        }
+      },
+      last_updated: '2026-11-16T10:00:00Z'
+    }
+  });
+
+  const p2ResultA = runP2Analysis({
+    patient,
+    assessment: assessmentWithHbA1c,
+    visitId: 'vis_report_lab_01'
+  });
+
+  assert(Boolean(p2ResultA.report), 'P2 generates clinical report');
+  assert(p2ResultA.report.patientId === 'pt_report_lab_01', 'Report preserves authoritative patientId');
+  assert(p2ResultA.report.visitId === 'vis_report_lab_01', 'Report preserves authoritative visitId');
+  assert(p2ResultA.report.assessmentId === assessmentWithHbA1c.assessment_id, 'Report preserves authoritative assessmentId matching source assessment');
+
+  // Observation check
+  const obsHbA1c = p2ResultA.observations.find(o => o.sourceLabMarker === 'hba1c');
+  assert(Boolean(obsHbA1c), 'P2 observations contain tested HbA1c');
+  assert(obsHbA1c?.observedValue === 7.3, 'Observation has tested HbA1c value 7.3');
+
+  // Test A & B: Report Section H check
+  const sectionH = p2ResultA.report.sectionH_laboratoryFindings;
+  assert(Boolean(sectionH), 'Report Section H exists');
+  
+  const reportHbA1c = sectionH.availableResults.find(r => r.marker.includes('HbA1c'));
+  assert(Boolean(reportHbA1c), 'Section H includes HbA1c result');
+  assert(reportHbA1c?.value === 7.3, 'Section H displays current assessment 7.3% (NOT stale legacy 6.1%)');
+  assert(reportHbA1c?.unit === '%', 'Section H preserves correct % unit');
+
+  // Test C: Untested Vitamin B12 must NOT be fabricated in availableResults
+  const reportB12 = sectionH.availableResults.find(r => r.marker.toLowerCase().includes('b12'));
+  assert(reportB12 === undefined, 'Untested Vitamin B12 is strictly excluded from availableResults (not fabricated)');
+
+  // Test D: Missing current assessment lab: If current assessment has no tested HbA1c, do not silently copy stale legacy HbA1c
+  const assessmentWithoutHbA1c = createMockAssessment({
+    patient_id: 'pt_report_lab_01',
+    visit_id: 'vis_report_lab_01',
+    labs: {
+      entries: {
+        fbs: {
+          marker_id: 'fbs',
+          category: 'glycemic',
+          name_en: 'Fasting Blood Sugar (FBS)',
+          name_bn: 'খালি পেটে রক্তের গ্লুকোজ',
+          status: 'previously_tested',
+          numeric_value: 5.2,
+          unit: 'mmol/L'
+        },
+        hba1c: {
+          marker_id: 'hba1c',
+          category: 'glycemic',
+          name_en: 'Glycated Hemoglobin (HbA1c)',
+          name_bn: 'হিমোগ্লোবিন এওয়ানসি',
+          status: 'not_tested',
+          unit: '%'
+        }
+      },
+      last_updated: '2026-11-16T10:00:00Z'
+    }
+  });
+
+  const p2ResultD = runP2Analysis({
+    patient, // Contains patient.labs.hba1c = 6.1
+    assessment: assessmentWithoutHbA1c,
+    visitId: 'vis_report_lab_01'
+  });
+
+  const sectionHD = p2ResultD.report.sectionH_laboratoryFindings;
+  const stolenHbA1c = sectionHD.availableResults.find(r => r.marker.includes('HbA1c'));
+  assert(stolenHbA1c === undefined, 'Report does NOT silently copy old legacy HbA1c 6.1% into current assessment report');
+});
+
+// ===================================================================
+// FIX 2 REGRESSION SUITE: Unit-Safe Blood Glucose Interpretation
+// ===================================================================
+runSection('Scenario N: Unit-Safe Fasting & Postprandial Blood Glucose Interpretation', () => {
+  const patient = createMockPatient();
+
+  // Test Matrix: FBS 90 mg/dL (Not elevated)
+  const obsFbs90 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        fbs: { marker_id: 'fbs', category: 'glycemic', name_en: 'FBS', name_bn: 'FBS', status: 'previously_tested', numeric_value: 90, unit: 'mg/dL' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const fbs90 = obsFbs90.find(o => o.sourceLabMarker === 'fbs');
+  assert(fbs90?.tags?.includes('normal_fasting_glucose') === true, 'FBS 90 mg/dL is tagged normal_fasting_glucose');
+  assert(fbs90?.tags?.includes('elevated_fasting_glucose') === false, 'FBS 90 mg/dL is NOT tagged elevated_fasting_glucose');
+  assert(fbs90?.severity === 'none', 'FBS 90 mg/dL severity is none');
+
+  // Test Matrix: FBS 110 mg/dL (Elevated screening flag)
+  const obsFbs110 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        fbs: { marker_id: 'fbs', category: 'glycemic', name_en: 'FBS', name_bn: 'FBS', status: 'previously_tested', numeric_value: 110, unit: 'mg/dL' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const fbs110 = obsFbs110.find(o => o.sourceLabMarker === 'fbs');
+  assert(fbs110?.tags?.includes('elevated_fasting_glucose') === true, 'FBS 110 mg/dL is tagged elevated_fasting_glucose');
+  assert(fbs110?.severity === 'moderate', 'FBS 110 mg/dL severity is moderate');
+
+  // Test Matrix: FBS 5.0 mmol/L (Not elevated)
+  const obsFbs5 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        fbs: { marker_id: 'fbs', category: 'glycemic', name_en: 'FBS', name_bn: 'FBS', status: 'previously_tested', numeric_value: 5.0, unit: 'mmol/L' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const fbs5 = obsFbs5.find(o => o.sourceLabMarker === 'fbs');
+  assert(fbs5?.tags?.includes('normal_fasting_glucose') === true, 'FBS 5.0 mmol/L is tagged normal_fasting_glucose');
+  assert(fbs5?.tags?.includes('elevated_fasting_glucose') === false, 'FBS 5.0 mmol/L is NOT tagged elevated_fasting_glucose');
+
+  // Test Matrix: FBS 6.1 mmol/L (Elevated screening flag)
+  const obsFbs61 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        fbs: { marker_id: 'fbs', category: 'glycemic', name_en: 'FBS', name_bn: 'FBS', status: 'previously_tested', numeric_value: 6.1, unit: 'mmol/L' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const fbs61 = obsFbs61.find(o => o.sourceLabMarker === 'fbs');
+  assert(fbs61?.tags?.includes('elevated_fasting_glucose') === true, 'FBS 6.1 mmol/L is tagged elevated_fasting_glucose');
+  assert(fbs61?.severity === 'moderate', 'FBS 6.1 mmol/L severity is moderate');
+
+  // Test Matrix: PPBS 120 mg/dL (Not elevated)
+  const obsPpbs120 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        ppbs: { marker_id: 'ppbs', category: 'glycemic', name_en: 'PPBS', name_bn: 'PPBS', status: 'previously_tested', numeric_value: 120, unit: 'mg/dL' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const ppbs120 = obsPpbs120.find(o => o.sourceLabMarker === 'ppbs');
+  assert(ppbs120?.tags?.includes('elevated_postprandial_glucose') === false, 'PPBS 120 mg/dL is NOT tagged elevated');
+  assert(ppbs120?.severity === 'none', 'PPBS 120 mg/dL severity is none');
+
+  // Test Matrix: PPBS 160 mg/dL (Elevated screening flag)
+  const obsPpbs160 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        ppbs: { marker_id: 'ppbs', category: 'glycemic', name_en: 'PPBS', name_bn: 'PPBS', status: 'previously_tested', numeric_value: 160, unit: 'mg/dL' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const ppbs160 = obsPpbs160.find(o => o.sourceLabMarker === 'ppbs');
+  assert(ppbs160?.tags?.includes('elevated_postprandial_glucose') === true, 'PPBS 160 mg/dL is tagged elevated_postprandial_glucose');
+  assert(ppbs160?.severity === 'moderate', 'PPBS 160 mg/dL severity is moderate');
+
+  // Test Matrix: PPBS 6.0 mmol/L (Not elevated)
+  const obsPpbs6 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        ppbs: { marker_id: 'ppbs', category: 'glycemic', name_en: 'PPBS', name_bn: 'PPBS', status: 'previously_tested', numeric_value: 6.0, unit: 'mmol/L' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const ppbs6 = obsPpbs6.find(o => o.sourceLabMarker === 'ppbs');
+  assert(ppbs6?.tags?.includes('elevated_postprandial_glucose') === false, 'PPBS 6.0 mmol/L is NOT tagged elevated');
+
+  // Test Matrix: PPBS 9.0 mmol/L (Elevated screening flag)
+  const obsPpbs9 = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        ppbs: { marker_id: 'ppbs', category: 'glycemic', name_en: 'PPBS', name_bn: 'PPBS', status: 'previously_tested', numeric_value: 9.0, unit: 'mmol/L' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const ppbs9 = obsPpbs9.find(o => o.sourceLabMarker === 'ppbs');
+  assert(ppbs9?.tags?.includes('elevated_postprandial_glucose') === true, 'PPBS 9.0 mmol/L is tagged elevated_postprandial_glucose');
+
+  // Edge Case: Unknown / Missing Unit
+  const obsUnknownUnit = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        fbs: { marker_id: 'fbs', category: 'glycemic', name_en: 'FBS', name_bn: 'FBS', status: 'previously_tested', numeric_value: 100, unit: 'unknown_unit' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const fbsUnknown = obsUnknownUnit.find(o => o.sourceLabMarker === 'fbs');
+  assert(fbsUnknown?.tags?.includes('unsupported_unit') === true, 'Unknown unit returns unsupported_unit tag');
+  assert(fbsUnknown?.tags?.includes('normal_fasting_glucose') === false, 'Unknown unit is NOT classified as normal');
+  assert(fbsUnknown?.tags?.includes('elevated_fasting_glucose') === false, 'Unknown unit is NOT classified as elevated');
+
+  // Edge Case: Negative / Nonphysiological Value
+  const obsNegative = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        fbs: { marker_id: 'fbs', category: 'glycemic', name_en: 'FBS', name_bn: 'FBS', status: 'previously_tested', numeric_value: -5, unit: 'mmol/L' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const fbsNegative = obsNegative.find(o => o.sourceLabMarker === 'fbs');
+  assert(fbsNegative?.tags?.includes('uninterpretable_glucose_value') === true, 'Negative value returns uninterpretable_glucose_value tag');
+  assert(fbsNegative?.tags?.includes('normal_fasting_glucose') === false, 'Negative value is NOT classified as normal');
+  assert(fbsNegative?.tags?.includes('elevated_fasting_glucose') === false, 'Negative value is NOT classified as elevated');
+
+  // Edge Case: Unit Spelling Variants (mg/dl vs mg/dL, mmol/l vs mmol/L)
+  const obsVariantMgDl = buildP2ClinicalObservations(createMockAssessment({
+    labs: {
+      entries: {
+        fbs: { marker_id: 'fbs', category: 'glycemic', name_en: 'FBS', name_bn: 'FBS', status: 'previously_tested', numeric_value: 110, unit: 'mg/dl' }
+      },
+      last_updated: '2026-11-16'
+    }
+  }), patient);
+  const fbsVariant = obsVariantMgDl.find(o => o.sourceLabMarker === 'fbs');
+  assert(fbsVariant?.tags?.includes('elevated_fasting_glucose') === true, 'Supported lowercase unit variant mg/dl is interpreted correctly');
 });
 
 // ===================================================================

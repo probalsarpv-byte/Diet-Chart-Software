@@ -176,6 +176,7 @@ export const StepHistorySafety: React.FC = () => {
               {bn ? 'খাদ্য গ্রহণের বর্তমান রুট (Feeding Route)' : 'Hospital Feeding Route'}
             </label>
             <select
+              data-testid="safety-feeding-route"
               value={functionalAnswers['safety_hospital_feeding_route'] || patient.feeding_status?.route || 'oral_standard'}
               onChange={(e) => {
                 const route = e.target.value as FeedingRouteType;
@@ -228,6 +229,52 @@ export const StepHistorySafety: React.FC = () => {
                 {bn ? 'না (স্বাভাবিক)' : 'No'}
               </button>
             </div>
+          </div>
+
+          {/* Prescribed Fluid Limit */}
+          <div className="p-3 rounded-xl border bg-muted/30 space-y-2 md:col-span-2">
+            <label className="text-xs font-bold text-foreground block">
+              {bn ? 'চিকিৎসক কর্তৃক তরল পানের দৈনিক সীমাবদ্ধতা (Fluid Restriction)?' : 'Prescribed Fluid Restriction?'}
+            </label>
+            <div className="grid grid-cols-2 gap-2 max-w-xs">
+              <button
+                type="button"
+                onClick={() => setAnswer('safety_prescribed_fluid_limit', 'yes')}
+                className={`py-1.5 px-3 text-xs font-semibold rounded-lg border transition-all ${
+                  functionalAnswers['safety_prescribed_fluid_limit'] === 'yes'
+                    ? 'border-amber-500 bg-amber-500 text-white font-bold'
+                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {bn ? 'হ্যাঁ (নির্দিষ্ট সীমা)' : 'Yes (Restricted)'}
+              </button>
+              <button
+                type="button"
+                data-testid="safety-fluid-limit-no"
+                onClick={() => setAnswer('safety_prescribed_fluid_limit', 'no')}
+                className={`py-1.5 px-3 text-xs font-semibold rounded-lg border transition-all ${
+                  functionalAnswers['safety_prescribed_fluid_limit'] === 'no'
+                    ? 'border-primary bg-primary text-primary-foreground font-bold'
+                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {bn ? 'না (স্বাভাবিক)' : 'No'}
+              </button>
+            </div>
+            {functionalAnswers['safety_prescribed_fluid_limit'] === 'yes' && (
+              <div className="pt-2">
+                <label className="text-[11px] font-semibold text-muted-foreground block mb-1">
+                  {bn ? 'দৈনিক সর্বোচ্চ তরলের পরিমাণ (মিলি/দিন):' : 'Prescribed Maximum Fluid (mL/day):'}
+                </label>
+                <input
+                  type="number"
+                  value={functionalAnswers['safety_prescribed_fluid_limit_ml'] || ''}
+                  onChange={(e) => setAnswer('safety_prescribed_fluid_limit_ml', e.target.value)}
+                  placeholder="e.g. 1500"
+                  className="w-36 px-2.5 py-1.5 text-xs rounded-xl border bg-background text-foreground font-bold focus:ring-1 focus:ring-primary outline-none"
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

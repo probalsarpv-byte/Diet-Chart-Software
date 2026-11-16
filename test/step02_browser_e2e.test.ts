@@ -181,49 +181,60 @@ async function runStep02BrowserE2E() {
 
     // Explicit Allergy Reconciliation: None confirmed
     const allergyBtn = page.locator('[data-testid="allergy-none-confirmed"]');
-    if (await allergyBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await allergyBtn.click();
-    }
+    await allergyBtn.waitFor({ state: 'visible', timeout: 5000 });
+    await allergyBtn.click();
+    assert(true, 'Explicit Allergy Reconciliation confirmed: No allergies reported');
 
     // Medication Reconciliation: Verified no meds
     const noMedsCheckbox = page.locator('[data-testid="med-verified-no-meds"]');
-    if (await noMedsCheckbox.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await noMedsCheckbox.check();
-    }
+    await noMedsCheckbox.waitFor({ state: 'visible', timeout: 5000 });
+    await noMedsCheckbox.check();
+    assert(true, 'Medication Reconciliation confirmed: No active prescription medications');
 
-    // Clinical Safety screening: Insulin No, Sulfonylurea No, Dysphagia No
+    // Mandatory Clinical Safety screening: Insulin No, Sulfonylurea No, Dysphagia No, Fluid Restriction No
     const insulinNo = page.locator('[data-testid="safety-insulin-no"]');
-    if (await insulinNo.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await insulinNo.click();
-    }
+    await insulinNo.waitFor({ state: 'visible', timeout: 5000 });
+    await insulinNo.click();
+    assert(true, 'Clinical Safety answered: Insulin = No');
 
     const sulfonylureaNo = page.locator('[data-testid="safety-sulfonylurea-no"]');
-    if (await sulfonylureaNo.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await sulfonylureaNo.click();
-    }
+    await sulfonylureaNo.waitFor({ state: 'visible', timeout: 5000 });
+    await sulfonylureaNo.click();
+    assert(true, 'Clinical Safety answered: Sulfonylurea = No');
 
     const dysphagiaNo = page.locator('[data-testid="safety-dysphagia-no"]');
-    if (await dysphagiaNo.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await dysphagiaNo.click();
+    await dysphagiaNo.waitFor({ state: 'visible', timeout: 5000 });
+    await dysphagiaNo.click();
+    assert(true, 'Clinical Safety answered: Dysphagia = No');
+
+    const fluidNo = page.locator('[data-testid="safety-fluid-limit-no"]');
+    if (await fluidNo.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await fluidNo.click();
+      assert(true, 'Clinical Safety answered: Fluid Restriction = No');
     }
 
     // -------------------------------------------------------------------
-    // 4. Step 8: Laboratory Biomarker Intake
+    // 4. Step 8: Laboratory Biomarker Intake (Deterministic HbA1c 7.3%)
     // -------------------------------------------------------------------
-    console.log('--- Step 8: Structured Laboratory Intake ---');
+    console.log('--- Step 8: Structured Laboratory Intake (HbA1c 7.3%) ---');
     const step8Nav = page.locator('[data-testid="assessment-step-nav-step_labs"]');
     await step8Nav.click({ timeout: 5000 });
     await page.waitForTimeout(400);
 
-    const hba1cTested = page.locator('[data-testid="lab-status-lab_hba1c-previously_tested"]');
-    if (await hba1cTested.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await hba1cTested.click();
-      await page.waitForTimeout(200);
-      const hba1cInput = page.locator('[data-testid="lab-input-lab_hba1c"]');
-      if (await hba1cInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await hba1cInput.fill('7.3');
-      }
-    }
+    // Target the authoritative testId for HbA1c tested status
+    const hba1cTested = page.locator('[data-testid="lab-status-hba1c-previously_tested"]');
+    await hba1cTested.waitFor({ state: 'visible', timeout: 5000 });
+    await hba1cTested.click();
+    await page.waitForTimeout(200);
+
+    // Target the authoritative testId for HbA1c numeric input
+    const hba1cInput = page.locator('[data-testid="lab-input-hba1c"]');
+    await hba1cInput.waitFor({ state: 'visible', timeout: 5000 });
+    await hba1cInput.fill('7.3');
+    await page.waitForTimeout(200);
+
+    const enteredHbA1c = await hba1cInput.inputValue();
+    assert(enteredHbA1c === '7.3', 'HbA1c 7.3% entered into P1 Step 8 laboratory intake');
 
     // -------------------------------------------------------------------
     // 5. Step 9: Review & Clinical Analysis Handoff
@@ -234,15 +245,15 @@ async function runStep02BrowserE2E() {
     await page.waitForTimeout(400);
 
     const analyzeBtn = page.locator('[data-testid="btn-analyze-assessment"]');
-    if (await analyzeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await analyzeBtn.click();
-      await page.waitForTimeout(1000);
-    }
+    await analyzeBtn.waitFor({ state: 'visible', timeout: 5000 });
+    await analyzeBtn.click();
+    await page.waitForTimeout(1000);
+    assert(true, 'Triggered Analyze Clinical Assessment button in Step 9');
 
     // -------------------------------------------------------------------
-    // 6. Tab 4: Root-Cause Intelligence Verification
+    // 6. Tab 4: Root-Cause Intelligence & Report Section H Verification
     // -------------------------------------------------------------------
-    console.log('--- Tab 4: Root-Cause Intelligence Verification ---');
+    console.log('--- Tab 4: Root-Cause Intelligence & Section H Verification ---');
     const p2Tab = page.locator('[data-testid="nav-tab-clinical_intelligence"]');
     await p2Tab.click({ timeout: 5000 });
     await page.waitForTimeout(500);
@@ -250,6 +261,23 @@ async function runStep02BrowserE2E() {
     // Verify Tab 4 loaded
     const p2Header = page.getByText('P2 Decision').or(page.getByText('রুট-কজ')).or(page.getByText('Intelligence')).first();
     assert(await p2Header.isVisible(), 'Tab 4 Root-Cause Intelligence successfully opened');
+
+    // Open Full Clinical Report sub-tab (A4 Health Report)
+    const reportSubtab = page.locator('button').filter({ hasText: /A4 Health Report|পূর্ণাঙ্গ স্বাস্থ্য প্রতিবেদন/ }).first();
+    await reportSubtab.waitFor({ state: 'visible', timeout: 5000 });
+    await reportSubtab.click();
+    await page.waitForTimeout(500);
+
+    // Locate Section H (Laboratory & Diagnostic Findings)
+    const sectionHHeader = page.getByText('Section H: Laboratory & Diagnostic Findings').or(page.getByText('Section H: Laboratory')).first();
+    assert(await sectionHHeader.isVisible(), 'Section H (Laboratory Findings) rendered in Clinical Health Assessment Report');
+
+    // Locate Section H container and verify HbA1c 7.3% presence
+    const sectionH = page.locator('section').filter({ hasText: /Section H: Laboratory/ }).first();
+    const sectionHText = await sectionH.innerText();
+    assert(sectionHText.includes('HbA1c'), 'Section H displays HbA1c biomarker from P1 intake');
+    assert(sectionHText.includes('7.3'), 'Section H displays tested value 7.3');
+    assert(sectionHText.includes('%'), 'Section H displays correct % unit');
 
     // -------------------------------------------------------------------
     // 7. Clinical Overview (Read-Only IntakeTab) Verification
@@ -278,11 +306,11 @@ async function runStep02BrowserE2E() {
     }
 
     // -------------------------------------------------------------------
-    // 8. Browser Reload & Persistence Verification
+    // 8. Browser Reload & Persistence Verification (HbA1c 7.3% Rehydration)
     // -------------------------------------------------------------------
     console.log('--- Step 8: Browser Reload & Persistence Verification ---');
     await page.reload({ waitUntil: 'networkidle' });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
 
     // Verify patient remains safely in persisted registry
     const patientsNavTab = page.locator('[data-testid="nav-tab-patients"]');
@@ -290,7 +318,21 @@ async function runStep02BrowserE2E() {
     await page.waitForTimeout(600);
 
     const countRehana = await page.getByText('Mrs. Rehana Sultana').count();
-    assert(countRehana > 0, 'Mrs. Rehana Sultana persisted in Patient Registry list');
+    assert(countRehana > 0, 'Mrs. Rehana Sultana persisted in Patient Registry list after reload');
+
+    // Return to Assessment Wizard Step 8 and assert HbA1c 7.3% is rehydrated and intact
+    const assessmentTab = page.locator('[data-testid="nav-tab-assessment"]');
+    await assessmentTab.click({ timeout: 5000 });
+    await page.waitForTimeout(400);
+
+    const step8NavAfterReload = page.locator('[data-testid="assessment-step-nav-step_labs"]');
+    await step8NavAfterReload.click({ timeout: 5000 });
+    await page.waitForTimeout(400);
+
+    const rehydratedInput = page.locator('[data-testid="lab-input-hba1c"]');
+    await rehydratedInput.waitFor({ state: 'visible', timeout: 5000 });
+    const rehydratedValue = await rehydratedInput.inputValue();
+    assert(rehydratedValue === '7.3', 'Persisted assessment data rehydrated: HbA1c remains 7.3% after browser reload');
 
   } catch (err: any) {
     console.error(`  EXCEPTION DURING E2E RUN: ${err.message}\n${err.stack}`);
