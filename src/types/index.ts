@@ -680,6 +680,7 @@ export interface ClinicalVisitSnapshot {
     diversity_score?: number;
     meal_frequency?: string;
     ffq_summary?: Record<string, string>;
+    noted_changes?: string[];
   };
   ayurveda?: {
     prakriti?: string;
@@ -745,8 +746,8 @@ export interface LongitudinalProgressAnalysis {
   }[];
   ayurvedic_changes: {
     prakriti_constant: string;
-    baseline_vikriti: { vata: number; pitta: number; kapha: number };
-    current_vikriti: { vata: number; pitta: number; kapha: number };
+    baseline_vikriti?: { vata: number; pitta: number; kapha: number };
+    current_vikriti?: { vata: number; pitta: number; kapha: number };
     vikriti_trajectory_en: string;
     vikriti_trajectory_bn: string;
     baseline_agni: string;

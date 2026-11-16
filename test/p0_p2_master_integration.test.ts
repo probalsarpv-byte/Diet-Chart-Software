@@ -121,6 +121,7 @@ runCheck('Appointment date comparison classifies due_today, overdue, scheduled',
 
   const aptToday: FollowUpAppointment = {
     id: 'apt_test_1',
+    appointment_id: 'apt_test_1',
     patient_id: 'SH-001',
     scheduled_date: dhakaToday,
     scheduled_time: '10:00 AM',

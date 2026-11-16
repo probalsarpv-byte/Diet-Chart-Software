@@ -24,7 +24,7 @@ import {
   Activity,
   Plus
 } from 'lucide-react';
-import { FollowUpAppointment, PatientRecord } from '@/types';
+import { FollowUpAppointment, PatientRecord, ClinicalVisit } from '@/types';
 
 export const DashboardTab: React.FC = () => {
   const {
@@ -66,11 +66,13 @@ export const DashboardTab: React.FC = () => {
     const map = new Map<string, FollowUpAppointment>();
     savedPatients.forEach(p => {
       (p.follow_up_appointments || []).forEach(a => {
-        map.set(a.id, a);
+        const key = a.appointment_id || a.id;
+        if (key) map.set(key, a);
       });
     });
     followUpAppointments.forEach(a => {
-      map.set(a.id, a);
+      const key = a.appointment_id || a.id;
+      if (key) map.set(key, a);
     });
     return Array.from(map.values());
   }, [savedPatients, followUpAppointments]);
@@ -79,11 +81,13 @@ export const DashboardTab: React.FC = () => {
     const map = new Map<string, ClinicalVisit>();
     savedPatients.forEach(p => {
       (p.clinical_visits || []).forEach(v => {
-        map.set(v.visit_id || v.id, v);
+        const key = v.visit_id || v.id;
+        if (key) map.set(key, v);
       });
     });
     clinicalVisits.forEach(v => {
-      map.set(v.visit_id || v.id, v);
+      const key = v.visit_id || v.id;
+      if (key) map.set(key, v);
     });
     return Array.from(map.values());
   }, [savedPatients, clinicalVisits]);
