@@ -649,6 +649,9 @@ export interface ClinicalVisitSnapshot {
   captured_at?: string;
   approved_by?: string;
   approval_status?: 'draft' | 'approved' | 'invalidated';
+  related_assessment_id?: string;
+  amendment_reason?: string;
+  amended_from_snapshot_id?: string;
   anthropometrics: {
     weight_kg?: number;
     height_cm?: number;
