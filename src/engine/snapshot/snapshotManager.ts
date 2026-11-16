@@ -136,31 +136,38 @@ export function createClinicalSnapshot(params: CreateSnapshotParams): ClinicalVi
       target_fat_g: isUnmeasured && !weightKg ? undefined : calculatedMetrics?.target_fat_g
     },
     vitals: obs?.vitals ? { ...(patient.vitals || {}), ...obs.vitals } : (patient.vitals || {}),
-    biomarkers: {
-      fbs: obs?.biomarkers?.fbs !== undefined ? obs.biomarkers.fbs : (obs ? undefined : patient.labs?.fasting_glucose),
-      ppbs: obs?.biomarkers?.ppbs !== undefined ? obs.biomarkers.ppbs : (obs ? undefined : patient.labs?.two_hour_post_prandial),
-      hba1c: obs?.biomarkers?.hba1c !== undefined ? obs.biomarkers.hba1c : (obs ? undefined : patient.labs?.hba1c),
-      fasting_insulin: obs?.biomarkers?.fasting_insulin !== undefined ? obs.biomarkers.fasting_insulin : (obs ? undefined : patient.labs?.fasting_insulin),
-      homa_ir: obs?.biomarkers?.homa_ir !== undefined ? obs.biomarkers.homa_ir : (obs ? undefined : patient.labs?.homa_ir),
-      total_cholesterol: obs?.biomarkers?.total_cholesterol !== undefined ? obs.biomarkers.total_cholesterol : (obs ? undefined : patient.labs?.total_cholesterol),
-      triglycerides: obs?.biomarkers?.triglycerides !== undefined ? obs.biomarkers.triglycerides : (obs ? undefined : patient.labs?.triglycerides),
-      hdl: obs?.biomarkers?.hdl !== undefined ? obs.biomarkers.hdl : (obs ? undefined : patient.labs?.hdl),
-      ldl: obs?.biomarkers?.ldl !== undefined ? obs.biomarkers.ldl : (obs ? undefined : patient.labs?.ldl),
-      tg_hdl_ratio: obs?.biomarkers?.tg_hdl_ratio !== undefined ? obs.biomarkers.tg_hdl_ratio : (obs ? undefined : patient.labs?.tg_hdl_ratio),
-      serum_creatinine: obs?.biomarkers?.serum_creatinine !== undefined ? obs.biomarkers.serum_creatinine : (obs ? undefined : patient.labs?.serum_creatinine),
-      egfr: obs?.biomarkers?.egfr !== undefined ? obs.biomarkers.egfr : (obs ? undefined : patient.labs?.egfr),
-      serum_uric_acid: obs?.biomarkers?.serum_uric_acid !== undefined ? obs.biomarkers.serum_uric_acid : (obs ? undefined : patient.labs?.uric_acid),
-      sgpt_alt: obs?.biomarkers?.sgpt_alt !== undefined ? obs.biomarkers.sgpt_alt : (obs ? undefined : patient.labs?.alt),
-      sgot_ast: obs?.biomarkers?.sgot_ast !== undefined ? obs.biomarkers.sgot_ast : (obs ? undefined : patient.labs?.ast),
-      serum_potassium: obs?.biomarkers?.serum_potassium !== undefined ? obs.biomarkers.serum_potassium : (obs ? undefined : patient.labs?.potassium),
-      serum_sodium: obs?.biomarkers?.serum_sodium !== undefined ? obs.biomarkers.serum_sodium : (obs ? undefined : patient.labs?.sodium),
-      tsh: obs?.biomarkers?.tsh !== undefined ? obs.biomarkers.tsh : (obs ? undefined : patient.labs?.tsh),
-      hemoglobin: obs?.biomarkers?.hemoglobin !== undefined ? obs.biomarkers.hemoglobin : (obs ? undefined : patient.labs?.hemoglobin),
-      serum_ferritin: obs?.biomarkers?.serum_ferritin !== undefined ? obs.biomarkers.serum_ferritin : (obs ? undefined : patient.labs?.ferritin),
-      vitamin_d3: obs?.biomarkers?.vitamin_d3 !== undefined ? obs.biomarkers.vitamin_d3 : (obs ? undefined : patient.labs?.vitamin_d3),
-      vitamin_b12: obs?.biomarkers?.vitamin_b12 !== undefined ? obs.biomarkers.vitamin_b12 : (obs ? undefined : patient.labs?.vitamin_b12),
-      hs_crp: obs?.biomarkers?.hs_crp !== undefined ? obs.biomarkers.hs_crp : (obs ? undefined : patient.labs?.hs_crp)
-    },
+    biomarkers: (() => {
+      const findP2ObsValue = (mId: string): number | undefined => {
+        if (!Array.isArray(p2AnalysisResult?.observations)) return undefined;
+        const found = p2AnalysisResult.observations.find((o: any) => o.markerId === mId || o.marker_id === mId);
+        return typeof found?.value === 'number' ? found.value : undefined;
+      };
+      return {
+        fbs: obs?.biomarkers?.fbs !== undefined ? obs.biomarkers.fbs : (findP2ObsValue('fasting_glucose') ?? (obs ? undefined : patient.labs?.fasting_glucose)),
+        ppbs: obs?.biomarkers?.ppbs !== undefined ? obs.biomarkers.ppbs : (findP2ObsValue('two_hour_post_prandial') ?? (obs ? undefined : patient.labs?.two_hour_post_prandial)),
+        hba1c: obs?.biomarkers?.hba1c !== undefined ? obs.biomarkers.hba1c : (findP2ObsValue('hba1c') ?? (obs ? undefined : patient.labs?.hba1c)),
+        fasting_insulin: obs?.biomarkers?.fasting_insulin !== undefined ? obs.biomarkers.fasting_insulin : (findP2ObsValue('fasting_insulin') ?? (obs ? undefined : patient.labs?.fasting_insulin)),
+        homa_ir: obs?.biomarkers?.homa_ir !== undefined ? obs.biomarkers.homa_ir : (findP2ObsValue('homa_ir') ?? (obs ? undefined : patient.labs?.homa_ir)),
+        total_cholesterol: obs?.biomarkers?.total_cholesterol !== undefined ? obs.biomarkers.total_cholesterol : (findP2ObsValue('total_cholesterol') ?? (obs ? undefined : patient.labs?.total_cholesterol)),
+        triglycerides: obs?.biomarkers?.triglycerides !== undefined ? obs.biomarkers.triglycerides : (findP2ObsValue('triglycerides') ?? (obs ? undefined : patient.labs?.triglycerides)),
+        hdl: obs?.biomarkers?.hdl !== undefined ? obs.biomarkers.hdl : (findP2ObsValue('hdl') ?? (obs ? undefined : patient.labs?.hdl)),
+        ldl: obs?.biomarkers?.ldl !== undefined ? obs.biomarkers.ldl : (findP2ObsValue('ldl') ?? (obs ? undefined : patient.labs?.ldl)),
+        tg_hdl_ratio: obs?.biomarkers?.tg_hdl_ratio !== undefined ? obs.biomarkers.tg_hdl_ratio : (findP2ObsValue('tg_hdl_ratio') ?? (obs ? undefined : patient.labs?.tg_hdl_ratio)),
+        serum_creatinine: obs?.biomarkers?.serum_creatinine !== undefined ? obs.biomarkers.serum_creatinine : (findP2ObsValue('serum_creatinine') ?? (obs ? undefined : patient.labs?.serum_creatinine)),
+        egfr: obs?.biomarkers?.egfr !== undefined ? obs.biomarkers.egfr : (findP2ObsValue('egfr') ?? (obs ? undefined : patient.labs?.egfr)),
+        serum_uric_acid: obs?.biomarkers?.serum_uric_acid !== undefined ? obs.biomarkers.serum_uric_acid : (findP2ObsValue('serum_uric_acid') ?? (obs ? undefined : patient.labs?.uric_acid)),
+        sgpt_alt: obs?.biomarkers?.sgpt_alt !== undefined ? obs.biomarkers.sgpt_alt : (findP2ObsValue('alt') ?? (obs ? undefined : patient.labs?.alt)),
+        sgot_ast: obs?.biomarkers?.sgot_ast !== undefined ? obs.biomarkers.sgot_ast : (findP2ObsValue('ast') ?? (obs ? undefined : patient.labs?.ast)),
+        serum_potassium: obs?.biomarkers?.serum_potassium !== undefined ? obs.biomarkers.serum_potassium : (findP2ObsValue('potassium') ?? (obs ? undefined : patient.labs?.potassium)),
+        serum_sodium: obs?.biomarkers?.serum_sodium !== undefined ? obs.biomarkers.serum_sodium : (findP2ObsValue('sodium') ?? (obs ? undefined : patient.labs?.sodium)),
+        tsh: obs?.biomarkers?.tsh !== undefined ? obs.biomarkers.tsh : (findP2ObsValue('tsh') ?? (obs ? undefined : patient.labs?.tsh)),
+        hemoglobin: obs?.biomarkers?.hemoglobin !== undefined ? obs.biomarkers.hemoglobin : (findP2ObsValue('hemoglobin') ?? (obs ? undefined : patient.labs?.hemoglobin)),
+        serum_ferritin: obs?.biomarkers?.serum_ferritin !== undefined ? obs.biomarkers.serum_ferritin : (findP2ObsValue('serum_ferritin') ?? (obs ? undefined : patient.labs?.ferritin)),
+        vitamin_d3: obs?.biomarkers?.vitamin_d3 !== undefined ? obs.biomarkers.vitamin_d3 : (findP2ObsValue('vitamin_d3') ?? (obs ? undefined : patient.labs?.vitamin_d3)),
+        vitamin_b12: obs?.biomarkers?.vitamin_b12 !== undefined ? obs.biomarkers.vitamin_b12 : (findP2ObsValue('vitamin_b12') ?? (obs ? undefined : patient.labs?.vitamin_b12)),
+        hs_crp: obs?.biomarkers?.hs_crp !== undefined ? obs.biomarkers.hs_crp : (findP2ObsValue('hs_crp') ?? (obs ? undefined : patient.labs?.hs_crp))
+      };
+    })(),
     gut_metrics: {
       bloating_severity: (obs?.bloating_severity ?? patient.gut_profile?.bloating) as any,
       acid_reflux_present: obs?.acid_reflux_present ?? patient.gut_profile?.acid_reflux_hypoacidity,

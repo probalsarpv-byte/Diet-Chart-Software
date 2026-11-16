@@ -100,44 +100,14 @@ export function calculateMetricChange(options: {
   let interpBn = 'ক্লিনিক্যাল পরিমাপের সীমার মধ্যে মানটি স্থিতিশীল রয়েছে।';
 
   if (!isTrivial) {
-    if (desiredDirection === 'lower_is_better') {
-      if (absoluteChange < 0) {
-        outcome = 'improved';
-        interpEn = `Reduction of ${Math.abs(absoluteChange)} ${unit} indicates favorable clinical improvement.`;
-        interpBn = `${Math.abs(absoluteChange)} ${unit} হ্রাস স্বাস্থ্যকর ক্লিনিক্যাল উন্নতির নির্দেশক।`;
-      } else {
-        outcome = 'worsened';
-        interpEn = `Elevation of ${absoluteChange} ${unit} indicates unfavorable progression requiring review.`;
-        interpBn = `${absoluteChange} ${unit} বৃদ্ধি প্রতিকূল লক্ষণ যা পর্যালোচনা প্রয়োজন।`;
-      }
-    } else if (desiredDirection === 'higher_is_better') {
-      if (absoluteChange > 0) {
-        outcome = 'improved';
-        interpEn = `Increase of ${absoluteChange} ${unit} reflects positive clinical recovery.`;
-        interpBn = `${absoluteChange} ${unit} বৃদ্ধি ইতিবাচক ক্লিনিক্যাল অগ্রগতির নির্দেশক।`;
-      } else {
-        outcome = 'worsened';
-        interpEn = `Decline of ${Math.abs(absoluteChange)} ${unit} indicates deterioration.`;
-        interpBn = `${Math.abs(absoluteChange)} ${unit} হ্রাস অবনতির নির্দেশক।`;
-      }
-    } else if (desiredDirection === 'range_bound' && optimalRange) {
-      const [optLow, optHigh] = optimalRange;
-      const baseDist = baselineVal < optLow ? optLow - baselineVal : baselineVal > optHigh ? baselineVal - optHigh : 0;
-      const currDist = currentVal < optLow ? optLow - currentVal : currentVal > optHigh ? currentVal - optHigh : 0;
-      if (currDist < baseDist) {
-        outcome = 'improved';
-        interpEn = `Value shifted closer toward optimal target range (${optLow}–${optHigh} ${unit}).`;
-        interpBn = `মানটি কাম্য স্বাভাবিক সীমার (${optLow}–${optHigh} ${unit}) কাছাকাছি এসেছে।`;
-      } else if (currDist > baseDist) {
-        outcome = 'worsened';
-        interpEn = `Value deviated further from optimal range (${optLow}–${optHigh} ${unit}).`;
-        interpBn = `মানটি কাম্য স্বাভাবিক সীমা (${optLow}–${optHigh} ${unit}) থেকে দূরে সরে গেছে।`;
-      } else {
-        outcome = 'stable';
-        interpEn = `Value remains consistently within or near range (${optLow}–${optHigh} ${unit}).`;
-        interpBn = `মানটি কাম্য সীমার কাছাকাছি স্থিতিশীল রয়েছে।`;
-      }
-    } else if (desiredDirection === 'contextual') {
+    const isSpecialWeightContext = markerId === 'weight_kg' && (
+      Boolean(clinicalContext.isPregnant) ||
+      Boolean(clinicalContext.isUnderweight) ||
+      Boolean(clinicalContext.isOncology) ||
+      Boolean(clinicalContext.isPediatric)
+    );
+
+    if (desiredDirection === 'contextual' || isSpecialWeightContext) {
       // Contextual interpretation: Weight, WHtR, etc.
       if (markerId === 'weight_kg') {
         const { isUnderweight, isOncology, isPregnant, isPediatric } = clinicalContext;
@@ -197,6 +167,43 @@ export function calculateMetricChange(options: {
         outcome = absoluteChange < 0 ? 'improved' : 'worsened';
         interpEn = `Delta: ${absoluteChange} ${unit}`;
         interpBn = `পার্থক্য: ${absoluteChange} ${unit}`;
+      }
+    } else if (desiredDirection === 'lower_is_better') {
+      if (absoluteChange < 0) {
+        outcome = 'improved';
+        interpEn = `Reduction of ${Math.abs(absoluteChange)} ${unit} indicates favorable clinical improvement.`;
+        interpBn = `${Math.abs(absoluteChange)} ${unit} হ্রাস স্বাস্থ্যকর ক্লিনিক্যাল উন্নতির নির্দেশক।`;
+      } else {
+        outcome = 'worsened';
+        interpEn = `Elevation of ${absoluteChange} ${unit} indicates unfavorable progression requiring review.`;
+        interpBn = `${absoluteChange} ${unit} বৃদ্ধি প্রতিকূল লক্ষণ যা পর্যালোচনা প্রয়োজন।`;
+      }
+    } else if (desiredDirection === 'higher_is_better') {
+      if (absoluteChange > 0) {
+        outcome = 'improved';
+        interpEn = `Increase of ${absoluteChange} ${unit} reflects positive clinical recovery.`;
+        interpBn = `${absoluteChange} ${unit} বৃদ্ধি ইতিবাচক ক্লিনিক্যাল অগ্রগতির নির্দেশক।`;
+      } else {
+        outcome = 'worsened';
+        interpEn = `Decline of ${Math.abs(absoluteChange)} ${unit} indicates deterioration.`;
+        interpBn = `${Math.abs(absoluteChange)} ${unit} হ্রাস অবনতির নির্দেশক।`;
+      }
+    } else if (desiredDirection === 'range_bound' && optimalRange) {
+      const [optLow, optHigh] = optimalRange;
+      const baseDist = baselineVal < optLow ? optLow - baselineVal : baselineVal > optHigh ? baselineVal - optHigh : 0;
+      const currDist = currentVal < optLow ? optLow - currentVal : currentVal > optHigh ? currentVal - optHigh : 0;
+      if (currDist < baseDist) {
+        outcome = 'improved';
+        interpEn = `Value shifted closer toward optimal target range (${optLow}–${optHigh} ${unit}).`;
+        interpBn = `মানটি কাম্য স্বাভাবিক সীমার (${optLow}–${optHigh} ${unit}) কাছাকাছি এসেছে।`;
+      } else if (currDist > baseDist) {
+        outcome = 'worsened';
+        interpEn = `Value deviated further from optimal range (${optLow}–${optHigh} ${unit}).`;
+        interpBn = `মানটি কাম্য স্বাভাবিক সীমা (${optLow}–${optHigh} ${unit}) থেকে দূরে সরে গেছে।`;
+      } else {
+        outcome = 'stable';
+        interpEn = `Value remains consistently within or near range (${optLow}–${optHigh} ${unit}).`;
+        interpBn = `মানটি কাম্য সীমার কাছাকাছি স্থিতিশীল রয়েছে।`;
       }
     }
   }
@@ -438,14 +445,34 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
   const normalizeLabs = (snap: ClinicalVisitSnapshot): Record<string, { value: number; unit?: string; test_date?: string }> => {
     const res: Record<string, { value: number; unit?: string; test_date?: string }> = {};
     if (snap.labs) {
-      for (const [k, v] of Object.entries(snap.labs)) {
-        if (v && typeof v.value === 'number') res[k] = v;
+      if (Array.isArray((snap.labs as any).entries)) {
+        for (const entry of (snap.labs as any).entries) {
+          const key = (entry.marker_id || entry.id || entry.name || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+          if (key && typeof entry.value === 'number') {
+            res[key] = { value: entry.value, unit: entry.unit, test_date: entry.test_date || snap.visit_date };
+          }
+        }
+      } else {
+        for (const [k, v] of Object.entries(snap.labs)) {
+          if (v && typeof (v as any).value === 'number') res[k.toLowerCase()] = v as any;
+        }
       }
     }
     if (snap.biomarkers) {
       for (const [k, v] of Object.entries(snap.biomarkers)) {
-        if (typeof v === 'number' && res[k] === undefined) {
-          res[k] = { value: v, test_date: snap.visit_date };
+        const key = k.toLowerCase();
+        if (typeof v === 'number' && res[key] === undefined) {
+          res[key] = { value: v, test_date: snap.visit_date };
+        }
+      }
+    }
+    // Also check p2AnalysisResult observations if present
+    const p2Obs = (snap as any).p2AnalysisResult?.observations;
+    if (Array.isArray(p2Obs)) {
+      for (const obs of p2Obs) {
+        const key = (obs.markerId || obs.id || obs.name || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+        if (key && typeof obs.value === 'number' && res[key] === undefined) {
+          res[key] = { value: obs.value, unit: obs.unit, test_date: obs.recordedAt || snap.visit_date };
         }
       }
     }
@@ -696,6 +723,48 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
     next_clinical_priorities.push('Consolidate current favorable nutritional adaptations and advance to next phase goals.');
   }
 
+  // ── 10. Multi-Visit Trend Series Extraction ───────────────────────
+  const candidateSnaps = (input.allSnapshots && input.allSnapshots.length > 0)
+    ? input.allSnapshots
+    : [baselineSnapshot, comparisonSnapshot];
+
+  const uniqueSnapMap = new Map<string, ClinicalVisitSnapshot>();
+  candidateSnaps.forEach(s => {
+    if (s && s.visit_id) uniqueSnapMap.set(s.visit_id, s);
+  });
+
+  const sortedSnaps = Array.from(uniqueSnapMap.values()).sort(
+    (a, b) => (a.visit_date || '').localeCompare(b.visit_date || '')
+  );
+
+  const trendDataPoints = sortedSnaps.map(s => {
+    let hba1cVal: number | undefined = undefined;
+    const labEntries = (s as any).labs?.entries || [];
+    const hba1cEntry = labEntries.find((e: any) => e.marker_id === 'hba1c' || e.name?.toLowerCase().includes('hba1c'));
+    if (hba1cEntry && typeof hba1cEntry.value === 'number') {
+      hba1cVal = hba1cEntry.value;
+    } else if ((s as any).p2AnalysisResult?.observations) {
+      const obs = (s as any).p2AnalysisResult.observations.find((o: any) => o.markerId === 'hba1c');
+      if (obs && typeof obs.value === 'number') hba1cVal = obs.value;
+    }
+
+    return {
+      visit_id: s.visit_id,
+      visit_date: s.visit_date,
+      weight_kg: s.anthropometrics?.weight_kg,
+      waist_cm: s.anthropometrics?.waist_cm,
+      hba1c: hba1cVal,
+      bloating_severity: s.gut_metrics?.bloating_severity,
+      bristol_stool_score: s.gut_metrics?.bristol_stool_score,
+      energy_score: s.gut_metrics?.energy_score,
+    };
+  });
+
+  const trend_series = {
+    is_multi_visit: trendDataPoints.length >= 3,
+    data_points: trendDataPoints
+  };
+
   return {
     patient_id: patient.id,
     baseline_visit_id: baselineSnapshot.visit_id,
@@ -717,6 +786,7 @@ export function executeLongitudinalComparison(input: ComparisonInput): Longitudi
     },
     clinical_safety_review,
     next_clinical_priorities,
+    trend_series,
   };
 }
 

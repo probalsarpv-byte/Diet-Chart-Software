@@ -782,6 +782,19 @@ export interface LongitudinalProgressAnalysis {
     new_contraindications: string[];
   };
   next_clinical_priorities: string[];
+  trend_series?: {
+    is_multi_visit: boolean;
+    data_points: {
+      visit_id: string;
+      visit_date: string;
+      weight_kg?: number;
+      waist_cm?: number;
+      hba1c?: number;
+      bloating_severity?: string;
+      bristol_stool_score?: number;
+      energy_score?: number;
+    }[];
+  };
 }
 
 // ─── Comparative Clinical Progress Report ─────────────────────────

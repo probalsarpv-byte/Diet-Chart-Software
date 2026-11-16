@@ -178,6 +178,7 @@ export interface PracticeContextType {
   rescheduleFollowUp: (appointmentId: string, newDate: string, newTime?: string, reason?: string) => boolean;
   cancelFollowUp: (appointmentId: string, reason?: string) => boolean;
   completeFollowUp: (appointmentId: string, actualVisitId?: string) => boolean;
+  startFollowUpConsultation: (appointmentId: string, targetPatientId: string) => ClinicalVisit | null;
   logFollowUpConsultation: (payload: {
     weight_kg: number;
     waist_cm: number;
@@ -1471,19 +1472,33 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Longitudinal Visits Management
   const startNewVisit = useCallback((patientId: string, visitType: ClinicalVisitType = 'routine_followup', notes?: string): ClinicalVisit | null => {
     const today = getDhakaTodayDateString();
-    const currentRecord: PatientRecord = {
-      schema_version: CURRENT_SCHEMA_VERSION,
-      patient,
-      visits,
-      clinical_visits: clinicalVisits,
-      follow_up_appointments: followUpAppointments,
-      visit_snapshots: visitSnapshots,
-      progress_reports: progressReports,
-      current_diet_chart: dietChart,
-      current_supplements: candidateSupplements,
-      timeline: dniResult.timeline,
-      updated_at: new Date().toISOString()
-    };
+    
+    // Safe patient record isolation: if starting visit for a patient different from active in-memory patient
+    let currentRecord: PatientRecord;
+    const isDifferentPatient = Boolean(patientId && patient.id && patient.id !== patientId);
+    
+    if (isDifferentPatient) {
+      const match = savedPatients.find(p => p.patient.id === patientId);
+      if (!match) {
+        console.error('[New Visit Error] Target patient not found in saved patients:', patientId);
+        return null;
+      }
+      currentRecord = migratePatientRecord(match);
+    } else {
+      currentRecord = {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        patient,
+        visits,
+        clinical_visits: clinicalVisits,
+        follow_up_appointments: followUpAppointments,
+        visit_snapshots: visitSnapshots,
+        progress_reports: progressReports,
+        current_diet_chart: dietChart,
+        current_supplements: candidateSupplements,
+        timeline: dniResult.timeline,
+        updated_at: new Date().toISOString()
+      };
+    }
 
     const tx = savePatientTransaction({
       currentRecord,
@@ -1502,6 +1517,16 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!tx.success || !tx.newVisit) {
       console.error('[New Visit Error] Failed to persist new visit transaction:', tx.error);
       return null;
+    }
+
+    if (isDifferentPatient) {
+      setVisits(tx.committedRecord.visits || []);
+      setFollowUpAppointments(tx.committedRecord.follow_up_appointments || []);
+      setVisitSnapshots(tx.committedRecord.visit_snapshots || []);
+      setProgressReports(tx.committedRecord.progress_reports || []);
+      setCurrentProgressReport(tx.committedRecord.progress_reports?.[0] || null);
+      setDietChart(tx.committedRecord.current_diet_chart || []);
+      safeStorage.setItem('shuddho_active_patient_id', patientId);
     }
 
     setClinicalVisits(tx.committedRecord.clinical_visits || []);
@@ -1567,7 +1592,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [currentVisit, clinicalVisits, patient, visits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients]);
 
-  // Follow-Up Appointments Management
+  // Follow-Up Appointments Management (Transactional & Persistent)
   const scheduleFollowUp = useCallback((
     appointmentData: Omit<FollowUpAppointment, 'id' | 'appointment_id' | 'created_at' | 'status'> & { status?: AppointmentStatus }
   ): FollowUpAppointment => {
@@ -1584,15 +1609,69 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     const refreshed = refreshAppointmentStatus(tempApt);
 
-    setFollowUpAppointments(prev => [refreshed, ...prev]);
+    const isCurrent = appointmentData.patient_id === patient.id;
+    if (isCurrent) {
+      setFollowUpAppointments(prev => [refreshed, ...prev]);
+    }
+
+    // Persist to safeStorage and savedPatients
+    const targetPatient = savedPatients.find(p => p.patient.id === appointmentData.patient_id) || (isCurrent ? {
+      schema_version: CURRENT_SCHEMA_VERSION,
+      patient,
+      visits,
+      clinical_visits: clinicalVisits,
+      follow_up_appointments: followUpAppointments,
+      visit_snapshots: visitSnapshots,
+      progress_reports: progressReports,
+      current_diet_chart: dietChart,
+      current_supplements: candidateSupplements,
+      timeline: dniResult.timeline,
+      updated_at: new Date().toISOString()
+    } : null);
+
+    if (targetPatient) {
+      const nextApts = [refreshed, ...(targetPatient.follow_up_appointments || []).filter(a => a.appointment_id !== newAptId && a.id !== newAptId)];
+      const tx = savePatientTransaction({
+        currentRecord: targetPatient,
+        storageEngine: safeStorage,
+        action: {
+          type: 'SAVE_RECORD',
+          payload: { follow_up_appointments: nextApts }
+        },
+        savedPatientsList: savedPatients
+      });
+      if (tx.success) {
+        setSavedPatients(tx.committedPatientsList);
+      }
+    }
+
     return refreshed;
-  }, []);
+  }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients]);
 
   const rescheduleFollowUp = useCallback((appointmentId: string, newDate: string, newTime?: string, reason?: string): boolean => {
+    let targetPatientId = patient.id;
     let found = false;
-    setFollowUpAppointments(prev => prev.map(apt => {
-      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+
+    for (const p of savedPatients) {
+      if ((p.follow_up_appointments || []).some(a => a.appointment_id === appointmentId || a.id === appointmentId)) {
+        targetPatientId = p.patient.id;
         found = true;
+        break;
+      }
+    }
+    if (!found && followUpAppointments.some(a => a.appointment_id === appointmentId || a.id === appointmentId)) {
+      found = true;
+    }
+    if (!found) return false;
+
+    const updater = (apt: FollowUpAppointment): FollowUpAppointment => {
+      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+        const historyEntry = {
+          previous_date: apt.scheduled_date,
+          previous_time: apt.scheduled_time,
+          rescheduled_at: new Date().toISOString(),
+          reason
+        };
         const updated: FollowUpAppointment = {
           ...apt,
           scheduled_date: newDate,
@@ -1600,20 +1679,57 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           rescheduled_from: apt.scheduled_date,
           status: 'rescheduled',
           notes: reason ? `${apt.notes ? apt.notes + ' | ' : ''}Rescheduled: ${reason}` : apt.notes,
-          clinician_notes: reason ? `${apt.clinician_notes ? apt.clinician_notes + ' | ' : ''}Rescheduled: ${reason}` : apt.clinician_notes
+          clinician_notes: reason ? `${apt.clinician_notes ? apt.clinician_notes + ' | ' : ''}Rescheduled: ${reason}` : apt.clinician_notes,
+          rescheduled_history: [...(apt.rescheduled_history || []), historyEntry]
         };
         return refreshAppointmentStatus(updated);
       }
       return apt;
-    }));
-    return found;
-  }, []);
+    };
+
+    if (targetPatientId === patient.id) {
+      setFollowUpAppointments(prev => prev.map(updater));
+    }
+
+    const targetPatient = savedPatients.find(p => p.patient.id === targetPatientId);
+    if (targetPatient) {
+      const updatedApts = (targetPatient.follow_up_appointments || []).map(updater);
+      const tx = savePatientTransaction({
+        currentRecord: targetPatient,
+        storageEngine: safeStorage,
+        action: {
+          type: 'SAVE_RECORD',
+          payload: { follow_up_appointments: updatedApts }
+        },
+        savedPatientsList: savedPatients
+      });
+      if (tx.success) {
+        setSavedPatients(tx.committedPatientsList);
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }, [patient.id, followUpAppointments, savedPatients]);
 
   const cancelFollowUp = useCallback((appointmentId: string, reason?: string): boolean => {
+    let targetPatientId = patient.id;
     let found = false;
-    setFollowUpAppointments(prev => prev.map(apt => {
-      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+
+    for (const p of savedPatients) {
+      if ((p.follow_up_appointments || []).some(a => a.appointment_id === appointmentId || a.id === appointmentId)) {
+        targetPatientId = p.patient.id;
         found = true;
+        break;
+      }
+    }
+    if (!found && followUpAppointments.some(a => a.appointment_id === appointmentId || a.id === appointmentId)) {
+      found = true;
+    }
+    if (!found) return false;
+
+    const updater = (apt: FollowUpAppointment): FollowUpAppointment => {
+      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
         return {
           ...apt,
           status: 'cancelled',
@@ -1621,26 +1737,125 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         };
       }
       return apt;
-    }));
-    return found;
-  }, []);
+    };
+
+    if (targetPatientId === patient.id) {
+      setFollowUpAppointments(prev => prev.map(updater));
+    }
+
+    const targetPatient = savedPatients.find(p => p.patient.id === targetPatientId);
+    if (targetPatient) {
+      const updatedApts = (targetPatient.follow_up_appointments || []).map(updater);
+      const tx = savePatientTransaction({
+        currentRecord: targetPatient,
+        storageEngine: safeStorage,
+        action: {
+          type: 'SAVE_RECORD',
+          payload: { follow_up_appointments: updatedApts }
+        },
+        savedPatientsList: savedPatients
+      });
+      if (tx.success) {
+        setSavedPatients(tx.committedPatientsList);
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }, [patient.id, followUpAppointments, savedPatients]);
 
   const completeFollowUp = useCallback((appointmentId: string, actualVisitId?: string): boolean => {
+    let targetPatientId = patient.id;
     let found = false;
-    setFollowUpAppointments(prev => prev.map(apt => {
-      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+
+    for (const p of savedPatients) {
+      if ((p.follow_up_appointments || []).some(a => a.appointment_id === appointmentId || a.id === appointmentId)) {
+        targetPatientId = p.patient.id;
         found = true;
+        break;
+      }
+    }
+    if (!found && followUpAppointments.some(a => a.appointment_id === appointmentId || a.id === appointmentId)) {
+      found = true;
+    }
+    if (!found) return false;
+
+    const visitIdToLink = actualVisitId || currentVisit?.visit_id || currentVisit?.id;
+
+    const updater = (apt: FollowUpAppointment): FollowUpAppointment => {
+      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
         return {
           ...apt,
           status: 'completed',
-          actual_visit_id: actualVisitId || currentVisit?.visit_id || currentVisit?.id,
-          completed_visit_id: actualVisitId || currentVisit?.visit_id || currentVisit?.id
+          actual_visit_id: visitIdToLink,
+          completed_visit_id: visitIdToLink
         };
       }
       return apt;
-    }));
-    return found;
-  }, [currentVisit]);
+    };
+
+    if (targetPatientId === patient.id) {
+      setFollowUpAppointments(prev => prev.map(updater));
+    }
+
+    const targetPatient = savedPatients.find(p => p.patient.id === targetPatientId);
+    if (targetPatient) {
+      const updatedApts = (targetPatient.follow_up_appointments || []).map(updater);
+      const tx = savePatientTransaction({
+        currentRecord: targetPatient,
+        storageEngine: safeStorage,
+        action: {
+          type: 'SAVE_RECORD',
+          payload: { follow_up_appointments: updatedApts }
+        },
+        savedPatientsList: savedPatients
+      });
+      if (tx.success) {
+        setSavedPatients(tx.committedPatientsList);
+        return true;
+      }
+      return false;
+    }
+    return true;
+  }, [patient.id, currentVisit, followUpAppointments, savedPatients]);
+
+  const startFollowUpConsultation = useCallback((appointmentId: string, targetPatientId: string): ClinicalVisit | null => {
+    // 1. Ensure new visit is created for target patient cleanly
+    const newVisit = startNewVisit(targetPatientId, 'routine_followup', `Follow-up from appointment ${appointmentId}`);
+    if (!newVisit) return null;
+
+    // 2. Link appointment with actual_visit_id WITHOUT marking it 'completed'
+    // Completion will happen upon finalized consultation save
+    const updater = (apt: FollowUpAppointment): FollowUpAppointment => {
+      if (apt.appointment_id === appointmentId || apt.id === appointmentId) {
+        return {
+          ...apt,
+          actual_visit_id: newVisit.visit_id
+        };
+      }
+      return apt;
+    };
+
+    if (targetPatientId === patient.id) {
+      setFollowUpAppointments(prev => prev.map(updater));
+    }
+
+    const targetPatient = savedPatients.find(p => p.patient.id === targetPatientId);
+    if (targetPatient) {
+      const updatedApts = (targetPatient.follow_up_appointments || []).map(updater);
+      savePatientTransaction({
+        currentRecord: targetPatient,
+        storageEngine: safeStorage,
+        action: {
+          type: 'SAVE_RECORD',
+          payload: { follow_up_appointments: updatedApts }
+        },
+        savedPatientsList: savedPatients
+      });
+    }
+
+    return newVisit;
+  }, [startNewVisit, patient.id, savedPatients]);
 
   // Dedicated Follow-Up Visit Recording (Atomic Transaction & Snapshot)
   const logFollowUpConsultation = useCallback((payload: {
@@ -1890,10 +2105,35 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     };
 
-    setProgressReports(prev => prev.map(r => r.report_id === reportId ? updatedReport : r));
+    const updatedReports = progressReports.map(r => r.report_id === reportId ? updatedReport : r);
 
-    if (currentProgressReport && currentProgressReport.report_id === reportId) {
-      setCurrentProgressReport(updatedReport);
+    const currentRecord: PatientRecord = {
+      schema_version: CURRENT_SCHEMA_VERSION,
+      patient,
+      visits,
+      clinical_visits: clinicalVisits,
+      follow_up_appointments: followUpAppointments,
+      visit_snapshots: visitSnapshots,
+      progress_reports: updatedReports,
+      current_diet_chart: dietChart,
+      current_supplements: candidateSupplements,
+      timeline: dniResult.timeline,
+      updated_at: new Date().toISOString()
+    };
+
+    const tx = savePatientTransaction({
+      currentRecord,
+      storageEngine: safeStorage,
+      action: {
+        type: 'SAVE_RECORD',
+        payload: { progress_reports: updatedReports }
+      },
+      savedPatientsList: savedPatients
+    });
+
+    if (!tx.success) {
+      console.error('Failed to persist progress report approval into patient aggregate:', tx.error);
+      return false;
     }
 
     const storageKey = `shuddho_progress_report_${patient.id}_${reportId}`;
@@ -1903,8 +2143,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return false;
     }
 
+    setSavedPatients(tx.committedPatientsList);
+    setProgressReports(updatedReports);
+    if (currentProgressReport && currentProgressReport.report_id === reportId) {
+      setCurrentProgressReport(updatedReport);
+    }
+
     return true;
-  }, [progressReports, currentProgressReport, patient.id]);
+  }, [progressReports, currentProgressReport, patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, dietChart, candidateSupplements, dniResult.timeline, savedPatients]);
 
   const loadDemoPatient = useCallback(() => {
     const seed = createInitialSeedPatient();
@@ -2039,6 +2285,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         rescheduleFollowUp,
         cancelFollowUp,
         completeFollowUp,
+        startFollowUpConsultation,
         logFollowUpConsultation,
         captureVisitSnapshot,
         generateProgressReport,
