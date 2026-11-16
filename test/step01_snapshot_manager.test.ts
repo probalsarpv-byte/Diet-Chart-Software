@@ -53,7 +53,7 @@ const samplePatient: PatientProfile = {
     sleep_quality_score: 6,
     digestive_fire_agni: 'samagni'
   },
-  labs: {},
+  labs: { lab_flags: [] },
   calculated: calculateAnthropometrics(45, 'female', 155, 75, 90, 'sedentary', [])
 };
 

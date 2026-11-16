@@ -48,7 +48,7 @@ const patient: PatientProfile = {
     sleep_quality_score: 5,
     digestive_fire_agni: 'unassessed'
   },
-  labs: {},
+  labs: { lab_flags: [] },
   calculated: {} as any
 };
 

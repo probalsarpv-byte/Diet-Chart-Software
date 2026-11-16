@@ -92,7 +92,7 @@ const validRecord: PatientRecord = {
       sleep_quality_score: 5,
       digestive_fire_agni: 'unassessed'
     },
-    labs: {},
+    labs: { lab_flags: [] },
     calculated: {
       bmi: 25.7,
       bmi_category_en: 'Overweight',

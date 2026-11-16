@@ -114,7 +114,7 @@ function createTestPatient(id: string, name: string): PatientProfile {
       sleep_quality_score: 5,
       digestive_fire_agni: 'unassessed'
     },
-    labs: {},
+    labs: { lab_flags: [] },
     calculated: calculateAnthropometrics(42, 'female', 160, 80, 95, 'sedentary', [])
   };
 }
@@ -191,9 +191,9 @@ runTest('Test A — Two Patients Isolation & Zero Contamination', () => {
   // Verify Patient A record has no traces of Patient B
   assert(recordA.patient.confirmed_allergies.length === 0, 'Patient A has no allergies');
   assert(recordB.patient.confirmed_allergies.includes('peanut'), 'Patient B has peanut allergy');
-  assert(recordA.visit_snapshots[0].anthropometrics.weight_kg === 80, 'Patient A baseline weight is 80 kg');
-  assert(recordB.visit_snapshots[0].anthropometrics.weight_kg === 65, 'Patient B baseline weight is 65 kg');
-  assert(!recordA.clinical_visits.some(v => v.patient_id === 'PAT-B'), 'Patient A has zero visits from Patient B');
+  assert(recordA.visit_snapshots![0].anthropometrics.weight_kg === 80, 'Patient A baseline weight is 80 kg');
+  assert(recordB.visit_snapshots![0].anthropometrics.weight_kg === 65, 'Patient B baseline weight is 65 kg');
+  assert(!recordA.clinical_visits!.some(v => v.patient_id === 'PAT-B'), 'Patient A has zero visits from Patient B');
 });
 
 // ── TEST B: Two Visits on Same Day (Distinct Persistent IDs) ───────────
@@ -462,7 +462,7 @@ runTest('Test J — Storage Failure Handling (No False Success)', () => {
 
   const saveResult = savePatient(record);
   assert(saveResult.success === false, 'Save operation reports false on storage quota failure');
-  assert(saveResult.error?.includes('QuotaExceededError'), 'Captures actual quota exceeded error');
+  assert(Boolean(saveResult.error?.includes('QuotaExceededError')), 'Captures actual quota exceeded error');
   mockStorage.shouldFailWrites = false; // Reset
 });
 
