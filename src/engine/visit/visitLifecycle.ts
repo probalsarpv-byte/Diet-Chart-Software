@@ -6,10 +6,18 @@
  * - Pure, deterministic state transition boundaries for visit creation, selection, and completion.
  * - Eliminates asynchronous React state setter race conditions.
  * - Guarantees strict patient ownership and collision-resistant identifiers.
+ * - Provides isolated transaction boundary with automatic rollback on persistence failure.
  */
 
 import { generateEntityId } from '../../utils/idGenerator';
-import { ClinicalVisit, ClinicalVisitType, PatientProfile } from '../../types';
+import { validateReferentialIntegrity } from '../../utils/referentialIntegrity';
+import {
+  ClinicalVisit,
+  ClinicalVisitType,
+  ClinicalVisitSnapshot,
+  PatientProfile,
+  PatientRecord
+} from '../../types';
 
 export interface CreateVisitTransitionParams {
   patient: PatientProfile;
@@ -96,4 +104,197 @@ export function completeVisitTransition(
     }
     return v;
   });
+}
+
+export interface RestoreVisitStateParams {
+  currentPatient: PatientProfile;
+  targetVisit: ClinicalVisit;
+  targetSnapshot?: ClinicalVisitSnapshot | null;
+}
+
+/**
+ * Pure function to restore clinical state when switching visits.
+ * Strictly avoids bleed-through: missing historical values remain undefined/zero.
+ */
+export function restoreVisitState(params: RestoreVisitStateParams): PatientProfile {
+  const { currentPatient, targetVisit, targetSnapshot } = params;
+  const visitId = targetVisit.visit_id || targetVisit.id;
+
+  if (!targetSnapshot) {
+    return {
+      ...currentPatient,
+      current_visit_id: visitId,
+      visit_date: targetVisit.visit_date,
+      weight_kg: 0,
+      waist_cm: 0,
+      vitals: {},
+      gut_profile: {
+        bloating: 'none',
+        acid_reflux_hypoacidity: false,
+        bristol_stool_score: 4,
+        energy_score: 7,
+        sleep_quality_score: 7,
+        digestive_fire_agni: 'unassessed'
+      },
+      labs: {
+        lab_flags: []
+      }
+    };
+  }
+
+  return {
+    ...currentPatient,
+    current_visit_id: visitId,
+    visit_date: targetSnapshot.visit_date || targetVisit.visit_date,
+    weight_kg: targetSnapshot.anthropometrics?.weight_kg ?? 0,
+    height_cm: targetSnapshot.anthropometrics?.height_cm ?? currentPatient.height_cm,
+    waist_cm: targetSnapshot.anthropometrics?.waist_cm ?? 0,
+    vitals: targetSnapshot.vitals ? { ...targetSnapshot.vitals } : {},
+    gut_profile: {
+      bloating: targetSnapshot.gut_metrics?.bloating_severity ?? 'none',
+      acid_reflux_hypoacidity: Boolean(targetSnapshot.gut_metrics?.acid_reflux_present),
+      bristol_stool_score: targetSnapshot.gut_metrics?.bristol_stool_score ?? 4,
+      energy_score: targetSnapshot.gut_metrics?.energy_score ?? 7,
+      sleep_quality_score: targetSnapshot.gut_metrics?.sleep_quality_score ?? 7,
+      digestive_fire_agni: targetSnapshot.gut_metrics?.agni_status ?? 'unassessed'
+    },
+    labs: {
+      fasting_glucose: targetSnapshot.biomarkers?.fbs,
+      two_hour_post_prandial: targetSnapshot.biomarkers?.ppbs,
+      hba1c: targetSnapshot.biomarkers?.hba1c,
+      fasting_insulin: targetSnapshot.biomarkers?.fasting_insulin,
+      homa_ir: targetSnapshot.biomarkers?.homa_ir,
+      total_cholesterol: targetSnapshot.biomarkers?.total_cholesterol,
+      triglycerides: targetSnapshot.biomarkers?.triglycerides,
+      hdl: targetSnapshot.biomarkers?.hdl,
+      ldl: targetSnapshot.biomarkers?.ldl,
+      tg_hdl_ratio: targetSnapshot.biomarkers?.tg_hdl_ratio,
+      serum_creatinine: targetSnapshot.biomarkers?.serum_creatinine,
+      egfr: targetSnapshot.biomarkers?.egfr,
+      uric_acid: targetSnapshot.biomarkers?.serum_uric_acid,
+      alt: targetSnapshot.biomarkers?.sgpt_alt,
+      ast: targetSnapshot.biomarkers?.sgot_ast,
+      potassium: targetSnapshot.biomarkers?.serum_potassium,
+      sodium: targetSnapshot.biomarkers?.serum_sodium,
+      tsh: targetSnapshot.biomarkers?.tsh,
+      hemoglobin: targetSnapshot.biomarkers?.hemoglobin,
+      ferritin: targetSnapshot.biomarkers?.serum_ferritin,
+      vitamin_d3: targetSnapshot.biomarkers?.vitamin_d3,
+      vitamin_b12: targetSnapshot.biomarkers?.vitamin_b12,
+      hs_crp: targetSnapshot.biomarkers?.hs_crp,
+      lab_flags: []
+    }
+  };
+}
+
+export interface StorageEngine {
+  setItem: (key: string, value: any) => boolean | void;
+  getItem?: (key: string) => any;
+}
+
+export type TransactionAction =
+  | { type: 'SAVE_RECORD'; payload?: Partial<PatientRecord> }
+  | { type: 'START_NEW_VISIT'; payload: { visitType?: ClinicalVisitType; visitDate?: string; notes?: string } }
+  | { type: 'REGISTER_PATIENT'; payload: PatientRecord };
+
+export interface TransactionResult {
+  success: boolean;
+  error?: string;
+  committedRecord: PatientRecord;
+  committedPatientsList: PatientRecord[];
+  newVisit?: ClinicalVisit;
+}
+
+/**
+ * Isolated transaction boundary for patient and visit persistence.
+ * Validates referential integrity, executes storage write first,
+ * and rolls back completely on any quota or storage failure.
+ */
+export function savePatientTransaction(params: {
+  currentRecord: PatientRecord;
+  storageEngine: StorageEngine;
+  action: TransactionAction;
+  savedPatientsList?: PatientRecord[];
+}): TransactionResult {
+  const { currentRecord, storageEngine, action, savedPatientsList = [] } = params;
+  let proposedRecord: PatientRecord;
+  let newVisit: ClinicalVisit | undefined;
+
+  if (action.type === 'START_NEW_VISIT') {
+    const transition = createNewVisitTransition({
+      patient: currentRecord.patient,
+      existingVisits: currentRecord.clinical_visits || [],
+      visitType: action.payload.visitType,
+      visitDate: action.payload.visitDate,
+      notes: action.payload.notes
+    });
+    newVisit = transition.newVisit;
+    proposedRecord = {
+      ...currentRecord,
+      patient: transition.updatedPatient,
+      clinical_visits: transition.updatedVisits,
+      updated_at: new Date().toISOString()
+    };
+  } else if (action.type === 'REGISTER_PATIENT') {
+    proposedRecord = action.payload;
+  } else {
+    // SAVE_RECORD
+    proposedRecord = {
+      ...currentRecord,
+      ...(action.payload || {}),
+      updated_at: new Date().toISOString()
+    };
+  }
+
+  // 1. Referential integrity validation
+  const integrity = validateReferentialIntegrity(proposedRecord);
+  if (!integrity.isValid) {
+    return {
+      success: false,
+      error: `Referential integrity validation failed: ${integrity.errors.join('; ')}`,
+      committedRecord: currentRecord,
+      committedPatientsList: savedPatientsList
+    };
+  }
+
+  // 2. Prepare proposed updated list
+  const patientId = proposedRecord.patient.id;
+  let updatedList: PatientRecord[];
+  if (action.type === 'REGISTER_PATIENT') {
+    updatedList = [proposedRecord, ...savedPatientsList.filter(p => p.patient.id !== patientId)];
+  } else {
+    const existingIndex = savedPatientsList.findIndex(p => p.patient.id === patientId);
+    if (existingIndex >= 0) {
+      updatedList = [...savedPatientsList];
+      updatedList[existingIndex] = proposedRecord;
+    } else {
+      updatedList = [proposedRecord, ...savedPatientsList];
+    }
+  }
+
+  // 3. Attempt atomic persistence
+  try {
+    const writeResult = storageEngine.setItem('shuddho_saved_patients', updatedList);
+    if (writeResult === false) {
+      return {
+        success: false,
+        error: 'Storage write failed (storage returned false)',
+        committedRecord: currentRecord,
+        committedPatientsList: savedPatientsList
+      };
+    }
+    return {
+      success: true,
+      committedRecord: proposedRecord,
+      committedPatientsList: updatedList,
+      newVisit
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Storage write exception (e.g. QuotaExceededError)',
+      committedRecord: currentRecord,
+      committedPatientsList: savedPatientsList
+    };
+  }
 }

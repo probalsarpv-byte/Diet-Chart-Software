@@ -171,6 +171,10 @@ export const DashboardTab: React.FC = () => {
   const handleStartFollowUpForAppointment = (apt: FollowUpAppointment) => {
     loadPatient(apt.patient_id);
     const newVisit = startNewVisit(apt.patient_id, 'routine_followup', `Follow-up from appointment ${apt.appointment_id}`);
+    if (!newVisit) {
+      alert("Failed to start follow-up visit: Storage persistence error or quota exceeded.");
+      return;
+    }
     completeFollowUp(apt.appointment_id, newVisit.visit_id);
     setActiveTab('assessment');
   };
@@ -179,13 +183,18 @@ export const DashboardTab: React.FC = () => {
     e.preventDefault();
     if (!newName.trim()) return;
 
-    registerNewPatient({
+    const registered = registerNewPatient({
       name: newName.trim(),
       age: typeof newAge === 'number' ? newAge : 0,
       gender: newGender,
       phone: newPhone.trim(),
       email: newEmail.trim()
     });
+
+    if (!registered) {
+      alert("Failed to register patient: Storage persistence error or quota exceeded.");
+      return;
+    }
 
     setNewName('');
     setNewAge('');

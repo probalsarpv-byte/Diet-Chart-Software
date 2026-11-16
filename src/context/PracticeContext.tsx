@@ -56,12 +56,18 @@ import {
 import { safeStorage } from '@/utils/storageManager';
 import { migratePatientRecord } from '@/utils/legacyMigration';
 import { validateReferentialIntegrity } from '@/utils/referentialIntegrity';
-import { createNewVisitTransition, completeVisitTransition } from '@/engine/visit/visitLifecycle';
+import { 
+  createNewVisitTransition, 
+  completeVisitTransition,
+  restoreVisitState,
+  savePatientTransaction
+} from '@/engine/visit/visitLifecycle';
 import { 
   createClinicalSnapshot, 
   appendSnapshotWithRevisionPolicy, 
   getLatestVisitSnapshot, 
-  getApprovedBaselineSnapshot 
+  getApprovedBaselineSnapshot,
+  ClinicalObservationsPayload
 } from '@/engine/snapshot/snapshotManager';
 import { generateEntityId } from '@/utils/idGenerator';
 
@@ -164,15 +170,15 @@ export interface PracticeContextType {
   progressReports: ComparativeProgressReport[];
   currentProgressReport: ComparativeProgressReport | null;
 
-  registerNewPatient: (adminData: Partial<PatientProfile>) => PatientProfile;
-  startNewVisit: (patientId: string, visitType?: ClinicalVisitType, notes?: string) => ClinicalVisit;
+  registerNewPatient: (adminData: Partial<PatientProfile>) => PatientProfile | null;
+  startNewVisit: (patientId: string, visitType?: ClinicalVisitType, notes?: string) => ClinicalVisit | null;
   selectVisit: (visitId: string) => void;
   completeCurrentVisit: (summary?: string) => void;
   scheduleFollowUp: (appointmentData: Omit<FollowUpAppointment, 'id' | 'appointment_id' | 'created_at' | 'status'> & { appointment_id?: string; status?: AppointmentStatus }) => FollowUpAppointment;
   rescheduleFollowUp: (appointmentId: string, newDate: string, newTime?: string, reason?: string) => boolean;
   cancelFollowUp: (appointmentId: string, reason?: string) => boolean;
   completeFollowUp: (appointmentId: string, actualVisitId?: string) => boolean;
-  captureVisitSnapshot: (isBaseline?: boolean) => ClinicalVisitSnapshot;
+  captureVisitSnapshot: (isBaseline?: boolean, amendmentReason?: string, observationPayload?: ClinicalObservationsPayload) => ClinicalVisitSnapshot;
   generateProgressReport: (baselineVisitId: string, comparisonVisitId: string, comparisonMode?: 'baseline_vs_current' | 'previous_vs_current' | 'selected_pair' | 'trend_series') => ComparativeProgressReport | null;
   approveProgressReport: (reportId: string, clinicianId: string, notes?: string) => boolean;
   loadDemoPatient: () => void;
@@ -1237,29 +1243,22 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       updated_at: new Date().toISOString()
     };
 
-    // Strict referential integrity validation before persistence boundary
-    const integrity = validateReferentialIntegrity(record);
-    if (!integrity.isValid) {
-      console.error('[Integrity Error] Blocked saving contaminated patient record:', integrity.errors);
+    const tx = savePatientTransaction({
+      currentRecord: record,
+      storageEngine: safeStorage,
+      action: { type: 'SAVE_RECORD' },
+      savedPatientsList: savedPatients
+    });
+
+    if (!tx.success) {
+      console.error('[Save Error] Transaction failed:', tx.error);
       return false;
     }
 
-    let saveSuccess = true;
-    setSavedPatients(prev => {
-      const idx = prev.findIndex(p => p.patient.id === patient.id);
-      let updated: PatientRecord[];
-      if (idx >= 0) {
-        updated = [...prev];
-        updated[idx] = record;
-      } else {
-        updated = [record, ...prev];
-      }
-      saveSuccess = safeStorage.setItem('shuddho_saved_patients', updated);
-      return updated;
-    });
-
-    return saveSuccess;
-  }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline]);
+    // Only commit in-memory state after storage write succeeded
+    setSavedPatients(tx.committedPatientsList);
+    return true;
+  }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients]);
 
   const loadPatient = useCallback((id: string) => {
     // 1. Flush/save currently active patient first to avoid data loss on patient switch
@@ -1293,7 +1292,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [savedPatients, patient, saveCurrentPatient]);
 
   // Dedicated Patient Registration without fictional labs or placeholder anthropometrics
-  const registerNewPatient = useCallback((adminData: Partial<PatientProfile>): PatientProfile => {
+  const registerNewPatient = useCallback((adminData: Partial<PatientProfile>): PatientProfile | null => {
     const newId = generateCollisionResistantId('pt');
     const today = getDhakaTodayDateString();
     const initialVisitId = generateCollisionResistantId(`vis_${newId}`);
@@ -1396,57 +1395,86 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setP2AnalysisResult(null);
     setCurrentClinicalAssessment(null);
 
-    setSavedPatients(prev => {
-      const updated = [newRecord, ...prev.filter(p => p.patient.id !== newId)];
-      safeStorage.setItem('shuddho_saved_patients', updated);
-      return updated;
+    const tx = savePatientTransaction({
+      currentRecord: newRecord,
+      storageEngine: safeStorage,
+      action: { type: 'REGISTER_PATIENT', payload: newRecord },
+      savedPatientsList: savedPatients
     });
 
+    if (!tx.success) {
+      console.error('[Registration Error] Failed to persist new patient:', tx.error);
+      return null;
+    }
+
+    setPatient(freshPatient);
+    setClinicalVisits([initialVisit]);
+    setCurrentVisit(initialVisit);
+    setFollowUpAppointments([]);
+    setVisitSnapshots([]);
+    setProgressReports([]);
+    setCurrentProgressReport(null);
+    setVisits([]);
+    setDietChart([]);
+    setCandidateSupplements([]);
+    setP2AnalysisResult(null);
+    setCurrentClinicalAssessment(null);
+    setSavedPatients(tx.committedPatientsList);
+
     return freshPatient;
-  }, []);
+  }, [savedPatients]);
 
   const createNewPatient = useCallback(() => {
-    return registerNewPatient({
+    registerNewPatient({
       name: "New Patient / নতুন রোগী",
       gender: 'female',
     });
   }, [registerNewPatient]);
 
   // Longitudinal Visits Management
-  const startNewVisit = useCallback((patientId: string, visitType: ClinicalVisitType = 'routine_followup', notes?: string): ClinicalVisit => {
+  const startNewVisit = useCallback((patientId: string, visitType: ClinicalVisitType = 'routine_followup', notes?: string): ClinicalVisit | null => {
     const today = getDhakaTodayDateString();
-    const transition = createNewVisitTransition({
+    const currentRecord: PatientRecord = {
+      schema_version: CURRENT_SCHEMA_VERSION,
       patient,
-      existingVisits: clinicalVisits,
-      visitType,
-      notes,
-      visitDate: today
+      visits,
+      clinical_visits: clinicalVisits,
+      follow_up_appointments: followUpAppointments,
+      visit_snapshots: visitSnapshots,
+      progress_reports: progressReports,
+      current_diet_chart: dietChart,
+      current_supplements: candidateSupplements,
+      timeline: dniResult.timeline,
+      updated_at: new Date().toISOString()
+    };
+
+    const tx = savePatientTransaction({
+      currentRecord,
+      storageEngine: safeStorage,
+      action: {
+        type: 'START_NEW_VISIT',
+        payload: {
+          visitType,
+          visitDate: today,
+          notes
+        }
+      },
+      savedPatientsList: savedPatients
     });
 
-    setClinicalVisits(transition.updatedVisits);
-    setCurrentVisit(transition.newVisit);
-    setPatient(transition.updatedPatient);
+    if (!tx.success || !tx.newVisit) {
+      console.error('[New Visit Error] Failed to persist new visit transaction:', tx.error);
+      return null;
+    }
 
-    // Atomically persist to savedPatients to eliminate desynchronization
-    setSavedPatients(prev => {
-      const idx = prev.findIndex(p => p.patient.id === patientId);
-      if (idx >= 0) {
-        const updated = [...prev];
-        updated[idx] = {
-          ...updated[idx],
-          patient: transition.updatedPatient,
-          clinical_visits: transition.updatedVisits,
-          updated_at: new Date().toISOString()
-        };
-        safeStorage.setItem('shuddho_saved_patients', updated);
-        return updated;
-      }
-      return prev;
-    });
+    setClinicalVisits(tx.committedRecord.clinical_visits || []);
+    setCurrentVisit(tx.newVisit);
+    setPatient(tx.committedRecord.patient);
+    setSavedPatients(tx.committedPatientsList);
 
-    invalidateP2Approval(`New visit initiated: ${transition.newVisit.visit_id}`);
-    return transition.newVisit;
-  }, [patient, clinicalVisits, invalidateP2Approval]);
+    invalidateP2Approval(`New visit initiated: ${tx.newVisit.visit_id}`);
+    return tx.newVisit;
+  }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients, invalidateP2Approval]);
 
   const selectVisit = useCallback((visitId: string) => {
     const match = clinicalVisits.find(v => v.visit_id === visitId || v.id === visitId);
@@ -1456,59 +1484,15 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const snap = getLatestVisitSnapshot(visitSnapshots, match.visit_id || match.id || '');
 
     setPatient(prev => {
-      if (!snap) {
-        return {
-          ...prev,
-          current_visit_id: match.visit_id || match.id,
-          visit_date: match.visit_date
-        };
-      }
-      return {
-        ...prev,
-        current_visit_id: match.visit_id || match.id,
-        visit_date: snap.visit_date || match.visit_date,
-        weight_kg: snap.anthropometrics?.weight_kg ?? prev.weight_kg,
-        height_cm: snap.anthropometrics?.height_cm ?? prev.height_cm,
-        waist_cm: snap.anthropometrics?.waist_cm ?? prev.waist_cm,
-        vitals: snap.vitals ? { ...prev.vitals, ...snap.vitals } : prev.vitals,
-        gut_profile: {
-          ...prev.gut_profile,
-          bloating: snap.gut_metrics?.bloating_severity ?? prev.gut_profile.bloating,
-          acid_reflux_hypoacidity: snap.gut_metrics?.acid_reflux_present ?? prev.gut_profile.acid_reflux_hypoacidity,
-          bristol_stool_score: snap.gut_metrics?.bristol_stool_score ?? prev.gut_profile.bristol_stool_score,
-          energy_score: snap.gut_metrics?.energy_score ?? prev.gut_profile.energy_score,
-          sleep_quality_score: snap.gut_metrics?.sleep_quality_score ?? prev.gut_profile.sleep_quality_score,
-          digestive_fire_agni: snap.gut_metrics?.agni_status ?? prev.gut_profile.digestive_fire_agni,
-        },
-        labs: {
-          ...prev.labs,
-          fasting_glucose: snap.biomarkers?.fbs ?? prev.labs.fasting_glucose,
-          two_hour_post_prandial: snap.biomarkers?.ppbs ?? prev.labs.two_hour_post_prandial,
-          hba1c: snap.biomarkers?.hba1c ?? prev.labs.hba1c,
-          fasting_insulin: snap.biomarkers?.fasting_insulin ?? prev.labs.fasting_insulin,
-          homa_ir: snap.biomarkers?.homa_ir ?? prev.labs.homa_ir,
-          total_cholesterol: snap.biomarkers?.total_cholesterol ?? prev.labs.total_cholesterol,
-          triglycerides: snap.biomarkers?.triglycerides ?? prev.labs.triglycerides,
-          hdl: snap.biomarkers?.hdl ?? prev.labs.hdl,
-          ldl: snap.biomarkers?.ldl ?? prev.labs.ldl,
-          tg_hdl_ratio: snap.biomarkers?.tg_hdl_ratio ?? prev.labs.tg_hdl_ratio,
-          serum_creatinine: snap.biomarkers?.serum_creatinine ?? prev.labs.serum_creatinine,
-          egfr: snap.biomarkers?.egfr ?? prev.labs.egfr,
-          uric_acid: snap.biomarkers?.serum_uric_acid ?? prev.labs.uric_acid,
-          alt: snap.biomarkers?.sgpt_alt ?? prev.labs.alt,
-          ast: snap.biomarkers?.sgot_ast ?? prev.labs.ast,
-          potassium: snap.biomarkers?.serum_potassium ?? prev.labs.potassium,
-          sodium: snap.biomarkers?.serum_sodium ?? prev.labs.sodium,
-          tsh: snap.biomarkers?.tsh ?? prev.labs.tsh,
-          hemoglobin: snap.biomarkers?.hemoglobin ?? prev.labs.hemoglobin,
-          ferritin: snap.biomarkers?.serum_ferritin ?? prev.labs.ferritin,
-          vitamin_d3: snap.biomarkers?.vitamin_d3 ?? prev.labs.vitamin_d3,
-          vitamin_b12: snap.biomarkers?.vitamin_b12 ?? prev.labs.vitamin_b12,
-          hs_crp: snap.biomarkers?.hs_crp ?? prev.labs.hs_crp
-        }
-      };
+      return restoreVisitState({
+        currentPatient: prev,
+        targetVisit: match,
+        targetSnapshot: snap
+      });
     });
-  }, [clinicalVisits, visitSnapshots]);
+
+    invalidateP2Approval(`Switched to visit ${visitId}`);
+  }, [clinicalVisits, visitSnapshots, invalidateP2Approval]);
 
   const completeCurrentVisit = useCallback((summary?: string) => {
     if (!currentVisit) return;
@@ -1611,7 +1595,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [currentVisit]);
 
   // Visit Snapshots
-  const captureVisitSnapshot = useCallback((isBaseline: boolean = false, amendmentReason?: string): ClinicalVisitSnapshot => {
+  const captureVisitSnapshot = useCallback((
+    isBaseline: boolean = false, 
+    amendmentReason?: string,
+    clinicalObservationsPayload?: ClinicalObservationsPayload
+  ): ClinicalVisitSnapshot => {
     const visitId = patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id || generateCollisionResistantId(`vis_${patient.id}`);
     const snapshot = createClinicalSnapshot({
       patient,
@@ -1623,10 +1611,28 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       relatedAssessmentId: currentClinicalAssessment?.assessment_id,
       amendmentReason,
       clinicalSafetyEvaluation,
-      p2AnalysisResult
+      p2AnalysisResult,
+      clinicalObservationsPayload
     });
 
     setVisitSnapshots(prev => appendSnapshotWithRevisionPolicy(prev, snapshot));
+
+    // When explicit observations are provided and it relates to current visit, update active patient profile
+    if (clinicalObservationsPayload && (visitId === patient.current_visit_id || !patient.current_visit_id)) {
+      setPatient(prev => ({
+        ...prev,
+        weight_kg: clinicalObservationsPayload.weight_kg ?? prev.weight_kg,
+        waist_cm: clinicalObservationsPayload.waist_cm ?? prev.waist_cm,
+        gut_profile: {
+          ...prev.gut_profile,
+          bloating: (clinicalObservationsPayload.bloating_severity === 'moderate' ? 'mild' : (clinicalObservationsPayload.bloating_severity || prev.gut_profile.bloating)) as any,
+          acid_reflux_hypoacidity: clinicalObservationsPayload.acid_reflux_present ?? prev.gut_profile.acid_reflux_hypoacidity,
+          bristol_stool_score: clinicalObservationsPayload.bristol_stool_score ?? prev.gut_profile.bristol_stool_score,
+          energy_score: clinicalObservationsPayload.energy_score ?? prev.gut_profile.energy_score
+        }
+      }));
+    }
+
     return snapshot;
   }, [patient, currentVisit, p2AnalysisResult, currentClinicalAssessment, clinicalSafetyEvaluation]);
 

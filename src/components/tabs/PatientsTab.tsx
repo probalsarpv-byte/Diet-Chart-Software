@@ -82,7 +82,11 @@ export const PatientsTab: React.FC = () => {
   }, [clinicalVisits, patient.id]);
 
   const handleStartNewVisit = () => {
-    startNewVisit(patient.id, 'routine_followup', 'Follow-up clinical consultation');
+    const v = startNewVisit(patient.id, 'routine_followup', 'Follow-up clinical consultation');
+    if (!v) {
+      alert(bn ? 'ভিজিট তৈরি করা সম্ভব হয়নি: স্টোরেজ ত্রুটি বা কোটা অতিক্রান্ত।' : 'Failed to create new visit: Storage persistence error or quota exceeded.');
+      return;
+    }
     setActiveTab('assessment');
   };
 
@@ -109,7 +113,7 @@ export const PatientsTab: React.FC = () => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    registerNewPatient({
+    const registered = registerNewPatient({
       name: name.trim(),
       age: typeof age === 'number' ? age : 0,
       gender,
@@ -117,6 +121,11 @@ export const PatientsTab: React.FC = () => {
       email: email.trim(),
       population_group: populationGroup
     });
+
+    if (!registered) {
+      alert(bn ? 'রোগী নিবন্ধন ব্যর্থ হয়েছে: স্টোরেজ ত্রুটি বা কোটা অতিক্রান্ত।' : 'Failed to register patient: Storage persistence error or quota exceeded.');
+      return;
+    }
 
     setName('');
     setAge('');

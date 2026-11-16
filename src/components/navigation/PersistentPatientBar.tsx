@@ -77,7 +77,11 @@ export const PersistentPatientBar: React.FC = () => {
   );
 
   const handleConfirmNewVisit = () => {
-    startNewVisit(patient.id, newVisitType);
+    const v = startNewVisit(patient.id, newVisitType);
+    if (!v) {
+      alert(bn ? "ভিজিট শুরু করতে ব্যর্থ হয়েছে: স্টোরেজ সীমা অতিক্রম করেছে বা ডাটা সংরক্ষণে ত্রুটি।" : "Failed to initiate new visit: storage quota exceeded or persistence error.");
+      return;
+    }
     setShowNewVisitModal(false);
     setActiveTab('assessment');
   };

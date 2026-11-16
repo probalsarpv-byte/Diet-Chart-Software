@@ -16,6 +16,22 @@ import {
   ClinicalVisitType
 } from '../../types';
 
+export interface ClinicalObservationsPayload {
+  weight_kg?: number;
+  waist_cm?: number;
+  whtr?: number;
+  height_cm?: number;
+  bristol_stool_score?: number;
+  energy_score?: number;
+  bloating_severity?: 'none' | 'mild' | 'moderate' | 'severe';
+  acid_reflux_present?: boolean;
+  sleep_quality_score?: number;
+  agni_status?: string;
+  notes?: string;
+  biomarkers?: Record<string, any>;
+  vitals?: Record<string, any>;
+}
+
 export interface CreateSnapshotParams {
   patient: PatientProfile;
   visitId: string;
@@ -28,6 +44,7 @@ export interface CreateSnapshotParams {
   amendedFromSnapshotId?: string;
   clinicalSafetyEvaluation?: any;
   p2AnalysisResult?: any;
+  clinicalObservationsPayload?: ClinicalObservationsPayload;
 }
 
 /**
@@ -45,7 +62,8 @@ export function createClinicalSnapshot(params: CreateSnapshotParams): ClinicalVi
     amendmentReason,
     amendedFromSnapshotId,
     clinicalSafetyEvaluation,
-    p2AnalysisResult
+    p2AnalysisResult,
+    clinicalObservationsPayload
   } = params;
 
   const snapId = generateEntityId(`snap_${patient.id}`);
@@ -53,6 +71,23 @@ export function createClinicalSnapshot(params: CreateSnapshotParams): ClinicalVi
 
   // Distinguish unmeasured anthropometrics from measured zero
   const isUnmeasured = Boolean(patient.calculated?.is_unmeasured || (patient.weight_kg === 0 && patient.height_cm === 0));
+
+  const obs = clinicalObservationsPayload;
+  const weightKg = obs?.weight_kg !== undefined
+    ? obs.weight_kg
+    : (isUnmeasured && patient.weight_kg === 0 ? undefined : patient.weight_kg);
+
+  const waistCm = obs?.waist_cm !== undefined
+    ? obs.waist_cm
+    : (isUnmeasured && patient.waist_cm === 0 ? undefined : patient.waist_cm);
+
+  const heightCm = obs?.height_cm !== undefined
+    ? obs.height_cm
+    : (isUnmeasured && patient.height_cm === 0 ? undefined : patient.height_cm);
+
+  const whtr = (heightCm && heightCm > 0 && waistCm && waistCm > 0)
+    ? Math.round((waistCm / heightCm) * 100) / 100
+    : (obs?.whtr ?? (isUnmeasured ? undefined : patient.calculated?.whtr));
 
   return {
     snapshot_id: snapId,
@@ -71,11 +106,11 @@ export function createClinicalSnapshot(params: CreateSnapshotParams): ClinicalVi
     amendment_reason: amendmentReason,
     amended_from_snapshot_id: amendedFromSnapshotId,
     anthropometrics: {
-      weight_kg: isUnmeasured && patient.weight_kg === 0 ? undefined : patient.weight_kg,
-      height_cm: isUnmeasured && patient.height_cm === 0 ? undefined : patient.height_cm,
+      weight_kg: weightKg,
+      height_cm: heightCm,
       bmi: isUnmeasured ? undefined : patient.calculated?.bmi,
-      waist_cm: isUnmeasured && patient.waist_cm === 0 ? undefined : patient.waist_cm,
-      whtr: isUnmeasured ? undefined : patient.calculated?.whtr,
+      waist_cm: waistCm,
+      whtr: whtr,
       bmr_kcal: isUnmeasured ? undefined : patient.calculated?.bmr,
       tdee_kcal: isUnmeasured ? undefined : patient.calculated?.tdee,
       target_calories: isUnmeasured ? undefined : patient.calculated?.target_calories,
@@ -83,39 +118,39 @@ export function createClinicalSnapshot(params: CreateSnapshotParams): ClinicalVi
       target_carbs_g: isUnmeasured ? undefined : patient.calculated?.target_carbs_g,
       target_fat_g: isUnmeasured ? undefined : patient.calculated?.target_fat_g
     },
-    vitals: patient.vitals || {},
+    vitals: obs?.vitals ? { ...(patient.vitals || {}), ...obs.vitals } : (patient.vitals || {}),
     biomarkers: {
-      fbs: patient.labs?.fasting_glucose,
-      ppbs: patient.labs?.two_hour_post_prandial,
-      hba1c: patient.labs?.hba1c,
-      fasting_insulin: patient.labs?.fasting_insulin,
-      homa_ir: patient.labs?.homa_ir,
-      total_cholesterol: patient.labs?.total_cholesterol,
-      triglycerides: patient.labs?.triglycerides,
-      hdl: patient.labs?.hdl,
-      ldl: patient.labs?.ldl,
-      tg_hdl_ratio: patient.labs?.tg_hdl_ratio,
-      serum_creatinine: patient.labs?.serum_creatinine,
-      egfr: patient.labs?.egfr,
-      serum_uric_acid: patient.labs?.uric_acid,
-      sgpt_alt: patient.labs?.alt,
-      sgot_ast: patient.labs?.ast,
-      serum_potassium: patient.labs?.potassium,
-      serum_sodium: patient.labs?.sodium,
-      tsh: patient.labs?.tsh,
-      hemoglobin: patient.labs?.hemoglobin,
-      serum_ferritin: patient.labs?.ferritin,
-      vitamin_d3: patient.labs?.vitamin_d3,
-      vitamin_b12: patient.labs?.vitamin_b12,
-      hs_crp: patient.labs?.hs_crp
+      fbs: obs?.biomarkers?.fbs !== undefined ? obs.biomarkers.fbs : (obs ? undefined : patient.labs?.fasting_glucose),
+      ppbs: obs?.biomarkers?.ppbs !== undefined ? obs.biomarkers.ppbs : (obs ? undefined : patient.labs?.two_hour_post_prandial),
+      hba1c: obs?.biomarkers?.hba1c !== undefined ? obs.biomarkers.hba1c : (obs ? undefined : patient.labs?.hba1c),
+      fasting_insulin: obs?.biomarkers?.fasting_insulin !== undefined ? obs.biomarkers.fasting_insulin : (obs ? undefined : patient.labs?.fasting_insulin),
+      homa_ir: obs?.biomarkers?.homa_ir !== undefined ? obs.biomarkers.homa_ir : (obs ? undefined : patient.labs?.homa_ir),
+      total_cholesterol: obs?.biomarkers?.total_cholesterol !== undefined ? obs.biomarkers.total_cholesterol : (obs ? undefined : patient.labs?.total_cholesterol),
+      triglycerides: obs?.biomarkers?.triglycerides !== undefined ? obs.biomarkers.triglycerides : (obs ? undefined : patient.labs?.triglycerides),
+      hdl: obs?.biomarkers?.hdl !== undefined ? obs.biomarkers.hdl : (obs ? undefined : patient.labs?.hdl),
+      ldl: obs?.biomarkers?.ldl !== undefined ? obs.biomarkers.ldl : (obs ? undefined : patient.labs?.ldl),
+      tg_hdl_ratio: obs?.biomarkers?.tg_hdl_ratio !== undefined ? obs.biomarkers.tg_hdl_ratio : (obs ? undefined : patient.labs?.tg_hdl_ratio),
+      serum_creatinine: obs?.biomarkers?.serum_creatinine !== undefined ? obs.biomarkers.serum_creatinine : (obs ? undefined : patient.labs?.serum_creatinine),
+      egfr: obs?.biomarkers?.egfr !== undefined ? obs.biomarkers.egfr : (obs ? undefined : patient.labs?.egfr),
+      serum_uric_acid: obs?.biomarkers?.serum_uric_acid !== undefined ? obs.biomarkers.serum_uric_acid : (obs ? undefined : patient.labs?.uric_acid),
+      sgpt_alt: obs?.biomarkers?.sgpt_alt !== undefined ? obs.biomarkers.sgpt_alt : (obs ? undefined : patient.labs?.alt),
+      sgot_ast: obs?.biomarkers?.sgot_ast !== undefined ? obs.biomarkers.sgot_ast : (obs ? undefined : patient.labs?.ast),
+      serum_potassium: obs?.biomarkers?.serum_potassium !== undefined ? obs.biomarkers.serum_potassium : (obs ? undefined : patient.labs?.potassium),
+      serum_sodium: obs?.biomarkers?.serum_sodium !== undefined ? obs.biomarkers.serum_sodium : (obs ? undefined : patient.labs?.sodium),
+      tsh: obs?.biomarkers?.tsh !== undefined ? obs.biomarkers.tsh : (obs ? undefined : patient.labs?.tsh),
+      hemoglobin: obs?.biomarkers?.hemoglobin !== undefined ? obs.biomarkers.hemoglobin : (obs ? undefined : patient.labs?.hemoglobin),
+      serum_ferritin: obs?.biomarkers?.serum_ferritin !== undefined ? obs.biomarkers.serum_ferritin : (obs ? undefined : patient.labs?.ferritin),
+      vitamin_d3: obs?.biomarkers?.vitamin_d3 !== undefined ? obs.biomarkers.vitamin_d3 : (obs ? undefined : patient.labs?.vitamin_d3),
+      vitamin_b12: obs?.biomarkers?.vitamin_b12 !== undefined ? obs.biomarkers.vitamin_b12 : (obs ? undefined : patient.labs?.vitamin_b12),
+      hs_crp: obs?.biomarkers?.hs_crp !== undefined ? obs.biomarkers.hs_crp : (obs ? undefined : patient.labs?.hs_crp)
     },
     gut_metrics: {
-      bloating_severity: patient.gut_profile?.bloating,
-      acid_reflux_present: patient.gut_profile?.acid_reflux_hypoacidity,
-      bristol_stool_score: patient.gut_profile?.bristol_stool_score,
-      energy_score: patient.gut_profile?.energy_score,
-      sleep_quality_score: patient.gut_profile?.sleep_quality_score,
-      agni_status: patient.gut_profile?.digestive_fire_agni
+      bloating_severity: (obs?.bloating_severity ?? patient.gut_profile?.bloating) as any,
+      acid_reflux_present: obs?.acid_reflux_present ?? patient.gut_profile?.acid_reflux_hypoacidity,
+      bristol_stool_score: obs?.bristol_stool_score ?? patient.gut_profile?.bristol_stool_score,
+      energy_score: obs?.energy_score ?? patient.gut_profile?.energy_score,
+      sleep_quality_score: obs?.sleep_quality_score ?? patient.gut_profile?.sleep_quality_score,
+      agni_status: (obs?.agni_status ?? patient.gut_profile?.digestive_fire_agni) as any
     },
     ayurvedic_state: {
       agni_classification: patient.gut_profile?.digestive_fire_agni,

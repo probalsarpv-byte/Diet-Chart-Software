@@ -166,7 +166,14 @@ export const FollowUpTab: React.FC = () => {
     };
 
     addVisit(newV);
-    captureVisitSnapshot(false);
+    captureVisitSnapshot(false, undefined, {
+      weight_kg: newWeight,
+      waist_cm: newWaist,
+      whtr,
+      bristol_stool_score: newStool,
+      energy_score: newEnergy,
+      notes: newNotes
+    });
     setShowAddVisitModal(false);
   };
 
