@@ -140,7 +140,10 @@ async function runBrowserE2E() {
     // 4. Navigate to Intake tab to record baseline measurements: weight 80 kg, waist 95 cm
     await navigateToIntake();
 
-    // Fill weight & waist inputs in Intake
+    // Fill height, weight & waist inputs in Intake
+    const heightInput = page.locator('div:has(> label:has-text("উচ্চতা")), div:has(> label:has-text("Height"))').locator('input').first();
+    await heightInput.fill('165');
+
     const weightInput = page.locator('div:has(> label:has-text("বর্তমান ওজন")), div:has(> label:has-text("Current Weight"))').locator('input').first();
     await weightInput.fill('80');
 
@@ -178,6 +181,7 @@ async function runBrowserE2E() {
 
     // Enter Patient B measurements: weight 65 kg, waist 78 cm
     await navigateToIntake();
+    await heightInput.fill('175');
     await weightInput.fill('65');
     await waistInput.fill('78');
     await page.waitForTimeout(200);

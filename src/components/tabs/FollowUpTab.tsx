@@ -42,6 +42,7 @@ export const FollowUpTab: React.FC = () => {
     rescheduleFollowUp,
     cancelFollowUp,
     completeFollowUp,
+    logFollowUpConsultation,
     clinicalVisits,
     currentVisit,
     startNewVisit,
@@ -155,8 +156,7 @@ export const FollowUpTab: React.FC = () => {
   const handleSaveVisit = () => {
     const whtr = patient.height_cm > 0 ? Math.round((newWaist / patient.height_cm) * 100) / 100 : 0;
 
-    const newV: Partial<LongitudinalVisit> = {
-      visit_date: today,
+    const saved = logFollowUpConsultation({
       weight_kg: newWeight,
       waist_cm: newWaist,
       whtr,
@@ -164,28 +164,14 @@ export const FollowUpTab: React.FC = () => {
       energy_score: newEnergy,
       symptom_relief_pct: newRelief,
       clinical_observations: clinicalObs,
-      notes_bn: newNotes || 'নিয়মিত ফলো-আপ ভিজিট সম্পন্ন; সাধারণ স্বাস্থ্য অগ্রগতি রেকর্ড করা হয়েছে।',
-      notes_en: newNotes || 'Routine follow-up consultation logged.'
-    };
-
-    // Ensure a distinct follow-up clinical visit is active if currently on baseline or unstarted
-    const isCurrentlyBaseline = !currentVisit || currentVisit.is_baseline || currentVisit.visit_type === 'baseline_consultation';
-    if (isCurrentlyBaseline) {
-      startNewVisit(patient.id, 'routine_followup', newNotes || 'Routine follow-up consultation logged.');
-    }
-
-    addVisit(newV);
-    captureVisitSnapshot(false, undefined, {
-      weight_kg: newWeight,
-      waist_cm: newWaist,
-      whtr,
-      bristol_stool_score: newStool,
-      energy_score: newEnergy,
       notes: newNotes
     });
 
-    // Atomically persist updated visits, snapshots, and patient measurements
-    saveCurrentPatient();
+    if (!saved) {
+      alert(bn ? 'ভিজিট সংরক্ষণ ব্যর্থ হয়েছে: স্টোরেজ ত্রুটি বা কোটা অতিক্রান্ত।' : 'Failed to save visit: Storage error or quota exceeded.');
+      return;
+    }
+
     setShowAddVisitModal(false);
   };
 

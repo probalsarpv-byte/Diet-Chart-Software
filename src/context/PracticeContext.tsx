@@ -178,7 +178,7 @@ export interface PracticeContextType {
   rescheduleFollowUp: (appointmentId: string, newDate: string, newTime?: string, reason?: string) => boolean;
   cancelFollowUp: (appointmentId: string, reason?: string) => boolean;
   completeFollowUp: (appointmentId: string, actualVisitId?: string) => boolean;
-  recordFollowUpVisit: (payload: {
+  logFollowUpConsultation: (payload: {
     weight_kg: number;
     waist_cm: number;
     whtr?: number;
@@ -1624,6 +1624,128 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return found;
   }, [currentVisit]);
 
+  // Dedicated Follow-Up Visit Recording (Atomic Transaction & Snapshot)
+  const logFollowUpConsultation = useCallback((payload: {
+    weight_kg: number;
+    waist_cm: number;
+    whtr?: number;
+    bristol_stool: number;
+    energy_score: number;
+    symptom_relief_pct: number;
+    clinical_observations?: string;
+    notes?: string;
+  }): boolean => {
+    const today = getDhakaTodayDateString();
+    const isCurrentlyBaseline = !currentVisit || currentVisit.is_baseline || currentVisit.visit_type === 'baseline_consultation';
+
+    let followUpVisit: ClinicalVisit;
+    let nextClinicalVisits: ClinicalVisit[];
+
+    if (isCurrentlyBaseline) {
+      const followUpVisitId = generateCollisionResistantId(`vis_${patient.id}`);
+      followUpVisit = {
+        visit_id: followUpVisitId,
+        id: followUpVisitId,
+        patient_id: patient.id,
+        visit_number: (clinicalVisits.length || 0) + 1,
+        visit_type: 'routine_followup',
+        visit_date: today,
+        created_at: new Date().toISOString(),
+        status: 'completed',
+        notes: payload.notes || 'Routine follow-up consultation logged.',
+        clinical_notes: payload.notes,
+        clinical_summary: payload.clinical_observations,
+        is_baseline: false
+      };
+      nextClinicalVisits = [...clinicalVisits, followUpVisit];
+    } else {
+      followUpVisit = currentVisit;
+      nextClinicalVisits = clinicalVisits;
+    }
+
+    const targetVisitId = followUpVisit.visit_id || followUpVisit.id || generateCollisionResistantId(`vis_${patient.id}`);
+
+    // Create the follow-up snapshot using the explicit observation payload
+    const followUpSnapshot = createClinicalSnapshot({
+      patient: { ...patient, current_visit_id: targetVisitId },
+      visitId: targetVisitId,
+      visitType: 'routine_followup',
+      isBaseline: false,
+      approvalStatus: 'draft',
+      clinicalObservationsPayload: {
+        weight_kg: payload.weight_kg,
+        waist_cm: payload.waist_cm,
+        whtr: payload.whtr,
+        bristol_stool_score: payload.bristol_stool,
+        energy_score: payload.energy_score,
+        notes: payload.notes
+      }
+    });
+
+    const nextSnapshots = appendSnapshotWithRevisionPolicy(visitSnapshots, followUpSnapshot);
+
+    const newLongitudinalVisit: LongitudinalVisit = {
+      visit_id: targetVisitId,
+      visit_date: today,
+      phase: patient.current_phase || 1,
+      weight_kg: payload.weight_kg,
+      waist_cm: payload.waist_cm,
+      whtr: payload.whtr || (patient.height_cm > 0 ? Math.round((payload.waist_cm / patient.height_cm) * 100) / 100 : 0),
+      bristol_stool: payload.bristol_stool,
+      energy_score: payload.energy_score,
+      symptom_relief_pct: payload.symptom_relief_pct,
+      clinical_observations: payload.clinical_observations,
+      notes_bn: payload.notes || 'নিয়মিত ফলো-আপ ভিজিট সম্পন্ন; সাধারণ স্বাস্থ্য অগ্রগতি রেকর্ড করা হয়েছে।',
+      notes_en: payload.notes || 'Routine follow-up consultation logged.'
+    };
+    const nextVisits = [...visits, newLongitudinalVisit];
+
+    const updatedPatient: PatientProfile = {
+      ...patient,
+      current_visit_id: targetVisitId,
+      weight_kg: payload.weight_kg,
+      waist_cm: payload.waist_cm,
+      gut_profile: {
+        ...patient.gut_profile,
+        bristol_stool_score: payload.bristol_stool,
+        energy_score: payload.energy_score
+      }
+    };
+
+    const tx = savePatientTransaction({
+      currentRecord: {
+        schema_version: CURRENT_SCHEMA_VERSION,
+        patient: updatedPatient,
+        visits: nextVisits,
+        clinical_visits: nextClinicalVisits,
+        follow_up_appointments: followUpAppointments,
+        visit_snapshots: nextSnapshots,
+        progress_reports: progressReports,
+        current_diet_chart: dietChart,
+        current_supplements: candidateSupplements,
+        timeline: dniResult.timeline,
+        updated_at: new Date().toISOString()
+      },
+      storageEngine: safeStorage,
+      action: { type: 'SAVE_RECORD' },
+      savedPatientsList: savedPatients
+    });
+
+    if (!tx.success) {
+      console.error('[Follow-Up Save Error] Transaction failed:', tx.error);
+      return false;
+    }
+
+    setClinicalVisits(nextClinicalVisits);
+    setCurrentVisit(followUpVisit);
+    setVisitSnapshots(nextSnapshots);
+    setVisits(nextVisits);
+    setPatient(updatedPatient);
+    setSavedPatients(tx.committedPatientsList);
+    invalidateP2Approval(`Follow-up visit logged: ${targetVisitId}`);
+    return true;
+  }, [currentVisit, patient, clinicalVisits, visitSnapshots, visits, followUpAppointments, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients, invalidateP2Approval]);
+
   // Visit Snapshots
   const captureVisitSnapshot = useCallback((
     isBaseline: boolean = false, 
@@ -1899,6 +2021,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         rescheduleFollowUp,
         cancelFollowUp,
         completeFollowUp,
+        logFollowUpConsultation,
         captureVisitSnapshot,
         generateProgressReport,
         approveProgressReport,
