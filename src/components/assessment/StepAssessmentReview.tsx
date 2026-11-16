@@ -341,6 +341,7 @@ export const StepAssessmentReview: React.FC = () => {
         <div className="pt-2 flex justify-center">
           <button
             type="button"
+            data-testid="btn-analyze-assessment"
             onClick={handleRunP2Analysis}
             className="px-6 py-3 bg-primary text-primary-foreground rounded-xl text-sm font-bold shadow-md hover:opacity-90 transition-all flex items-center gap-2"
           >

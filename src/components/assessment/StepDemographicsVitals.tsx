@@ -12,11 +12,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Calculator,
-  AlertCircle
+  AlertCircle,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 
 export const StepDemographicsVitals: React.FC = () => {
-  const { patient, updatePatient, language } = usePractice();
+  const { patient, updatePatient, language, setActiveTab } = usePractice();
   const { setCurrentStep, setAnswer, functionalAnswers } = useAssessment();
   const bn = language === 'bn';
 
@@ -37,70 +39,70 @@ export const StepDemographicsVitals: React.FC = () => {
         </h3>
         <p className="text-xs text-muted-foreground mt-0.5">
           {bn
-            ? 'রোগীর মৌলিক জনমিতি, উচ্চতা, ওজন এবং কোমর পরিধি রেকর্ড করুন। সিস্টেম স্বয়ংক্রিয়ভাবে বিএমআই, বিএমআর ও ডব্লিউএইচটিআর হিসাব করবে।'
-            : 'Record baseline demographics and physical vitals. BMI, BMR, and Waist-to-Height Ratio (WHtR) are calculated deterministically.'}
+            ? 'রোগীর পরিচয় ও মৌলিক জনমিতি রোগী রেজিস্ট্রি থেকে পঠিত। এখানে বর্তমান ভিজিটের উচ্চতা, ওজন এবং কোমর পরিধি রেকর্ড করুন।'
+            : 'Patient identity and baseline demographics are centrally owned by Patient Registry. Record current visit anthropometrics below.'}
         </p>
       </div>
 
-      {/* Basic Demographics */}
+      {/* Patient Information (Read-Only from Patient Registry - Single Source of Truth) */}
       <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-4">
-        <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
-          <User className="h-4 w-4 text-primary" />
-          {bn ? 'ব্যক্তিগত তথ্য' : 'Patient Information'}
-        </h4>
+        <div className="flex items-center justify-between border-b pb-3">
+          <div className="flex items-center gap-2">
+            <User className="h-4 w-4 text-primary" />
+            <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+              {bn ? 'রোগীর পরিচয় (রেজিস্ট্রি নিয়ন্ত্রিত)' : 'Patient Identity (Registry Controlled)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <ShieldCheck className="h-3 w-3" />
+              {bn ? 'একক সত্যের উৎস' : 'Single Source of Truth'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setActiveTab('patients')}
+              className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+            >
+              <span>{bn ? 'রেজিস্ট্রিতে সম্পাদনা' : 'Edit in Registry'}</span>
+              <ExternalLink className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div>
-            <label className="text-[11px] font-semibold text-muted-foreground">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="p-3 rounded-xl bg-muted/40 border">
+            <div className="text-[10px] font-semibold text-muted-foreground">
               {bn ? 'রোগীর পুরো নাম' : 'Full Name'}
-            </label>
-            <input
-              type="text"
-              value={patient.name}
-              onChange={(e) => updatePatient({ name: e.target.value })}
-              className="w-full mt-1 px-3 py-2 text-xs rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none"
-            />
+            </div>
+            <div className="text-xs font-bold text-foreground mt-1 truncate">
+              {patient.name || (bn ? 'নামহীন রোগী' : 'Unnamed Patient')}
+            </div>
           </div>
 
-          <div>
-            <label className="text-[11px] font-semibold text-muted-foreground">
-              {bn ? 'বয়স (বছর)' : 'Age (years)'}
-            </label>
-            <input
-              type="number"
-              value={patient.age || ''}
-              onChange={(e) => handleNumChange('age', e.target.value)}
-              className="w-full mt-1 px-3 py-2 text-xs rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none"
-            />
+          <div className="p-3 rounded-xl bg-muted/40 border">
+            <div className="text-[10px] font-semibold text-muted-foreground">
+              {bn ? 'বয়স ও লিঙ্গ' : 'Age & Gender'}
+            </div>
+            <div className="text-xs font-bold text-foreground mt-1 capitalize">
+              {patient.age} {bn ? 'বছর' : 'years'} • {patient.gender === 'female' ? (bn ? 'নারী' : 'Female') : (bn ? 'পুরুষ' : 'Male')}
+            </div>
           </div>
 
-          <div>
-            <label className="text-[11px] font-semibold text-muted-foreground">
-              {bn ? 'জৈবিক লিঙ্গ' : 'Biological Gender'}
-            </label>
-            <div className="grid grid-cols-2 gap-2 mt-1">
-              <button
-                type="button"
-                onClick={() => updatePatient({ gender: 'male' })}
-                className={`py-2 px-3 text-xs font-semibold rounded-xl border transition-all ${
-                  patient.gender === 'male'
-                    ? 'border-primary bg-primary text-primary-foreground font-bold shadow-sm'
-                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                }`}
-              >
-                {bn ? 'পুরুষ' : 'Male'}
-              </button>
-              <button
-                type="button"
-                onClick={() => updatePatient({ gender: 'female' })}
-                className={`py-2 px-3 text-xs font-semibold rounded-xl border transition-all ${
-                  patient.gender === 'female'
-                    ? 'border-primary bg-primary text-primary-foreground font-bold shadow-sm'
-                    : 'border-border bg-card text-muted-foreground hover:bg-muted'
-                }`}
-              >
-                {bn ? 'নারী' : 'Female'}
-              </button>
+          <div className="p-3 rounded-xl bg-muted/40 border">
+            <div className="text-[10px] font-semibold text-muted-foreground">
+              {bn ? 'রোগী আইডি' : 'Patient ID'}
+            </div>
+            <div className="text-xs font-mono font-bold text-primary mt-1 truncate">
+              {patient.id}
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-muted/40 border">
+            <div className="text-[10px] font-semibold text-muted-foreground">
+              {bn ? 'সক্রিয় ভিজিট আইডি' : 'Active Visit ID'}
+            </div>
+            <div className="text-xs font-mono font-bold text-muted-foreground mt-1 truncate">
+              {patient.current_visit_id || `visit_${patient.visit_date?.replace(/[^0-9]/g, '')}`}
             </div>
           </div>
         </div>
@@ -120,6 +122,7 @@ export const StepDemographicsVitals: React.FC = () => {
             </label>
             <input
               type="number"
+              data-testid="input-height"
               value={patient.height_cm || ''}
               onChange={(e) => handleNumChange('height_cm', e.target.value)}
               className="w-full mt-1 px-3 py-2 text-xs rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none"
@@ -132,6 +135,7 @@ export const StepDemographicsVitals: React.FC = () => {
             </label>
             <input
               type="number"
+              data-testid="input-weight"
               value={patient.weight_kg || ''}
               onChange={(e) => handleNumChange('weight_kg', e.target.value)}
               className="w-full mt-1 px-3 py-2 text-xs rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none"
@@ -144,6 +148,7 @@ export const StepDemographicsVitals: React.FC = () => {
             </label>
             <input
               type="number"
+              data-testid="input-waist"
               value={patient.waist_cm || ''}
               onChange={(e) => handleNumChange('waist_cm', e.target.value)}
               className="w-full mt-1 px-3 py-2 text-xs rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary outline-none"

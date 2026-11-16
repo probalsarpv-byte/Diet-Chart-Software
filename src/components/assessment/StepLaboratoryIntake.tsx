@@ -138,6 +138,7 @@ export const StepLaboratoryIntake: React.FC = () => {
                     <button
                       key={st.id}
                       type="button"
+                      data-testid={`lab-status-${m.marker_id}-${st.id}`}
                       onClick={() => handleStatusChange(m.marker_id, st.id)}
                       className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-all ${
                         m.status === st.id
@@ -165,6 +166,7 @@ export const StepLaboratoryIntake: React.FC = () => {
                     <input
                       type="number"
                       step="any"
+                      data-testid={`lab-input-${m.marker_id}`}
                       value={m.numeric_value !== undefined ? m.numeric_value : ''}
                       onChange={(e) => handleValueChange(m.marker_id, e.target.value)}
                       placeholder="e.g. 5.4"

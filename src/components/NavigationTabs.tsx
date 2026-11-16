@@ -98,8 +98,8 @@ export const NavigationTabs: React.FC = () => {
     {
       id: 'intake' as const,
       icon: ClipboardList,
-      label_bn: 'ইনটেক ও ল্যাব ডাটা',
-      label_en: 'Intake & Labs',
+      label_bn: 'ক্লিনিক্যাল ওভারভিউ (ভিউ)',
+      label_en: 'Clinical Overview',
       badge: patient.labs?.lab_flags && patient.labs.lab_flags.length > 0 ? `${patient.labs.lab_flags.length} flags` : null,
       badgeColor: 'bg-amber-500/15 text-amber-500'
     },
@@ -135,6 +135,7 @@ export const NavigationTabs: React.FC = () => {
             return (
               <button
                 key={tab.id}
+                data-testid={`nav-tab-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-3 py-3 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition-all ${
                   isActive 
@@ -157,6 +158,7 @@ export const NavigationTabs: React.FC = () => {
         {/* Secondary Safety Tools Dropdown / Quick Switcher */}
         <div className="relative">
           <button
+            data-testid="nav-tools-menu"
             onClick={() => setShowSecondaryMenu(!showSecondaryMenu)}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition ${
               isSecondaryActive 
@@ -184,6 +186,7 @@ export const NavigationTabs: React.FC = () => {
                   return (
                     <button
                       key={tab.id}
+                      data-testid={`nav-subtab-${tab.id}`}
                       onClick={() => {
                         setActiveTab(tab.id);
                         setShowSecondaryMenu(false);

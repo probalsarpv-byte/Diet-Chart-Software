@@ -9,6 +9,7 @@
 
 import {
   PopulationGroup,
+  ActivityLevel,
   AllergyReconciliationRecord,
   AllergyReconciliationStatus,
   MedicationReconciliationSummary,
@@ -431,6 +432,17 @@ export interface AssessmentCompletionStatus {
   prescribed_restrictions_clarified?: boolean;
 }
 
+export interface AssessmentAnthropometrics {
+  height_cm: number;
+  weight_kg: number;
+  waist_cm: number;
+  bmi: number;
+  whtr: number;
+  bmr: number;
+  target_calories: number;
+  activity_level?: ActivityLevel;
+}
+
 export interface ClinicalAssessment {
   patient_id: string;
   visit_id: string;
@@ -445,6 +457,7 @@ export interface ClinicalAssessment {
   medication_reconciliation?: MedicationReconciliationSummary;
   
   // Structured Sub-Assessments
+  anthropometrics?: AssessmentAnthropometrics;
   functional_answers: Record<string, any>;
   dietary_frequency: DietaryFrequencyAssessment;
   ayurveda: CompleteAyurvedicAssessment;

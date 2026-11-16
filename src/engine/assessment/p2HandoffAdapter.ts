@@ -262,6 +262,291 @@ export function buildP2ClinicalObservations(
     }
   }
 
+  // 5. Anthropometrics (Single Source of Truth from Assessment / Step 2)
+  const anthro = assessment.anthropometrics || {
+    height_cm: patient.height_cm,
+    weight_kg: patient.weight_kg,
+    waist_cm: patient.waist_cm,
+    bmi: patient.calculated?.bmi ?? 0,
+    whtr: patient.calculated?.whtr ?? 0,
+    bmr: patient.calculated?.bmr ?? 0,
+    target_calories: patient.calculated?.target_calories ?? 0,
+    activity_level: patient.activity_level,
+  };
+
+  if (anthro.weight_kg > 0) {
+    observations.push({
+      id: 'obs_weight',
+      patientId: assessment.patient_id,
+      visitId: assessment.visit_id,
+      category: 'anthropometric',
+      observedValue: anthro.weight_kg,
+      unit: 'kg',
+      title_en: `Body Weight: ${anthro.weight_kg} kg`,
+      title_bn: `শরীরের ওজন: ${anthro.weight_kg} কেজি`,
+      date: now,
+      associatedDomains: ['transport', 'energy', 'structural_integrity'],
+      severity: 'none',
+      tags: ['weight_measurement'],
+      dataSource: 'measured',
+      verificationStatus: 'clinician_verified',
+      provenance: 'p1_demographics_vitals',
+    });
+  }
+
+  if (anthro.height_cm > 0) {
+    observations.push({
+      id: 'obs_height',
+      patientId: assessment.patient_id,
+      visitId: assessment.visit_id,
+      category: 'anthropometric',
+      observedValue: anthro.height_cm,
+      unit: 'cm',
+      title_en: `Body Height: ${anthro.height_cm} cm`,
+      title_bn: `উচ্চতা: ${anthro.height_cm} সেমি`,
+      date: now,
+      associatedDomains: ['structural_integrity'],
+      severity: 'none',
+      tags: ['height_measurement'],
+      dataSource: 'measured',
+      verificationStatus: 'clinician_verified',
+      provenance: 'p1_demographics_vitals',
+    });
+  }
+
+  if (anthro.bmi > 0) {
+    const isObese = anthro.bmi >= 30;
+    const isOverweight = anthro.bmi >= 25;
+    const isUnderweight = anthro.bmi < 18.5;
+    const tags: string[] = [];
+    if (isObese) tags.push('high_bmi', 'obesity', 'excess_adiposity');
+    else if (isOverweight) tags.push('high_bmi', 'overweight', 'excess_adiposity');
+    else if (isUnderweight) tags.push('low_bmi', 'underweight', 'malnutrition_risk');
+    else tags.push('normal_bmi');
+
+    observations.push({
+      id: 'obs_bmi',
+      patientId: assessment.patient_id,
+      visitId: assessment.visit_id,
+      category: 'anthropometric',
+      observedValue: anthro.bmi,
+      unit: 'kg/m²',
+      title_en: `Body Mass Index: ${anthro.bmi} kg/m²`,
+      title_bn: `বিএমআই: ${anthro.bmi} কেজি/মি²`,
+      date: now,
+      associatedDomains: ['transport', 'energy', 'structural_integrity'],
+      severity: isObese ? 'moderate' : isOverweight ? 'mild' : 'none',
+      tags,
+      dataSource: 'measured',
+      verificationStatus: 'clinician_verified',
+      provenance: 'p1_demographics_vitals',
+    });
+  }
+
+  if (anthro.waist_cm > 0) {
+    const isFemale = patient.gender === 'female';
+    const isCentralAdiposity = isFemale ? anthro.waist_cm > 80 : anthro.waist_cm > 90;
+    const tags = isCentralAdiposity ? ['central_adiposity', 'visceral_fat_accumulation'] : ['normal_waist'];
+
+    observations.push({
+      id: 'obs_waist',
+      patientId: assessment.patient_id,
+      visitId: assessment.visit_id,
+      category: 'anthropometric',
+      observedValue: anthro.waist_cm,
+      unit: 'cm',
+      title_en: `Waist Circumference: ${anthro.waist_cm} cm`,
+      title_bn: `কোমর পরিধি: ${anthro.waist_cm} সেমি`,
+      date: now,
+      associatedDomains: ['transport', 'energy'],
+      severity: isCentralAdiposity ? 'moderate' : 'none',
+      tags,
+      dataSource: 'measured',
+      verificationStatus: 'clinician_verified',
+      provenance: 'p1_demographics_vitals',
+    });
+  }
+
+  if (anthro.whtr > 0) {
+    const isElevatedWhtr = anthro.whtr >= 0.5;
+    const tags = isElevatedWhtr ? ['elevated_whtr', 'central_adiposity'] : ['normal_whtr'];
+
+    observations.push({
+      id: 'obs_whtr',
+      patientId: assessment.patient_id,
+      visitId: assessment.visit_id,
+      category: 'anthropometric',
+      observedValue: anthro.whtr,
+      unit: 'ratio',
+      title_en: `Waist-to-Height Ratio: ${anthro.whtr}`,
+      title_bn: `কোমর-উচ্চতা অনুপাত: ${anthro.whtr}`,
+      date: now,
+      associatedDomains: ['transport', 'energy'],
+      severity: isElevatedWhtr ? 'moderate' : 'none',
+      tags,
+      dataSource: 'measured',
+      verificationStatus: 'clinician_verified',
+      provenance: 'p1_demographics_vitals',
+    });
+  }
+
+  // 6. Structured Laboratory Observations (Step 8 Intake)
+  if (assessment.labs?.entries) {
+    for (const entry of Object.values(assessment.labs.entries)) {
+      // Strictly process ONLY tested biomarkers with a valid numeric value!
+      // Untested, pending, or unmeasured biomarkers are never hallucinated or converted.
+      if (entry.status !== 'previously_tested' || entry.numeric_value === undefined || isNaN(entry.numeric_value)) {
+        continue;
+      }
+
+      const val = entry.numeric_value;
+      const markerId = entry.marker_id;
+      const tags: string[] = ['lab_marker', markerId];
+      let severity: 'mild' | 'moderate' | 'severe' | 'none' = 'none';
+      let domains: FunctionalDomain[] = ['energy'];
+
+      // Domain mapping
+      if (entry.category === 'glycemic') domains = ['energy'];
+      else if (entry.category === 'lipid') domains = ['transport'];
+      else if (entry.category === 'renal') domains = ['biotransformation', 'transport'];
+      else if (entry.category === 'hepatic') domains = ['biotransformation'];
+      else if (entry.category === 'electrolytes') domains = ['structural_integrity', 'transport'];
+      else if (entry.category === 'thyroid') domains = ['communication', 'energy'];
+      else if (entry.category === 'hematology_iron') domains = ['transport', 'energy'];
+      else if (entry.category === 'vitamins_minerals') domains = ['communication', 'energy', 'defense_repair'];
+      else if (entry.category === 'inflammatory_markers') domains = ['defense_repair'];
+
+      // Specific clinical rules and tags
+      if (markerId === 'hba1c') {
+        if (val >= 6.5) {
+          tags.push('elevated_hba1c', 'diabetes_range_hba1c', 'glycemic_dysregulation', 'obs_hba1c_borderline_or_above');
+          severity = 'moderate';
+        } else if (val >= 5.7) {
+          tags.push('elevated_hba1c', 'prediabetes_range_hba1c', 'obs_hba1c_borderline_or_above');
+          severity = 'mild';
+        } else {
+          tags.push('normal_hba1c', 'obs_normal_hba1c');
+          severity = 'none';
+        }
+      } else if (markerId === 'fbs') {
+        const isElevated = (entry.unit === 'mmol/L' && val > 5.5) || (entry.unit === 'mg/dL' && val >= 100) || val > 5.5;
+        if (isElevated) {
+          tags.push('elevated_fasting_glucose', 'fasting_hyperglycemia', 'obs_elevated_fasting_glucose');
+          severity = 'moderate';
+        } else {
+          tags.push('normal_fasting_glucose', 'obs_normal_fasting_glucose');
+          severity = 'none';
+        }
+      } else if (markerId === 'ppbs') {
+        const isElevated = (entry.unit === 'mmol/L' && val > 7.8) || (entry.unit === 'mg/dL' && val >= 140) || val > 7.8;
+        if (isElevated) {
+          tags.push('elevated_postprandial_glucose', 'glycemic_instability');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'fasting_insulin') {
+        if (val > 10) {
+          tags.push('elevated_fasting_insulin', 'hyperinsulinemia', 'insulin_resistance_sign');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'serum_creatinine') {
+        if (val > (patient.gender === 'female' ? 1.1 : 1.2)) {
+          tags.push('elevated_creatinine', 'renal_impairment_sign');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'serum_potassium') {
+        if (val > 5.0) {
+          tags.push('hyperkalemia', 'electrolyte_imbalance');
+          severity = 'moderate';
+        } else if (val < 3.5) {
+          tags.push('hypokalemia', 'electrolyte_imbalance');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'serum_uric_acid') {
+        if (val > (patient.gender === 'female' ? 6.0 : 7.0)) {
+          tags.push('elevated_uric_acid', 'hyperuricemia');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'sgpt_alt') {
+        if (val > 35) {
+          tags.push('elevated_alt', 'hepatic_stress');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'total_cholesterol') {
+        if (val > 200) {
+          tags.push('elevated_cholesterol', 'dyslipidemia');
+          severity = 'mild';
+        }
+      } else if (markerId === 'triglycerides') {
+        if (val > 150) {
+          tags.push('elevated_triglycerides', 'dyslipidemia');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'ldl') {
+        if (val > 100) {
+          tags.push('elevated_ldl', 'dyslipidemia');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'hdl') {
+        if (val < (patient.gender === 'female' ? 50 : 40)) {
+          tags.push('low_hdl', 'dyslipidemia');
+          severity = 'mild';
+        }
+      } else if (markerId === 'tsh') {
+        if (val > 4.5) {
+          tags.push('elevated_tsh', 'abnormal_tsh', 'hypothyroid_pattern');
+          severity = 'moderate';
+        } else if (val < 0.4) {
+          tags.push('low_tsh', 'abnormal_tsh', 'hyperthyroid_pattern');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'hemoglobin') {
+        if (val < (patient.gender === 'female' ? 12.0 : 13.0)) {
+          tags.push('low_hemoglobin', 'anemia_sign');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'serum_ferritin') {
+        if (val < 30) {
+          tags.push('low_ferritin', 'iron_depletion');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'vitamin_d3') {
+        if (val < 30) {
+          tags.push('low_vitamin_d3', 'vitamin_d_deficiency');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'vitamin_b12') {
+        if (val < 300) {
+          tags.push('low_vitamin_b12', 'vitamin_b12_deficiency');
+          severity = 'moderate';
+        }
+      } else if (markerId === 'hs_crp') {
+        if (val > 1.0) {
+          tags.push('elevated_crp', 'systemic_inflammation');
+          severity = val > 3.0 ? 'severe' : 'moderate';
+        }
+      }
+
+      observations.push({
+        id: `obs_lab_${markerId}`,
+        patientId: assessment.patient_id,
+        visitId: assessment.visit_id,
+        category: 'lab',
+        sourceLabMarker: markerId,
+        observedValue: val,
+        unit: entry.unit,
+        title_en: `${entry.name_en}: ${val} ${entry.unit}`,
+        title_bn: `${entry.name_bn}: ${val} ${entry.unit}`,
+        date: entry.test_date || now,
+        associatedDomains: domains,
+        severity: severity as any,
+        tags,
+        dataSource: 'measured',
+        verificationStatus: 'lab_confirmed',
+        provenance: 'p1_laboratory_assessment',
+      });
+    }
+  }
+
   return observations;
 }
 
@@ -293,6 +578,17 @@ export function buildFlattenedAnswersForP2(assessment: ClinicalAssessment): Reco
   if (assessment.population_data?.pregnancy) {
     flat['gestational_age_weeks'] = assessment.population_data.pregnancy.gestational_age_weeks;
     flat['pregnancy_month'] = assessment.population_data.pregnancy.pregnancy_month;
+  }
+
+  // Overlay Structured Tested Labs
+  if (assessment.labs?.entries) {
+    for (const [markerId, entry] of Object.entries(assessment.labs.entries)) {
+      if (entry.status === 'previously_tested' && entry.numeric_value !== undefined) {
+        flat[`lab_${markerId}`] = entry.numeric_value;
+        if (markerId === 'fbs') flat['fasting_glucose'] = entry.numeric_value;
+        if (markerId === 'hba1c') flat['hba1c'] = entry.numeric_value;
+      }
+    }
   }
 
   return flat;

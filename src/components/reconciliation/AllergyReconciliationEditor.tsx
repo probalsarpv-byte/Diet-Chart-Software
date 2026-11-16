@@ -120,6 +120,7 @@ export const AllergyReconciliationEditor: React.FC<AllergyReconciliationEditorPr
 
         <button
           type="button"
+          data-testid="allergy-none-confirmed"
           onClick={() => handleStatusChange('none_confirmed')}
           className={`p-3 rounded-xl border text-left transition ${
             status === 'none_confirmed'

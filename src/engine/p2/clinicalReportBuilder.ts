@@ -19,9 +19,11 @@ import {
   ClinicianApprovalRecord,
   ClinicalHealthAssessmentReport,
 } from './types';
+import { ClinicalAssessment } from '../../types/assessment';
 
 export function buildClinicalHealthAssessmentReport(params: {
   patient: PatientProfile;
+  assessment?: ClinicalAssessment;
   domainFindings: DomainFinding[];
   hypotheses: ClinicalHypothesis[];
   redFlags: ClinicalRedFlag[];
@@ -47,6 +49,7 @@ export function buildClinicalHealthAssessmentReport(params: {
 }): ClinicalHealthAssessmentReport {
   const {
     patient,
+    assessment,
     domainFindings,
     hypotheses,
     redFlags,
@@ -87,7 +90,10 @@ export function buildClinicalHealthAssessmentReport(params: {
   };
 
   // Section B: Anthropometrics
-  const bmi = patient.calculated?.bmi || (patient.height_cm ? Math.round((patient.weight_kg / Math.pow(patient.height_cm / 100, 2)) * 10) / 10 : 0);
+  const height = assessment?.anthropometrics?.height_cm || patient.height_cm || 1;
+  const weight = assessment?.anthropometrics?.weight_kg || patient.weight_kg || 0;
+  const waist = assessment?.anthropometrics?.waist_cm || patient.waist_cm || 0;
+  const bmi = assessment?.anthropometrics?.bmi || patient.calculated?.bmi || (height > 0 && weight > 0 ? Math.round((weight / Math.pow(height / 100, 2)) * 10) / 10 : 0);
   let bmiCategory_en = 'Normal weight';
   let bmiCategory_bn = 'স্বাভাবিক ওজন';
   if (bmi < 18.5) {
@@ -102,9 +108,7 @@ export function buildClinicalHealthAssessmentReport(params: {
     bmiCategory_bn = 'স্থূলতা (এশিয়ান সূচক >= ২৭.৫)';
   }
 
-  const waist = patient.waist_cm || 0;
-  const height = patient.height_cm || 1;
-  const whtr = waist && height ? Math.round((waist / height) * 100) / 100 : 0;
+  const whtr = assessment?.anthropometrics?.whtr || (waist && height ? Math.round((waist / height) * 100) / 100 : 0);
 
   let whtrRisk_en = 'Normal visceral adiposity (< 0.50)';
   let whtrRisk_bn = 'স্বাভাবিক ভিসেরাল ফ্যাট (< ০.৫০)';
@@ -119,14 +123,14 @@ export function buildClinicalHealthAssessmentReport(params: {
   // Safe BMR floor: Mifflin-St Jeor
   let bmr = 0;
   if (patient.gender === 'male') {
-    bmr = Math.round(10 * patient.weight_kg + 6.25 * patient.height_cm - 5 * patient.age + 5);
+    bmr = Math.round(10 * weight + 6.25 * height - 5 * patient.age + 5);
   } else {
-    bmr = Math.round(10 * patient.weight_kg + 6.25 * patient.height_cm - 5 * patient.age - 161);
+    bmr = Math.round(10 * weight + 6.25 * height - 5 * patient.age - 161);
   }
 
   const sectionB_anthropometrics = {
-    height_cm: patient.height_cm,
-    weight_kg: patient.weight_kg,
+    height_cm: height,
+    weight_kg: weight,
     bmi,
     bmiCategory_en,
     bmiCategory_bn,
@@ -135,7 +139,7 @@ export function buildClinicalHealthAssessmentReport(params: {
     whtrRisk_en,
     whtrRisk_bn,
     weightTrend: 'Stable / Monitored',
-    bmr_safe_floor: bmr,
+    bmr_safe_floor: assessment?.anthropometrics?.bmr || bmr,
   };
 
   // Section C: Clinical History

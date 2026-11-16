@@ -120,6 +120,7 @@ export const StepHistorySafety: React.FC = () => {
               </button>
               <button
                 type="button"
+                data-testid="safety-insulin-no"
                 onClick={() => setAnswer('safety_insulin_active', 'no')}
                 className={`py-1.5 px-3 text-xs font-semibold rounded-lg border transition-all ${
                   functionalAnswers['safety_insulin_active'] === 'no'
@@ -156,6 +157,7 @@ export const StepHistorySafety: React.FC = () => {
               </button>
               <button
                 type="button"
+                data-testid="safety-sulfonylurea-no"
                 onClick={() => setAnswer('safety_sulfonylurea_active', 'no')}
                 className={`py-1.5 px-3 text-xs font-semibold rounded-lg border transition-all ${
                   functionalAnswers['safety_sulfonylurea_active'] === 'no'
@@ -215,6 +217,7 @@ export const StepHistorySafety: React.FC = () => {
               </button>
               <button
                 type="button"
+                data-testid="safety-dysphagia-no"
                 onClick={() => setAnswer('safety_dysphagia_choking_risk', 'no')}
                 className={`py-1.5 px-3 text-xs font-semibold rounded-lg border transition-all ${
                   functionalAnswers['safety_dysphagia_choking_risk'] === 'no'

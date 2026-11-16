@@ -157,7 +157,7 @@ export interface AssessmentContextProps {
 const AssessmentContext = createContext<AssessmentContextProps | undefined>(undefined);
 
 export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
-  const { patient, updatePatient } = usePractice();
+  const { patient, updatePatient, invalidateP2Approval } = usePractice();
   const patientId = patient?.id || "default_patient";
   const visitDateClean = patient?.visit_date ? patient.visit_date.replace(/[^0-9]/g, '') : 'initial';
   const visitId = patient?.current_visit_id || (patient?.id ? `visit_${patient.id}_${visitDateClean}` : 'current_visit');
@@ -297,31 +297,38 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
   // Setters
   const setAnswer = useCallback((questionId: string, value: any) => {
     setFunctionalAnswers(prev => ({ ...prev, [questionId]: value }));
-  }, []);
+    invalidateP2Approval(`Assessment answer updated: ${questionId}`);
+  }, [invalidateP2Approval]);
 
   const setFFQItem = useCallback((foodGroupId: FFQFoodGroupId, response: FFQItemResponse) => {
     setFfqItems(prev => ({ ...prev, [foodGroupId]: response }));
-  }, []);
+    invalidateP2Approval(`FFQ food group updated: ${foodGroupId}`);
+  }, [invalidateP2Approval]);
 
   const setFFQHabits = useCallback((habits: DietaryHabitsSurvey) => {
     setFfqHabits(habits);
-  }, []);
+    invalidateP2Approval('FFQ dietary habits updated');
+  }, [invalidateP2Approval]);
 
   const setPrakritiAnswer = useCallback((id: string, value: string) => {
     setPrakritiAnswers(prev => ({ ...prev, [id]: value }));
-  }, []);
+    invalidateP2Approval(`Prakriti answer updated: ${id}`);
+  }, [invalidateP2Approval]);
 
   const setVikritiAnswer = useCallback((id: string, value: 'yes' | 'no' | 'sometimes') => {
     setVikritiAnswers(prev => ({ ...prev, [id]: value }));
-  }, []);
+    invalidateP2Approval(`Vikriti answer updated: ${id}`);
+  }, [invalidateP2Approval]);
 
   const setAgniAnswer = useCallback((id: string, value: AgniClassification) => {
     setAgniAnswers(prev => ({ ...prev, [id]: value }));
-  }, []);
+    invalidateP2Approval(`Agni answer updated: ${id}`);
+  }, [invalidateP2Approval]);
 
   const setLabEntry = useCallback((markerId: string, entry: StructuredLabEntry) => {
     setLabEntries(prev => ({ ...prev, [markerId]: entry }));
-  }, []);
+    invalidateP2Approval(`Structured lab biomarker updated: ${markerId}`);
+  }, [invalidateP2Approval]);
 
   const setMode = useCallback((newMode: AssessmentMode) => {
     setModeState(newMode);
@@ -705,6 +712,16 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
         route: 'oral_standard',
         oral_intake_permitted: true,
         requires_specialist_support: false
+      },
+      anthropometrics: {
+        height_cm: patient?.height_cm ?? 0,
+        weight_kg: patient?.weight_kg ?? 0,
+        waist_cm: patient?.waist_cm ?? 0,
+        bmi: patient?.calculated?.bmi ?? 0,
+        whtr: patient?.calculated?.whtr ?? 0,
+        bmr: patient?.calculated?.bmr ?? 0,
+        target_calories: patient?.calculated?.target_calories ?? 0,
+        activity_level: patient?.activity_level,
       },
       functional_answers: functionalAnswers,
       dietary_frequency: ffqAnalysis,

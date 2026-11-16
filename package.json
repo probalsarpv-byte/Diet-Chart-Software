@@ -15,8 +15,9 @@
     "test:master": "tsx test/p0_p2_master_integration.test.ts",
     "test:step01": "tsx test/step01_id_integrity.test.ts && tsx test/step01_snapshot_manager.test.ts && tsx test/step01_visit_lifecycle.test.ts && tsx test/step01_storage_migration.test.ts && tsx test/step01_critical_fixes_regression.test.ts && tsx test/step01_clinical_integrity_acceptance.test.ts",
     "test:step01:qa": "python scripts/qa_referential_integrity.py",
-    "test:e2e": "tsx test/step01_browser_e2e.test.ts",
-    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate && npm run test:master && npm run test:step01"
+    "test:step02": "tsx test/step02_unified_assessment.test.ts",
+    "test:e2e": "tsx test/step01_browser_e2e.test.ts && tsx test/step02_browser_e2e.test.ts",
+    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate && npm run test:master && npm run test:step01 && npm run test:step02"
   },
   "dependencies": {
     "clsx": "^2.1.1",

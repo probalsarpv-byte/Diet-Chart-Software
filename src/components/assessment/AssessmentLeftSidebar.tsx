@@ -118,6 +118,7 @@ export const AssessmentLeftSidebar: React.FC = () => {
           return (
             <button
               key={step.id}
+              data-testid={`assessment-step-nav-${step.id}`}
               type="button"
               onClick={() => setCurrentStep(step.id)}
               className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between text-xs font-medium transition-all ${

@@ -237,6 +237,7 @@ export const MedicationReconciliationEditor: React.FC<MedicationReconciliationEd
         <label className="flex items-center gap-2.5 cursor-pointer text-xs font-semibold text-foreground">
           <input
             type="checkbox"
+            data-testid="med-verified-no-meds"
             checked={verifiedNoMeds}
             onChange={e => handleToggleVerifiedNoMeds(e.target.checked)}
             className="rounded h-4 w-4 text-primary focus:ring-primary"
