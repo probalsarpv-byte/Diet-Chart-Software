@@ -607,9 +607,18 @@ export const FollowUpTab: React.FC = () => {
                 <Calendar className="h-4 w-4 text-primary" />
                 <span>{bn ? 'লংগিটিউডিনাল কনসালটেশন ও ফলো-আপ লগ' : 'Longitudinal Consultation History'}</span>
               </div>
-              <span className="text-xs text-muted-foreground">
-                {visits.length + 1} {bn ? 'টি ভিজিট রেকর্ড সংরক্ষিত' : 'visits on file'}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {visits.length + 1} {bn ? 'টি ভিজিট রেকর্ড সংরক্ষিত' : 'visits on file'}
+                </span>
+                <button
+                  onClick={() => setShowAddVisitModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-secondary hover:bg-secondary/80 text-foreground transition"
+                >
+                  <Plus className="h-3.5 w-3.5 text-primary" />
+                  <span>{bn ? 'নিয়মিত ফলো-আপ ভিজিট রেকর্ড' : 'Log Regular Visit'}</span>
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto">

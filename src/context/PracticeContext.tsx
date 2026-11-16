@@ -1229,13 +1229,35 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Persistence Actions
   const saveCurrentPatient = useCallback((): boolean => {
+    let currentSnapshots = visitSnapshots;
+    const isBaselineVisit = !currentVisit || currentVisit.is_baseline || currentVisit.visit_type === 'baseline_consultation';
+    const hasBaselineSnapshot = currentSnapshots.some(s => s.is_baseline);
+
+    // If on baseline visit and no snapshot exists or existing baseline snapshot is still unapproved draft, ensure snapshot reflects current measurements
+    if (isBaselineVisit && (!hasBaselineSnapshot || currentSnapshots.some(s => s.is_baseline && s.approval_status === 'draft'))) {
+      const visitId = patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id || generateCollisionResistantId(`vis_${patient.id}`);
+      const baseSnap = createClinicalSnapshot({
+        patient,
+        visitId,
+        visitType: 'baseline_consultation',
+        isBaseline: true,
+        approvalStatus: p2AnalysisResult?.report?.isApproved ? 'approved' : 'draft',
+        approvedBy: p2AnalysisResult?.report?.approvedBy,
+        relatedAssessmentId: currentClinicalAssessment?.assessment_id,
+        clinicalSafetyEvaluation,
+        p2AnalysisResult
+      });
+      currentSnapshots = appendSnapshotWithRevisionPolicy(currentSnapshots, baseSnap);
+      setVisitSnapshots(currentSnapshots);
+    }
+
     const record: PatientRecord = {
       schema_version: CURRENT_SCHEMA_VERSION,
       patient,
       visits,
       clinical_visits: clinicalVisits,
       follow_up_appointments: followUpAppointments,
-      visit_snapshots: visitSnapshots,
+      visit_snapshots: currentSnapshots,
       progress_reports: progressReports,
       current_diet_chart: dietChart,
       current_supplements: candidateSupplements,
