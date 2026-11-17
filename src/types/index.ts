@@ -351,6 +351,19 @@ export interface PatientProfile {
   population_group: PopulationGroup;
   clinical_pathways?: ClinicalPathway[];
   feeding_status?: FeedingStatus;
+  fluid_prescription?: FluidPrescription;
+  clinical_safety?: {
+    insulin_treatment?: boolean;
+    sulfonylurea_treatment?: boolean;
+    dysphagia?: boolean;
+    fluid_restriction?: {
+      is_restricted: boolean;
+      limit_ml?: number;
+      prescribing_physician?: string;
+      condition?: string;
+    };
+    feeding_route?: string;
+  };
   ayurvedic_context?: AyurvedicAssessmentContext;
   intervention_version?: number;
   approval_status?: InterventionApprovalStatus;

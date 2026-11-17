@@ -659,9 +659,9 @@ export const ReportTab: React.FC = () => {
       {/* VIEW 3: Longitudinal Comparative Progress Report */}
       {activeReportType === 'comparative_progress' && (
         <div className="space-y-4">
-          {currentProgressReport ? (
+          {(currentProgressReport || (progressReports && progressReports.length > 0 ? progressReports[0] : null)) ? (
             <ComparativeProgressReportView
-              report={currentProgressReport}
+              report={currentProgressReport || progressReports[0]}
               onApprove={approveProgressReport}
             />
           ) : (
