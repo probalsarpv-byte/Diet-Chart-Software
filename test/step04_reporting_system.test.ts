@@ -135,9 +135,16 @@ function createTestPatient(id: string, name: string, overrides: Partial<PatientP
     },
     calculated: {
       bmi: 28.8,
+      bmi_category_en: 'overweight',
+      bmi_category_bn: 'অতিরিক্ত ওজন',
+      ibw_kg: 55,
+      adjusted_bw_kg: 58,
       whtr: 0.56,
-      bmr_kcal: 1350,
-      tdee_kcal: 1620,
+      whtr_risk_en: 'high',
+      whtr_risk_bn: 'উচ্চ ঝুঁকি',
+      bmr: 1350,
+      tdee: 1620,
+      bmr_safe_calorie_floor: 1350,
       target_calories: 1350,
       target_protein_g: 75,
       target_carbs_g: 135,
@@ -190,17 +197,17 @@ console.log('\n--- SCENARIO B: Visit-Specific Assessment (Reports Match Selected
     updated_at: '2026-10-01T10:00:00Z',
     status: 'completed',
     questionnaire_version: '1.0.0',
-    anthropometrics: { height_cm: 160, weight_kg: 80, waist_cm: 94, bmi: 31.25, whtr: 0.59 },
+    anthropometrics: { height_cm: 160, weight_kg: 80, waist_cm: 94, bmi: 31.25, whtr: 0.59, bmr: 1450, target_calories: 1450 },
     medical_history: { conditions: [], other_conditions: [] },
     clinical_safety: { insulin_treatment: false, sulfonylurea_treatment: false, dysphagia: false, fluid_restriction: false, feeding_route: 'oral_standard' },
     medications: { records: [] },
     allergies: { allergens: [], confirmed_allergies: [], status: 'reconciled_no_known_allergies' },
     symptoms: { selected_symptoms: [], symptom_burden_scores: {} },
-    labs: { entries: [{ marker_id: 'hba1c', name_en: 'HbA1c', numeric_value: 8.0, unit: '%', status: 'previously_tested' }] },
+    labs: { entries: [{ marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 8.0, unit: '%', status: 'previously_tested' }] },
     metabolic_health: { risk_factors: [], metabolic_syndrome_criteria_met: 0 },
     gut_health: { bloating_frequency: 'none', acid_reflux: false, agni_pattern: 'samagni', bristol_stool_score: 4 },
     dietary_lifestyle: { meals_per_day: 3, shift_worker: false, sleep_hours_per_night: 7 },
-    completion: { demographics_completed: true, anthropometrics_completed: true, clinical_safety_completed: true, allergies_reconciled: true, medication_reconciliation_completed: true, labs_completed: true, overall_completed: true }
+    completion: { administrative_completed: true, clinical_safety_completed: true, mandatory_sections_completed: true, laboratory_data_available: true, requires_clinical_review: false, unanswered_critical_questions: [] }
   };
 
   // Visit 2 Assessment: Weight 76 kg, HbA1c 7.1%
@@ -208,8 +215,8 @@ console.log('\n--- SCENARIO B: Visit-Specific Assessment (Reports Match Selected
     ...asmtV1,
     assessment_id: 'asmt_02',
     visit_id: 'vis_02',
-    anthropometrics: { height_cm: 160, weight_kg: 76, waist_cm: 90, bmi: 29.69, whtr: 0.56 },
-    labs: { entries: [{ marker_id: 'hba1c', name_en: 'HbA1c', numeric_value: 7.1, unit: '%', status: 'previously_tested' }] }
+    anthropometrics: { height_cm: 160, weight_kg: 76, waist_cm: 90, bmi: 29.69, whtr: 0.56, bmr: 1400, target_calories: 1400 },
+    labs: { entries: [{ marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 7.1, unit: '%', status: 'previously_tested' }] }
   };
 
   const reportV1 = runP2Analysis({ patient: { ...patient, current_visit_id: 'vis_01' }, assessment: asmtV1 }).report;
@@ -238,7 +245,7 @@ console.log('\n--- SCENARIO C: Structured Laboratory Report Integration ---');
     updated_at: new Date().toISOString(),
     status: 'completed',
     questionnaire_version: '1.0.0',
-    anthropometrics: { height_cm: 165, weight_kg: 70, waist_cm: 84 },
+    anthropometrics: { height_cm: 165, weight_kg: 70, waist_cm: 84, bmi: 25.7, whtr: 0.51, bmr: 1350, target_calories: 1350 },
     medical_history: { conditions: [], other_conditions: [] },
     clinical_safety: { insulin_treatment: false, sulfonylurea_treatment: false, dysphagia: false, fluid_restriction: false, feeding_route: 'oral_standard' },
     medications: { records: [] },
@@ -246,13 +253,13 @@ console.log('\n--- SCENARIO C: Structured Laboratory Report Integration ---');
     symptoms: { selected_symptoms: [], symptom_burden_scores: {} },
     labs: {
       entries: [
-        { marker_id: 'hba1c', name_en: 'HbA1c', numeric_value: 7.3, unit: '%', status: 'previously_tested' }
+        { marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 7.3, unit: '%', status: 'previously_tested' }
       ]
     },
     metabolic_health: { risk_factors: [], metabolic_syndrome_criteria_met: 0 },
     gut_health: { bloating_frequency: 'none', acid_reflux: false, agni_pattern: 'samagni', bristol_stool_score: 4 },
     dietary_lifestyle: { meals_per_day: 3, shift_worker: false, sleep_hours_per_night: 7 },
-    completion: { demographics_completed: true, anthropometrics_completed: true, clinical_safety_completed: true, allergies_reconciled: true, medication_reconciliation_completed: true, labs_completed: true, overall_completed: true }
+    completion: { administrative_completed: true, clinical_safety_completed: true, mandatory_sections_completed: true, laboratory_data_available: true, requires_clinical_review: false, unanswered_critical_questions: [] }
   };
 
   const report = runP2Analysis({ patient, assessment: structuredAssessment }).report;
@@ -541,9 +548,9 @@ console.log('\n--- SCENARIO N: Print Isolation ---');
   type ReportCategory = 'diet_prescription' | 'clinical_assessment' | 'comparative_progress';
   let activeCategory: ReportCategory = 'clinical_assessment';
 
-  const shouldRenderDiet = activeCategory === 'diet_prescription';
-  const shouldRenderP2 = activeCategory === 'clinical_assessment';
-  const shouldRenderProgress = activeCategory === 'comparative_progress';
+  const shouldRenderDiet = (activeCategory as string) === 'diet_prescription';
+  const shouldRenderP2 = (activeCategory as string) === 'clinical_assessment';
+  const shouldRenderProgress = (activeCategory as string) === 'comparative_progress';
 
   assert(shouldRenderP2 === true, 'Scenario N: Active report (P2) is rendered');
   assert(shouldRenderDiet === false, 'Scenario N: Non-active diet prescription is excluded');
