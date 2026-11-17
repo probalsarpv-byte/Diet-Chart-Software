@@ -116,6 +116,37 @@ async function runBrowserE2E() {
       await page.waitForTimeout(300);
     };
 
+    const enterAnthropometricsInAssessment = async (height: string, weight: string, waist: string) => {
+      // Navigate to Assessment tab
+      const assessmentTabBtn = page.locator('button:has-text("অ্যাসেসমেন্ট"), button:has-text("Assessment")').first();
+      await assessmentTabBtn.click();
+      await page.waitForTimeout(300);
+
+      // Go to Step 2 Demographics & Anthropometrics
+      const step2Btn = page.locator('button').filter({ hasText: /জনমিতি|Demographics/ }).first();
+      if (await step2Btn.isVisible()) {
+        await step2Btn.click();
+        await page.waitForTimeout(300);
+      }
+
+      const heightInput = page.locator('[data-testid="input-height"], input[type="number"]').first();
+      await heightInput.fill(height);
+
+      const weightInput = page.locator('[data-testid="input-weight"]').first();
+      await weightInput.fill(weight);
+
+      const waistInput = page.locator('[data-testid="input-waist"]').first();
+      await waistInput.fill(waist);
+      await page.waitForTimeout(300);
+
+      // Click Header Save button
+      const headerSaveButton = page.locator('header button:has-text("Save"), header button:has-text("সংরক্ষণ")').first();
+      if (await headerSaveButton.isVisible()) {
+        await headerSaveButton.click();
+        await page.waitForTimeout(500);
+      }
+    };
+
     // 1. Navigate to Patients tab via UI
     const patientsTabButton = page.locator('button:has-text("Patients"), button:has-text("রোগী রেজিস্ট্রি")').first();
     await patientsTabButton.click();
@@ -137,24 +168,8 @@ async function runBrowserE2E() {
     await submitRegisterButton.click();
     await page.waitForTimeout(500);
 
-    // 4. Navigate to Intake tab to record baseline measurements: weight 80 kg, waist 95 cm
-    await navigateToIntake();
-
-    // Fill height, weight & waist inputs in Intake
-    const heightInput = page.locator('div:has(> label:has-text("উচ্চতা")), div:has(> label:has-text("Height"))').locator('input').first();
-    await heightInput.fill('165');
-
-    const weightInput = page.locator('div:has(> label:has-text("বর্তমান ওজন")), div:has(> label:has-text("Current Weight"))').locator('input').first();
-    await weightInput.fill('80');
-
-    const waistInput = page.locator('div:has(> label:has-text("কোমরের মাপ")), div:has(> label:has-text("কোমর")), div:has(> label:has-text("Waist"))').locator('input').first();
-    await waistInput.fill('95');
-    await page.waitForTimeout(200);
-
-    // Click Header Save button
-    const headerSaveButton = page.locator('header button:has-text("Save"), header button:has-text("সংরক্ষণ")').first();
-    await headerSaveButton.click();
-    await page.waitForTimeout(500);
+    // 4. Enter baseline measurements in Assessment Wizard: weight 80 kg, waist 95 cm
+    await enterAnthropometricsInAssessment('165', '80', '95');
 
     // Verify Patient A saved in localStorage
     let storedList = await page.evaluate(() => {
@@ -180,13 +195,7 @@ async function runBrowserE2E() {
     await page.waitForTimeout(500);
 
     // Enter Patient B measurements: weight 65 kg, waist 78 cm
-    await navigateToIntake();
-    await heightInput.fill('175');
-    await weightInput.fill('65');
-    await waistInput.fill('78');
-    await page.waitForTimeout(200);
-    await headerSaveButton.click();
-    await page.waitForTimeout(500);
+    await enterAnthropometricsInAssessment('175', '65', '78');
 
     // 6. Switch back to Patient A via Patients Directory in UI
     await patientsTabButton.click();
@@ -206,10 +215,10 @@ async function runBrowserE2E() {
 
     // Verify Patient A measurements are strictly 80 kg / 95 cm (zero cross-contamination)
     await navigateToIntake();
-    const activeWeightValue = await weightInput.inputValue();
-    const activeWaistValue = await waistInput.inputValue();
-    assert(activeWeightValue === '80', 'Patient A retained weight 80 kg after switching');
-    assert(activeWaistValue === '95', 'Patient A retained waist 95 cm after switching');
+    const activeWeightTextCount = await page.locator('text=80 kg').count();
+    const activeWaistTextCount = await page.locator('text=95 cm').count();
+    assert(activeWeightTextCount > 0, 'Patient A retained weight 80 kg after switching');
+    assert(activeWaistTextCount > 0, 'Patient A retained waist 95 cm after switching');
 
     // -------------------------------------------------------------------
     // SCENARIO B: Follow-Up Measurements & Snapshot via FollowUpTab Modal
