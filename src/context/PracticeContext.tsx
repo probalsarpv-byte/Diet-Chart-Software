@@ -2057,6 +2057,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       baselineSnapshot: baselineSnap,
       comparisonSnapshot: compSnap,
       comparisonMode: mode,
+      allSnapshots: visitSnapshots,
     });
 
     const report = buildComparativeProgressReport({
@@ -2202,10 +2203,65 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       visit_date: today
     };
 
-    setPatient(seedPatient);
-    setClinicalVisits([visit2, visit1]);
-    setCurrentVisit(visit2);
-    setFollowUpAppointments([apptToday]);
+    const snap1: ClinicalVisitSnapshot = {
+      snapshot_id: `snap_${seed.id}_initial`,
+      visit_id: baseVisitId,
+      patient_id: seed.id,
+      visit_date: '2026-10-15',
+      created_at: '2026-10-15T10:15:00Z',
+      is_baseline: true,
+      anthropometrics: {
+        weight_kg: 78,
+        height_cm: seed.height_cm,
+        bmi: 33.8,
+        waist_cm: 94,
+        whtr: 0.62
+      },
+      biomarkers: {
+        hba1c: 7.4,
+        fasting_blood_glucose: 126,
+        tsh: 4.2
+      },
+      gut_metrics: {
+        bristol_stool_score: 2,
+        energy_score: 4,
+        bloating_severity: 3
+      },
+      symptoms: {
+        bristol_stool: 2,
+        energy_score: 4
+      }
+    };
+
+    const snap2: ClinicalVisitSnapshot = {
+      snapshot_id: `snap_${seed.id}_fup1`,
+      visit_id: followUpVisitId,
+      patient_id: seed.id,
+      visit_date: today,
+      created_at: new Date().toISOString(),
+      is_baseline: false,
+      anthropometrics: {
+        weight_kg: 74,
+        height_cm: seed.height_cm,
+        bmi: 32.0,
+        waist_cm: 90,
+        whtr: 0.59
+      },
+      biomarkers: {
+        hba1c: 6.8,
+        fasting_blood_glucose: 114,
+        tsh: 3.8
+      },
+      gut_metrics: {
+        bristol_stool_score: 4,
+        energy_score: 7,
+        bloating_severity: 1
+      },
+      symptoms: {
+        bristol_stool: 4,
+        energy_score: 7
+      }
+    };
 
     const freshTrafficLight = resolveConflicts(
       allFoods,
@@ -2216,11 +2272,68 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       seedPatient.clinician_disallowed_tags,
       seedPatient.current_phase
     );
-    setDietChart(buildAutoScaledDietChart(seedPatient, allFoods, freshTrafficLight));
+    const demoDietChart = buildAutoScaledDietChart(seedPatient, allFoods, freshTrafficLight);
+
+    const demoVisits: LongitudinalVisit[] = [
+      {
+        visit_id: baseVisitId,
+        visit_date: '2026-10-15',
+        phase: 1,
+        weight_kg: 78,
+        waist_cm: 94,
+        whtr: 0.62,
+        bristol_stool: 2,
+        energy_score: 4,
+        symptom_relief_pct: 0
+      },
+      {
+        visit_id: followUpVisitId,
+        visit_date: today,
+        phase: 1,
+        weight_kg: 74,
+        waist_cm: 90,
+        whtr: 0.59,
+        bristol_stool: 4,
+        energy_score: 7,
+        symptom_relief_pct: 60
+      }
+    ];
+
+    const demoRecord: PatientRecord = {
+      schema_version: 2,
+      patient: seedPatient,
+      visits: demoVisits,
+      clinical_visits: [visit2, visit1],
+      follow_up_appointments: [apptToday],
+      visit_snapshots: [snap2, snap1],
+      progress_reports: [],
+      current_diet_chart: demoDietChart,
+      current_supplements: [],
+      timeline: [],
+      created_at: '2026-10-15T10:00:00Z',
+      updated_at: new Date().toISOString()
+    };
+
+    // Commit demo patient to safeStorage so KPIs and tables reflect it immediately
+    const existingList = safeStorage.getItem<PatientRecord[]>('shuddho_saved_patients') || [];
+    const updatedList = [demoRecord, ...existingList.filter(p => p.patient.id !== seed.id)];
+    safeStorage.setItem('shuddho_saved_patients', updatedList);
+    safeStorage.setItem('shuddho_active_patient_id', seed.id);
+
+    setPatient(seedPatient);
+    setVisits(demoVisits);
+    setClinicalVisits([visit2, visit1]);
+    setCurrentVisit(visit2);
+    setFollowUpAppointments([apptToday]);
+    setVisitSnapshots([snap2, snap1]);
+    setProgressReports([]);
+    setSavedPatients(updatedList);
+    setDietChart(demoDietChart);
+
     const p2 = runP2Analysis(seedPatient);
     setP2AnalysisResult(p2);
     setCurrentClinicalAssessment(null);
-  }, []);
+  }, [allFoods, allMedicines]);
 
   return (
     <PracticeContext.Provider

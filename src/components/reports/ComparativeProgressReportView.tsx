@@ -134,8 +134,10 @@ export const ComparativeProgressReportView: React.FC<ComparativeProgressReportVi
       <div className="bg-card border rounded-3xl p-6 sm:p-10 shadow-sm space-y-8 text-foreground print:border-none print:shadow-none print:p-0">
         <style dangerouslySetInnerHTML={{ __html: `
           @media print {
-            body { font-size: 11px; }
+            body { font-size: 11px; color: #000 !important; background: #fff !important; }
+            .no-print { display: none !important; }
             .print-table th, .print-table td { font-size: 9px; padding: 3px 4px; word-break: break-word; }
+            tr, .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
             @page { margin: 12mm 15mm; size: A4 portrait; }
           }
         `}} />

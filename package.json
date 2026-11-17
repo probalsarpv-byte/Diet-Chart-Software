@@ -17,6 +17,7 @@
     "test:step01:qa": "python scripts/qa_referential_integrity.py",
     "test:step02": "tsx test/step02_unified_assessment.test.ts",
     "test:step03": "tsx test/step03_dashboard_followup.test.ts",
+    "test:step03:browser": "tsx test/step03_browser_e2e.test.ts",
     "test:e2e": "tsx test/step01_browser_e2e.test.ts && tsx test/step02_browser_e2e.test.ts && tsx test/step03_browser_e2e.test.ts",
     "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate && npm run test:master && npm run test:step01 && npm run test:step02 && npm run test:step03"
   },

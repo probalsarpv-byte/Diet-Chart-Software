@@ -4,6 +4,8 @@ import React, { useState, useMemo } from 'react';
 import { usePractice, getDhakaTodayDateString } from '@/context/PracticeContext';
 import { CLINICAL_PHASES, compareLongitudinalProgress } from '@/engine/phaseProgression';
 import { getApprovedBaselineSnapshot } from '@/engine/snapshot/snapshotManager';
+import { executeLongitudinalComparison } from '@/engine/longitudinal/comparisonEngine';
+import { ClinicalTrendLine } from '@/components/charts/ClinicalTrendLine';
 import { 
   TrendingUp, 
   ArrowRight, 
@@ -42,6 +44,7 @@ export const FollowUpTab: React.FC = () => {
     rescheduleFollowUp,
     cancelFollowUp,
     completeFollowUp,
+    startFollowUpConsultation,
     logFollowUpConsultation,
     clinicalVisits,
     currentVisit,
@@ -152,6 +155,95 @@ export const FollowUpTab: React.FC = () => {
       ...visits
     ]);
   }, [baselineVisitEntry, visits]);
+
+  // Live deterministic longitudinal comparison for workspace
+  const liveComparisonAnalysis = useMemo(() => {
+    if (visitSnapshots.length === 0) return null;
+
+    let baseSnap = baselineSnapshot;
+    let currSnap = visitSnapshots[0];
+
+    if (comparisonMode === 'baseline_vs_current') {
+      baseSnap = baselineSnapshot || visitSnapshots[visitSnapshots.length - 1];
+      currSnap = visitSnapshots[0];
+    } else if (comparisonMode === 'previous_vs_current') {
+      currSnap = visitSnapshots[0];
+      baseSnap = visitSnapshots.length > 1 ? visitSnapshots[1] : visitSnapshots[0];
+    } else if (comparisonMode === 'selected_pair') {
+      baseSnap = visitSnapshots.find(s => s.visit_id === selectedBaselineId) || baselineSnapshot || visitSnapshots[visitSnapshots.length - 1];
+      currSnap = visitSnapshots.find(s => s.visit_id === selectedCurrentId) || visitSnapshots[0];
+    } else if (comparisonMode === 'trend_series') {
+      baseSnap = baselineSnapshot || visitSnapshots[visitSnapshots.length - 1];
+      currSnap = visitSnapshots[0];
+    }
+
+    if (!baseSnap || !currSnap) return null;
+
+    const mode = comparisonMode === 'selected_pair'
+      ? 'selected_vs_selected'
+      : comparisonMode === 'trend_series'
+      ? 'multi_visit_trend'
+      : comparisonMode;
+
+    try {
+      return executeLongitudinalComparison({
+        patient,
+        baselineSnapshot: baseSnap,
+        comparisonSnapshot: currSnap,
+        comparisonMode: mode,
+        allSnapshots: visitSnapshots,
+      });
+    } catch (e) {
+      console.error('[FollowUpTab] Error calculating comparison analysis:', e);
+      return null;
+    }
+  }, [visitSnapshots, baselineSnapshot, comparisonMode, selectedBaselineId, selectedCurrentId, patient]);
+
+  // Extract clean multi-visit trend series without synthetic interpolation
+  const trendSeriesData = useMemo(() => {
+    const rawPoints = liveComparisonAnalysis?.trend_series?.data_points || [];
+
+    const points = rawPoints.length > 0 ? rawPoints : visitSnapshots.map(s => {
+      let hba1c: number | undefined = undefined;
+      const labEntries = (s as any).labs?.entries || [];
+      const entry = labEntries.find((e: any) => e.marker_id === 'hba1c' || e.name?.toLowerCase().includes('hba1c'));
+      if (entry && typeof entry.value === 'number') hba1c = entry.value;
+      else if (s.biomarkers?.hba1c) hba1c = s.biomarkers.hba1c;
+
+      return {
+        visit_id: s.visit_id,
+        visit_date: s.visit_date,
+        weight_kg: s.anthropometrics?.weight_kg,
+        waist_cm: s.anthropometrics?.waist_cm,
+        hba1c,
+        energy_score: s.gut_metrics?.energy_score,
+      };
+    });
+
+    const weightPts = points
+      .filter(p => typeof p.weight_kg === 'number')
+      .map(p => ({ date: p.visit_date, value: p.weight_kg! }));
+
+    const waistPts = points
+      .filter(p => typeof p.waist_cm === 'number')
+      .map(p => ({ date: p.visit_date, value: p.waist_cm! }));
+
+    const hba1cPts = points
+      .filter(p => typeof p.hba1c === 'number')
+      .map(p => ({ date: p.visit_date, value: p.hba1c! }));
+
+    const energyPts = points
+      .filter(p => typeof p.energy_score === 'number')
+      .map(p => ({ date: p.visit_date, value: p.energy_score! }));
+
+    return {
+      weightPts,
+      waistPts,
+      hba1cPts,
+      energyPts,
+      totalPoints: points.length,
+    };
+  }, [liveComparisonAnalysis, visitSnapshots]);
 
   const handleSaveVisit = () => {
     const whtr = patient.height_cm > 0 ? Math.round((newWaist / patient.height_cm) * 100) / 100 : 0;
@@ -381,6 +473,21 @@ export const FollowUpTab: React.FC = () => {
                         <td className="py-3 text-right space-x-1">
                           {apt.status !== 'completed' && apt.status !== 'cancelled' && (
                             <>
+                              <button
+                                onClick={() => {
+                                  const newVisit = startFollowUpConsultation(apt.appointment_id, apt.patient_id);
+                                  if (newVisit) {
+                                    setActiveSubTab('phases_progress');
+                                    setShowAddVisitModal(true);
+                                  } else {
+                                    alert(bn ? "পরামর্শ শুরু করা যায়নি।" : "Failed to start consultation.");
+                                  }
+                                }}
+                                className="px-2 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-[11px] font-semibold transition"
+                              >
+                                {bn ? 'পরামর্শ শুরু' : 'Start Visit'}
+                              </button>
+
                               <button
                                 onClick={() => {
                                   setShowRescheduleModal(apt);
@@ -790,6 +897,221 @@ export const FollowUpTab: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* ── MODE D: Multi-Visit Trend Visualization ─────────────── */}
+          {comparisonMode === 'trend_series' ? (
+            <div className="space-y-4">
+              <div className="bg-card border rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="font-bold text-xs sm:text-sm text-foreground">
+                      {bn ? 'ধারাবাহিক ক্লিনিক্যাল অগ্রগতি ও বায়োমার্কার ট্রেন্ড' : 'Longitudinal Clinical Trendlines & Biomarkers'}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      {bn
+                        ? 'সরাসরি রেকর্ডকৃত মানের সততা বজায় রাখা হয়েছে; কোনো অনুপস্থিত ভিজিটের কৃত্রিম মান তৈরি করা হয় না।'
+                        : 'Honest clinical visualization: zero synthetic interpolation across non-adjacent visits.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-xs font-semibold px-2.5 py-1 rounded-full bg-secondary text-foreground self-start sm:self-auto">
+                  {trendSeriesData.totalPoints} {bn ? 'টি ভিজিট পর্যবেক্ষণে' : 'recorded consultations'}
+                </div>
+              </div>
+
+              {trendSeriesData.totalPoints < 2 && (
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400 flex items-start gap-2.5">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">
+                      {bn ? 'সীমিত ক্লিনিক্যাল পর্যবেক্ষণ:' : 'Limited Longitudinal History:'}
+                    </span>{' '}
+                    {bn
+                      ? 'ধারাবাহিক দ্বিমাত্রিক ট্রেন্ডরেখা সক্রিয় করার জন্য ন্যূনতম ২টি সংরক্ষিত ভিজিটের ডেটা আবশ্যক। আরও ফলো-আপ ভিজিট সংরক্ষণ করুন।'
+                      : 'Multi-visit trendlines require at least 2 recorded consultations. Single observations are displayed numerically below.'}
+                  </div>
+                </div>
+              )}
+
+              {/* 4 SVG Trendline Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ClinicalTrendLine
+                  title="Weight Trajectory"
+                  titleBn="ওজন পরিবর্তনের গতিপথ"
+                  unit="kg"
+                  color="#10b981"
+                  data={trendSeriesData.weightPts}
+                  bn={bn}
+                />
+
+                <ClinicalTrendLine
+                  title="Waist Circumference"
+                  titleBn="কোমর পরিমাপের পরিবর্তন"
+                  unit="cm"
+                  color="#0ea5e9"
+                  data={trendSeriesData.waistPts}
+                  bn={bn}
+                />
+
+                <ClinicalTrendLine
+                  title="HbA1c Glycemic Marker"
+                  titleBn="এইচবিএওয়ানসি গ্লাইসেমিক মার্কার"
+                  unit="%"
+                  color="#8b5cf6"
+                  optimalRange={[4.0, 5.6]}
+                  data={trendSeriesData.hba1cPts}
+                  emptyMessage={bn ? 'কোনো ল্যাব HbA1c পরীক্ষার মান সংরক্ষিত নেই।' : 'No HbA1c laboratory readings recorded.'}
+                  bn={bn}
+                />
+
+                <ClinicalTrendLine
+                  title="Energy & Vitality Score"
+                  titleBn="শারীরিক শক্তি ও সতেজতা স্কোর"
+                  unit="/10"
+                  color="#f59e0b"
+                  optimalRange={[7, 10]}
+                  data={trendSeriesData.energyPts}
+                  bn={bn}
+                />
+              </div>
+            </div>
+          ) : (
+            /* ── MODES A, B, C: Live Pairwise Comparison Workspace ─── */
+            <div className="space-y-4">
+              {!liveComparisonAnalysis ? (
+                <div className="p-8 text-center rounded-2xl bg-card border border-dashed text-muted-foreground text-xs space-y-2">
+                  <TrendingUp className="h-8 w-8 mx-auto opacity-40" />
+                  <div>{bn ? 'তুলনার জন্য পর্যাপ্ত স্ন্যাপশট পাওয়া যায়নি।' : 'Insufficient visit snapshots recorded for comparison.'}</div>
+                </div>
+              ) : (
+                <>
+                  {/* Summary Header Card */}
+                  <div className="bg-card border rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                        <span>
+                          {comparisonMode === 'baseline_vs_current'
+                            ? (bn ? 'মোড A: বেসলাইন বনাম বর্তমান' : 'Mode A: Baseline vs Current')
+                            : comparisonMode === 'previous_vs_current'
+                            ? (bn ? 'মোড B: পূর্ববর্তী বনাম বর্তমান' : 'Mode B: Previous vs Current')
+                            : (bn ? 'মোড C: নির্বাচিত জোড়া' : 'Mode C: Selected Pair')}
+                        </span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                          liveComparisonAnalysis.overall_summary.improved_areas.length >= liveComparisonAnalysis.overall_summary.worsened_areas.length
+                            ? 'bg-emerald-500/15 text-emerald-500'
+                            : 'bg-rose-500/15 text-rose-500'
+                        }`}>
+                          {liveComparisonAnalysis.overall_summary.improved_areas.length} {bn ? 'উন্নতি' : 'Improved'} • {liveComparisonAnalysis.overall_summary.worsened_areas.length} {bn ? 'অবনতি' : 'Worsened'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {bn ? 'ভিজিট তুলনা:' : 'Visit Comparison:'} ID {liveComparisonAnalysis.baseline_visit_id} ➔ {liveComparisonAnalysis.comparison_visit_id}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleGenerateReportClick}
+                      className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-sm transition self-start sm:self-auto"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      <span>{bn ? 'A4 প্রগ্রেস রিপোর্ট খুলুন' : 'Open A4 Report'}</span>
+                    </button>
+                  </div>
+
+                  {/* Quantitative Metric Deltas Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {liveComparisonAnalysis.anthropometric_changes.map((change, idx) => (
+                      <div key={idx} className="bg-card border rounded-2xl p-3.5 shadow-sm space-y-1">
+                        <div className="text-[11px] text-muted-foreground font-medium truncate">
+                          {bn ? change.marker_name_bn : change.marker_name_en}
+                        </div>
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-lg font-bold text-foreground">
+                            {change.current_value !== undefined ? `${change.current_value} ${change.unit}` : 'N/A'}
+                          </span>
+                          {change.absolute_change !== undefined && (
+                            <span className={`text-[11px] font-bold ${
+                              change.outcome === 'improved'
+                                ? 'text-emerald-500'
+                                : change.outcome === 'worsened'
+                                ? 'text-rose-500'
+                                : 'text-muted-foreground'
+                            }`}>
+                              {change.absolute_change > 0 ? `+${change.absolute_change}` : change.absolute_change}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {bn ? change.clinical_interpretation_bn : change.clinical_interpretation_en}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Bristol Stool Evolution from symptom_changes */}
+                    {(() => {
+                      const stoolChange = liveComparisonAnalysis.symptom_changes.find(s => s.marker_id === 'bristol_stool');
+                      if (!stoolChange) return null;
+                      return (
+                        <div className="bg-card border rounded-2xl p-3.5 shadow-sm space-y-1">
+                          <div className="text-[11px] text-muted-foreground font-medium">
+                            {bn ? 'ব্রিস্টল স্টুল ফরম' : 'Bristol Stool Form'}
+                          </div>
+                          <div className="text-lg font-bold text-blue-500">
+                            Type {stoolChange.baseline_value ?? 'N/A'} ➔ {stoolChange.current_value ?? 'N/A'}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {bn ? stoolChange.clinical_interpretation_bn : stoolChange.clinical_interpretation_en}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Contextual Clinical Safety Notice */}
+                  <div className="p-3 rounded-xl bg-muted/20 border text-[11px] text-muted-foreground flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                    <span>
+                      {bn
+                        ? 'ক্লিনিক্যাল নীতি: ওজন হ্রাস সব ক্ষেত্রে ইতিবাচক নয়—গর্ভবতী, আন্ডারওয়েট ও অনকোলজি রোগীদের ক্ষেত্রে ওজন হ্রাস সুরক্ষানীতি অনুযায়ী সতর্কভাবে ব্যাখ্যা করা হয়।'
+                        : 'Clinical governance: Weight reduction is evaluated contextually. In pregnancy, oncology, and underweight refeeding, weight loss is not tagged as clinical improvement.'}
+                    </span>
+                  </div>
+
+                  {/* Functional Nutrition 7-Domain Matrix Progress Chips */}
+                  {liveComparisonAnalysis.functional_domain_changes && liveComparisonAnalysis.functional_domain_changes.length > 0 && (
+                    <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-3">
+                      <h4 className="font-bold text-xs text-foreground">
+                        {bn ? 'ফাংশনাল নিউট্রিশন ৭-ডোমেন ম্যাট্রিক্স অগ্রগতি' : 'Functional Nutrition 7-Domain Matrix Progress'}
+                      </h4>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                        {liveComparisonAnalysis.functional_domain_changes.map(d => (
+                          <div key={d.domain} className="p-2.5 rounded-xl border bg-muted/10 text-xs space-y-0.5">
+                            <div className="font-semibold text-foreground truncate">
+                              {bn ? d.domain_name_bn : d.domain_name_en}
+                            </div>
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-muted-foreground capitalize">{d.baseline_burden} ➔ {d.current_burden}</span>
+                              <span className={`px-1.5 py-0.2 rounded font-bold uppercase text-[9px] ${
+                                d.status === 'improved'
+                                  ? 'bg-emerald-500/15 text-emerald-500'
+                                  : d.status === 'worsened'
+                                  ? 'bg-rose-500/15 text-rose-500'
+                                  : 'bg-secondary text-muted-foreground'
+                              }`}>
+                                {d.status}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
