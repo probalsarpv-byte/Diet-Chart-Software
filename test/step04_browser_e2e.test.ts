@@ -34,7 +34,7 @@ function assert(condition: boolean, message: string) {
   }
 }
 
-function startStaticServer(): Promise<http.Server> {
+function startStaticServer(): Promise<{ server: http.Server; port: number; url: string }> {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       let reqPath = req.url?.replace('/Diet-Chart-Software', '') || '/';
@@ -60,25 +60,26 @@ function startStaticServer(): Promise<http.Server> {
       }
     });
 
-    server.listen(PORT, () => {
-      resolve(server);
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      const port = typeof addr === 'object' && addr ? addr.port : 4581;
+      const url = `http://127.0.0.1:${port}/Diet-Chart-Software/`;
+      resolve({ server, port, url });
     });
   });
 }
 
 async function runStep04BrowserE2E() {
-  console.log('=====================================================================');
-  console.log('SHUDDHO STEP 04: REAL BROWSER PLAYWRIGHT E2E ACCEPTANCE SUITE');
-  console.log(`Target: ${BASE_URL}`);
-  console.log('=====================================================================\n');
-
   if (!fs.existsSync(OUT_DIR)) {
     console.error('Error: "out" directory not found. Please build Next.js before running E2E.');
     process.exit(1);
   }
 
-  const server = await startStaticServer();
-  console.log(`✓ Static server running on port ${PORT}`);
+  const { server, port, url: BASE_URL } = await startStaticServer();
+  console.log('=====================================================================');
+  console.log('SHUDDHO STEP 04: REAL BROWSER PLAYWRIGHT E2E ACCEPTANCE SUITE');
+  console.log(`Target: ${BASE_URL} (port: ${port})`);
+  console.log('=====================================================================\n');
 
   const browser: Browser = await chromium.launch({
     channel: 'chrome',
@@ -99,7 +100,7 @@ async function runStep04BrowserE2E() {
     // Scenario 1: Reports Hub Navigation & Patient & Visit Traceability Header
     // -------------------------------------------------------------------
     console.log('\n--- Scenario 1: Reports Hub Navigation & Patient & Visit Traceability Header ---');
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
 
     // Load Demo Case to populate patient, visits, and P2 analysis
     const loadDemoBtn = page.locator('button:has-text("ডেমো কেস লোড করুন"), button:has-text("Load Demo Case"), button:has-text("Load Demo Patient")').first();
@@ -175,7 +176,7 @@ async function runStep04BrowserE2E() {
         localStorage.setItem('shuddho_saved_patients', JSON.stringify(savedPatients));
       }
     });
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(500);
 
     // Switch back to Reports Tab
@@ -246,7 +247,7 @@ async function runStep04BrowserE2E() {
     console.log('\n--- Scenario 4: Report Reopen & Persistence Integrity across Reload ---');
     
     // Reload page to verify persistence from LocalStorage
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(500);
 
     // Switch back to Reports Tab -> View 2
