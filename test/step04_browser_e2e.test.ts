@@ -299,6 +299,11 @@ async function runStep04BrowserE2E() {
       await goToFollowupBtn.click();
       await page.waitForTimeout(500);
 
+      // Click Sub-tab 3: Comparison Workspace
+      const compWorkspaceSubTab = page.locator('button:has-text("৩. লংগিটিউডিনাল তুলনা"), button:has-text("3. Comparison Workspace")');
+      await compWorkspaceSubTab.click();
+      await page.waitForTimeout(400);
+
       // Generate Progress Report in Follow-Up tab
       const generateBtn = page.locator('button:has-text("প্রগ্রেস রিপোর্ট তৈরি করুন"), button:has-text("Generate Progress Report"), button:has-text("Open A4 Report"), button:has-text("A4 প্রগ্রেস রিপোর্ট খুলুন")').first();
       if ((await generateBtn.count()) > 0) {
