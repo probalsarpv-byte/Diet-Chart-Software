@@ -17,7 +17,9 @@ import {
   FileText,
   TrendingUp,
   Award,
-  Sparkles
+  Sparkles,
+  UserCheck,
+  Calendar
 } from 'lucide-react';
 import { ComparativeProgressReportView } from '@/components/reports/ComparativeProgressReportView';
 import { FunctionalNutritionReport } from '@/components/p2/FunctionalNutritionReport';
@@ -39,7 +41,12 @@ export const ReportTab: React.FC = () => {
     currentProgressReport,
     generateProgressReport,
     approveProgressReport,
-    setActiveTab
+    selectProgressReport,
+    setActiveTab,
+    currentVisit,
+    clinicalVisits,
+    selectVisit,
+    progressReports
   } = usePractice();
 
   const [activeReportType, setActiveReportType] = useState<ReportType>('diet_prescription');
@@ -98,6 +105,131 @@ export const ReportTab: React.FC = () => {
             <Printer className="h-4 w-4" />
             <span>{bn ? 'প্রিন্ট / PDF ডাউনলোড' : 'Print / Export PDF'}</span>
           </button>
+        </div>
+      </div>
+
+      {/* Patient & Visit Traceability Header (Hidden in Print) */}
+      <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-3 no-print">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-border/60">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold">
+              <UserCheck className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-sm text-foreground">{patient.name || (bn ? 'নামবিহীন রোগী' : 'Unnamed Patient')}</span>
+                <span className="px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] font-mono font-bold">{patient.id}</span>
+                <span className="text-xs text-muted-foreground">• {patient.age}y / {patient.gender === 'female' ? (bn ? 'মহিলা' : 'Female') : (bn ? 'পুরুষ' : 'Male')}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {bn ? 'পপুলেশন গ্রুপ: ' : 'Population: '}
+                <span className="font-semibold text-foreground capitalize">{patient.population_group?.replace(/_/g, ' ')}</span>
+                {patient.phone ? ` • Tel: ${patient.phone}` : ''}
+              </p>
+            </div>
+          </div>
+
+          {/* Visit Selector Dropdown */}
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <label className="text-xs font-semibold text-muted-foreground">{bn ? 'ক্লিনিক্যাল ভিজিট:' : 'Clinical Visit:'}</label>
+            <select
+              value={currentVisit?.visit_id || ''}
+              onChange={(e) => selectVisit(e.target.value)}
+              className="px-2.5 py-1.5 rounded-xl border bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              {(clinicalVisits && clinicalVisits.length > 0 ? clinicalVisits : [
+                { visit_id: patient.current_visit_id || 'vis_initial', visit_date: patient.visit_date, visit_type: 'baseline_consultation' }
+              ]).map((v: any, idx: number) => (
+                <option key={v.visit_id || idx} value={v.visit_id}>
+                  Visit {v.visit_number || idx + 1}: {v.visit_date} ({v.visit_type?.replace(/_/g, ' ')})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Dynamic Report State & Approval Badge Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold text-muted-foreground">{bn ? 'রিপোর্ট স্ট্যাটাস:' : 'Document Status:'}</span>
+            {activeReportType === 'diet_prescription' && (
+              hasUnresolvedContraindications ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                  <XCircle className="h-3 w-3" />
+                  <span>{bn ? 'অমীমাংসিত ঝুঁকি / হার্ড স্টপ' : 'Safety Alert / Hard Stop'}</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <ShieldCheck className="h-3 w-3" />
+                  <span>{bn ? 'ক্লিনিক্যাল সুরক্ষা যাচাইকৃত' : 'Clinical Safety Verified'}</span>
+                </span>
+              )
+            )}
+
+            {activeReportType === 'clinical_assessment' && (
+              p2AnalysisResult?.report?.isApproved ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3" />
+                  <span>
+                    {bn ? 'অনুমোদিত: ' : 'Approved: '}
+                    {p2AnalysisResult.report.approvedBy} ({p2AnalysisResult.report.approvalDate?.split('T')[0]})
+                  </span>
+                </span>
+              ) : p2AnalysisResult?.analysisInvalidatedAt ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>{bn ? 'পুনঃপর্যালোচনা প্রয়োজন (ডাটা পরিবর্তন)' : 'Invalidated / Requires Re-review'}</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{bn ? 'খসড়া / প্রোভিশনাল (অনুমোদন বাকি)' : 'Draft / Provisional (Sign-off Required)'}</span>
+                </span>
+              )
+            )}
+
+            {activeReportType === 'comparative_progress' && (
+              currentProgressReport ? (
+                currentProgressReport.is_approved ? (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" />
+                    <span>
+                      {bn ? 'অনুমোদিত: ' : 'Approved: '}
+                      {currentProgressReport.approved_by} ({currentProgressReport.approval_date?.split('T')[0]})
+                    </span>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    <span>{bn ? 'খসড়া প্রগ্রেস রিপোর্ট' : 'Draft Progress Report'}</span>
+                  </span>
+                )
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted text-muted-foreground">
+                  {bn ? 'তৈরি করা হয়নি' : 'Not Generated'}
+                </span>
+              )
+            )}
+          </div>
+
+          {/* Progress Report Selector when in comparative_progress and multiple reports exist */}
+          {activeReportType === 'comparative_progress' && progressReports && progressReports.length > 1 && (
+            <div className="flex items-center gap-2">
+              <label className="text-[11px] font-semibold text-muted-foreground">{bn ? 'রিপোর্ট বাছাই:' : 'Select Report:'}</label>
+              <select
+                value={currentProgressReport?.report_id || ''}
+                onChange={(e) => selectProgressReport(e.target.value)}
+                className="px-2.5 py-1 rounded-lg border bg-background text-foreground text-xs font-medium"
+              >
+                {progressReports.map((r, i) => (
+                  <option key={r.report_id || i} value={r.report_id}>
+                    {r.sectionA_patientAndConsultation.baseline_date} vs {r.sectionA_patientAndConsultation.comparison_date} {r.is_approved ? '✓ Approved' : '(Draft)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -449,7 +581,15 @@ export const ReportTab: React.FC = () => {
                 <li>{bn ? 'রান্নায় কোনোভাবেই রিফাইন্ড সয়াবিন বা পাম তেল ব্যবহার করবেন না; খাঁটি ঘানিভাঙা সরিষার তেল (দৈনিক ১৫-২০ মিলি) অথবা খাঁটি দেশি ঘিয়ে রান্না করুন।' : 'Strictly avoid refined industrial seed oils. Use cold-pressed unrefined mustard oil (15-20 ml/day) or pure cow ghee.'}</li>
                 <li>{bn ? 'খাবারের ফ্যান বা মাড় সম্পূর্ণ ঝরিয়ে ফেলুন এবং লাল চাল রান্নার পূর্বে ৩০ মিনিট ভিজিয়ে রাখুন।' : 'Discard rice starch gruel after boiling. Soak unpolished rice 30 mins prior to cooking.'}</li>
                 <li>{bn ? 'ডাল রান্নার আগে অন্তত ৮-১২ ঘণ্টা পানিতে ভিজিয়ে রেখে পানি ফেলে দিয়ে রান্না করতে হবে (ফাইটেট হ্রাস পাবে)।' : 'Soak all legumes (dal) for 8-12 hours and discard soaking liquid to neutralize phytic acid.'}</li>
-                <li>{bn ? 'প্রতিদিন অন্তত ৩.৫ লিটার কুসুম গরম পানি পান করুন; ভারী খাবারের মাঝে পানি পান না করে ৩০ মিনিট পূর্বে বা ৪৫ মিনিট পরে পান করুন।' : 'Consume minimum 3.5 L water daily; avoid drinking large volumes during meals to preserve digestive fire.'}</li>
+                {patient.clinical_safety?.fluid_restriction?.is_restricted ? (
+                  <li className="text-rose-600 dark:text-rose-400 font-bold">
+                    {bn 
+                      ? `ক্লিনিক্যাল সতর্কতা (তরল নিয়ন্ত্রণ): রোগীর চিকিৎসকের নির্দেশ মোতাবেক দৈনিক মোট তরল গ্রহণ কঠোরভাবে সর্বোচ্চ ${patient.clinical_safety.fluid_restriction.limit_ml || 'নির্দিষ্ট'} মিলি-তে সীমাবদ্ধ রাখুন।`
+                      : `Clinical Fluid Restriction Active: Strictly limit total daily fluid intake to maximum ${patient.clinical_safety.fluid_restriction.limit_ml || 'prescribed'} mL/day as ordered by managing physician.`}
+                  </li>
+                ) : (
+                  <li>{bn ? 'প্রতিদিন অন্তত ২.৫ থেকে ৩.০ লিটার বিশুদ্ধ কুসুম গরম পানি পান করুন; ভারী খাবারের মাঝে পানি পান না করে ৩০ মিনিট পূর্বে বা ৪৫ মিনিট পরে পান করুন।' : 'Consume adequate pure warm water daily (2.5-3.0 L); avoid drinking large volumes during meals to preserve digestive fire.'}</li>
+                )}
               </ul>
             </div>
 
@@ -490,9 +630,7 @@ export const ReportTab: React.FC = () => {
               analysis={p2AnalysisResult}
               patient={patient}
               lang={language}
-              onApprove={(clinicianId, notes) => {
-                approveP2Analysis(clinicianId, notes);
-              }}
+              onApprove={(clinicianId, notes) => approveP2Analysis(clinicianId, notes)}
             />
           ) : (
             <div className="bg-card border rounded-2xl p-10 text-center space-y-4 shadow-sm max-w-xl mx-auto">

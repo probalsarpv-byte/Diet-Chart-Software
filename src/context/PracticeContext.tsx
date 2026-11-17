@@ -187,6 +187,7 @@ export interface PracticeContextType {
   captureVisitSnapshot: (isBaseline?: boolean, amendmentReason?: string, observationPayload?: ClinicalObservationsPayload) => ClinicalVisitSnapshot;
   generateProgressReport: (baselineVisitId: string, comparisonVisitId: string, comparisonMode?: 'baseline_vs_current' | 'previous_vs_current' | 'selected_pair' | 'trend_series') => ComparativeProgressReport | null;
   approveProgressReport: (reportId: string, clinicianId: string, notes?: string) => boolean;
+  selectProgressReport: (reportId: string) => void;
   loadDemoPatient: () => void;
 
   // Patient Records Persistence
@@ -1333,6 +1334,22 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setCandidateSupplements(migrated.current_supplements);
       }
       setCurrentClinicalAssessment(null);
+
+      // Rehydrate or isolate P2 analysis for newly loaded patient and visit
+      const targetVisitId = migrated.patient.current_visit_id || activeVisit?.visit_id || activeVisit?.id;
+      const visitDateClean = (migrated.patient.visit_date || '').replace(/[^0-9]/g, '');
+      const p2Key = `shuddho_p2_analysis_${migrated.patient.id}_${targetVisitId || `visit_${migrated.patient.id}_${visitDateClean}`}`;
+      try {
+        const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+        if (savedP2) {
+          setP2AnalysisResult(savedP2);
+        } else {
+          setP2AnalysisResult(runP2Analysis(migrated.patient));
+        }
+      } catch {
+        setP2AnalysisResult(runP2Analysis(migrated.patient));
+      }
+
       safeStorage.setItem('shuddho_active_patient_id', id);
     }
   }, [savedPatients, patient, saveCurrentPatient]);
@@ -1541,16 +1558,26 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCurrentVisit(match);
     const snap = getLatestVisitSnapshot(visitSnapshots, match.visit_id || match.id || '');
 
-    setPatient(prev => {
-      return restoreVisitState({
-        currentPatient: prev,
-        targetVisit: match,
-        targetSnapshot: snap
-      });
+    const restoredPatient = restoreVisitState({
+      currentPatient: patient,
+      targetVisit: match,
+      targetSnapshot: snap
     });
+    setPatient(restoredPatient);
 
-    invalidateP2Approval(`Switched to visit ${visitId}`);
-  }, [clinicalVisits, visitSnapshots, invalidateP2Approval]);
+    // Rehydrate P2 analysis specific to this selected visit
+    const p2Key = `shuddho_p2_analysis_${restoredPatient.id}_${match.visit_id || match.id}`;
+    try {
+      const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+      if (savedP2) {
+        setP2AnalysisResult(savedP2);
+      } else {
+        setP2AnalysisResult(runP2Analysis(restoredPatient));
+      }
+    } catch {
+      setP2AnalysisResult(runP2Analysis(restoredPatient));
+    }
+  }, [clinicalVisits, visitSnapshots, patient]);
 
   const completeCurrentVisit = useCallback((summary?: string) => {
     if (!currentVisit) return;
@@ -2212,6 +2239,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return report;
   }, [visitSnapshots, patient]);
 
+  const selectProgressReport = useCallback((reportId: string) => {
+    const match = progressReports.find(r => r.report_id === reportId);
+    if (match) {
+      setCurrentProgressReport(match);
+    }
+  }, [progressReports]);
+
   const approveProgressReport = useCallback((reportId: string, clinicianId: string, notes?: string): boolean => {
     if (!validateClinicianCredentials(clinicianId)) {
       console.warn('Progress report approval rejected: Invalid licensed clinician ID.');
@@ -2545,6 +2579,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         captureVisitSnapshot,
         generateProgressReport,
         approveProgressReport,
+        selectProgressReport,
         loadDemoPatient,
         savedPatients,
         saveCurrentPatient,

@@ -9,7 +9,7 @@ interface FunctionalNutritionReportProps {
   analysis: P2AnalysisResult;
   patient: PatientProfile;
   lang: 'bn' | 'en';
-  onApprove?: (clinicianId: string, notes?: string) => void;
+  onApprove?: (clinicianId: string, notes?: string) => boolean;
 }
 
 export const FunctionalNutritionReport: React.FC<FunctionalNutritionReportProps> = ({
