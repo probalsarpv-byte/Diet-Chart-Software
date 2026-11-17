@@ -130,10 +130,19 @@ export function calculatePracticeKPIs(
   // 1. Total patients
   const totalPatients = patients.length;
 
-  // 2. New this month (safe registration date without inventing from consultation date)
+  // 2. New this month (safe registration date converted to Asia/Dhaka)
   const newThisMonth = patients.filter(p => {
-    const regDate = p.created_at || (p.patient as any).created_at || p.patient.visit_date || '';
-    return regDate.substring(0, 7) === currentMonth;
+    const raw = p.created_at || (p.patient as any).created_at || p.patient.visit_date || '';
+    if (!raw) return false;
+    let dhakaDateStr = raw;
+    if (raw.includes('T')) {
+      try {
+        dhakaDateStr = getDhakaTodayDateString(new Date(raw));
+      } catch {
+        dhakaDateStr = raw;
+      }
+    }
+    return dhakaDateStr.substring(0, 7) === currentMonth;
   }).length;
 
   // 3. Aggregate all visits with deduplication by visit_id

@@ -75,13 +75,8 @@ export function generateCollisionResistantId(prefix: string): string {
   return generateEntityId(prefix);
 }
 
-export function getDhakaTodayDateString(): string {
-  try {
-    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  } catch {
-    return new Date().toISOString().split('T')[0];
-  }
-}
+import { getDhakaTodayDateString } from '@/utils/dhakaDate';
+export { getDhakaTodayDateString };
 
 export function refreshAppointmentStatus(apt: FollowUpAppointment): FollowUpAppointment {
   if (apt.status === 'completed' || apt.status === 'cancelled') {
@@ -2141,6 +2136,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const persisted = safeStorage.setItem(storageKey, updatedReport);
     if (!persisted) {
       console.error('Failed to persist progress report approval with write-back verification');
+      // Roll back the aggregate record to preserve multi-key atomicity
+      safeStorage.setItem('shuddho_saved_patients', savedPatients);
       return false;
     }
 
