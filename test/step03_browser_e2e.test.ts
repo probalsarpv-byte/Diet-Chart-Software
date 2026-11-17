@@ -280,9 +280,9 @@ async function runStep03BrowserE2E() {
     assert((await printBtn.count()) > 0, 'A4 Print / Export PDF button is present');
 
     // Test Clinician Approval form validation with placeholder name
-    const clinicianInput = page.locator('input[placeholder*="Dr. A. Rahman"], input[type="text"]').last();
-    if ((await clinicianInput.count()) > 0) {
-      await clinicianInput.fill('doctor');
+    const clinicianNameInput = page.locator('input[placeholder*="Dr. A. Rahman"]').first();
+    if ((await clinicianNameInput.count()) > 0) {
+      await clinicianNameInput.fill('doctor');
       const approveBtn = page.locator('button:has-text("চূড়ান্ত অনুমোদন ও সংরক্ষণ করুন"), button:has-text("Approve Progress Report")');
       await approveBtn.click();
       await page.waitForTimeout(300);
@@ -292,7 +292,7 @@ async function runStep03BrowserE2E() {
       assert((await errorMsg.count()) > 0, 'Generic placeholder clinician name is rejected by governance validator');
 
       // Now enter valid clinician name
-      await clinicianInput.fill('Dr. A. K. Azad, Licensed Clinical Nutritionist');
+      await clinicianNameInput.fill('Dr. A. K. Azad, Licensed Clinical Nutritionist');
       await approveBtn.click();
       await page.waitForTimeout(600);
 
