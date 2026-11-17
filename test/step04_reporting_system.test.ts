@@ -113,13 +113,13 @@ function createTestPatient(id: string, name: string, overrides: Partial<PatientP
     population_group: 'adult_standard',
     bmr_floor_strategy: 'clamped_to_bmr',
     confirmed_allergies: [],
-    allergy_reconciliation_status: 'reconciled_no_known_allergies',
+    allergy_reconciliation_status: 'none_confirmed',
     clinician_disallowed_foods: [],
     clinician_disallowed_tags: [],
-    selected_conditions: ['t2d_overweight'],
+    selected_conditions: ['t2d_ir'],
     active_medications: [],
     medication_records: [],
-    medication_reconciliation_status: 'completed',
+    medication_reconciliation_status: 'fully_reconciled',
     gut_profile: {
       bloating: 'moderate',
       acid_reflux_hypoacidity: false,
@@ -145,7 +145,7 @@ function createTestPatient(id: string, name: string, overrides: Partial<PatientP
       protein_ratio: 0.22,
       carbs_ratio: 0.40,
       fat_ratio: 0.38,
-      population_warning: null
+      population_warning: undefined
     },
     is_diet_plan_dirty: false,
     ...overrides

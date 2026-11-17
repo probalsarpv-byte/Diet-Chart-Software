@@ -4,7 +4,8 @@ import type {
   AyurvedicAssessmentContext,
   InterventionApprovalStatus,
   InterventionLockState,
-  FastingSafetyEligibility
+  FastingSafetyEligibility,
+  FluidPrescription
 } from './clinical';
 export * from './clinical';
 export * from './assessment';
