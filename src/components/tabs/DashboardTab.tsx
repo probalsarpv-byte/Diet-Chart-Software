@@ -160,7 +160,11 @@ export const DashboardTab: React.FC = () => {
 
   const handleConfirmReschedule = () => {
     if (!showRescheduleModal) return;
-    rescheduleFollowUp(showRescheduleModal.appointment_id, rescheduleDate, rescheduleTime, rescheduleReason);
+    const ok = rescheduleFollowUp(showRescheduleModal.appointment_id, rescheduleDate, rescheduleTime, rescheduleReason);
+    if (!ok) {
+      alert(bn ? "রি-শিডিউল ব্যর্থ হয়েছে: স্টোরেজ সীমা বা ত্রুটি।" : "Failed to reschedule appointment: Storage error or quota exceeded.");
+      return;
+    }
     setShowRescheduleModal(null);
     setRescheduleReason('');
   };

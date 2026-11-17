@@ -922,5 +922,425 @@ console.log('===================================================================
 }
 
 console.log('\n=====================================================================');
+console.log('TEST SUITE: Scenarios A–H: Atomic Consultation Creation & Persist-First Lifecycle');
+console.log('=====================================================================');
+
+// Scenario A: Cross-Patient Consultation
+{
+  const storage = new MockStorage();
+  const patientA = createMinimalPatient('pt_alpha_cross', 'Patient Alpha');
+  const patientB = createMinimalPatient('pt_beta_cross', 'Patient Beta');
+
+  const visitA: ClinicalVisit = {
+    visit_id: 'vis_alpha_base',
+    patient_id: patientA.id,
+    visit_date: '2026-10-01',
+    visit_type: 'baseline_consultation',
+    status: 'completed',
+    created_at: '2026-10-01T10:00:00Z'
+  };
+  const recordA = createMinimalRecord(patientA, [visitA]);
+
+  const visitB: ClinicalVisit = {
+    visit_id: 'vis_beta_base',
+    patient_id: patientB.id,
+    visit_date: '2026-10-05',
+    visit_type: 'baseline_consultation',
+    status: 'completed',
+    created_at: '2026-10-05T10:00:00Z'
+  };
+  const aptB: FollowUpAppointment = {
+    appointment_id: 'apt_beta_sched',
+    patient_id: patientB.id,
+    scheduled_date: '2026-11-20',
+    scheduled_time: '11:00 AM',
+    reason: 'Routine check',
+    status: 'scheduled',
+    created_at: '2026-10-05T10:30:00Z'
+  };
+  const recordB = createMinimalRecord(patientB, [visitB], [aptB]);
+
+  // Persist both records initially
+  storage.setItem('shuddho_saved_patients', [recordA, recordB]);
+
+  // Execute START_CONSULTATION_FOR_APPOINTMENT for Patient B
+  const tx = savePatientTransaction({
+    currentRecord: recordB,
+    storageEngine: storage,
+    action: {
+      type: 'START_CONSULTATION_FOR_APPOINTMENT',
+      payload: { appointmentId: 'apt_beta_sched' }
+    },
+    savedPatientsList: [recordA, recordB]
+  });
+
+  assert(tx.success === true, 'Scenario A: Consultation creation transaction succeeded');
+  assert(Boolean(tx.newVisit), 'Scenario A: New visit returned');
+  assert(tx.newVisit?.patient_id === patientB.id, 'Scenario A: New visit belongs to Patient B');
+  assert(tx.newVisit?.visit_id !== visitB.visit_id, 'Scenario A: New visit ID is distinct from baseline');
+  const linkedApt = tx.committedRecord.follow_up_appointments?.find(a => a.appointment_id === 'apt_beta_sched');
+  assert(linkedApt?.actual_visit_id === tx.newVisit?.visit_id, 'Scenario A: actual_visit_id matches new visit');
+  assert(linkedApt?.status !== 'completed', 'Scenario A: Appointment is not prematurely completed');
+
+  // Verify Patient A record in committed list is completely untouched
+  const committedA = tx.committedPatientsList.find(p => p.patient.id === patientA.id);
+  assert(committedA?.clinical_visits?.length === 1, 'Scenario A: Patient A clinical visits unaffected (zero leakage)');
+  assert(committedA?.clinical_visits?.[0].visit_id === 'vis_alpha_base', 'Scenario A: Patient A visit preserved');
+
+  // Verify storage reload
+  const reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  const reloadedB = reloaded.find(p => p.patient.id === patientB.id)!;
+  assert(reloadedB.clinical_visits?.length === 2, 'Scenario A: Reloaded Patient B has 2 visits');
+  assert(reloadedB.follow_up_appointments?.[0].actual_visit_id === tx.newVisit?.visit_id, 'Scenario A: Reloaded Patient B appointment linkage preserved');
+}
+
+// Scenario B: Repeated Click Protection (Idempotent Consultation Linkage)
+{
+  const storage = new MockStorage();
+  const patient = createMinimalPatient('pt_repeat', 'Repeat Click Patient');
+  const baseVisit: ClinicalVisit = {
+    visit_id: 'vis_repeat_1',
+    patient_id: patient.id,
+    visit_date: '2026-10-01',
+    visit_type: 'baseline_consultation',
+    status: 'completed',
+    created_at: '2026-10-01T10:00:00Z'
+  };
+  const apt: FollowUpAppointment = {
+    appointment_id: 'apt_repeat_1',
+    patient_id: patient.id,
+    scheduled_date: '2026-11-20',
+    reason: 'Follow-up check',
+    status: 'scheduled',
+    created_at: '2026-10-01T10:30:00Z'
+  };
+  const record = createMinimalRecord(patient, [baseVisit], [apt]);
+  storage.setItem('shuddho_saved_patients', [record]);
+
+  // First click
+  const tx1 = savePatientTransaction({
+    currentRecord: record,
+    storageEngine: storage,
+    action: {
+      type: 'START_CONSULTATION_FOR_APPOINTMENT',
+      payload: { appointmentId: 'apt_repeat_1' }
+    },
+    savedPatientsList: [record]
+  });
+  assert(tx1.success === true, 'Scenario B: First consultation click succeeded');
+  const visit1Id = tx1.newVisit?.visit_id;
+  assert(tx1.committedRecord.clinical_visits?.length === 2, 'Scenario B: Visits count is 2 after first click');
+
+  // Second click with the committed record
+  const tx2 = savePatientTransaction({
+    currentRecord: tx1.committedRecord,
+    storageEngine: storage,
+    action: {
+      type: 'START_CONSULTATION_FOR_APPOINTMENT',
+      payload: { appointmentId: 'apt_repeat_1' }
+    },
+    savedPatientsList: tx1.committedPatientsList
+  });
+  assert(tx2.success === true, 'Scenario B: Second click succeeded idempotently');
+  assert(tx2.newVisit?.visit_id === visit1Id, 'Scenario B: Second click reuses existing consultation');
+  assert(tx2.committedRecord.clinical_visits?.length === 2, 'Scenario B: Visits count did NOT increase (no duplicate visit)');
+}
+
+// Scenario C: Storage Failure During Consultation
+{
+  const storage = new MockStorage();
+  const patient = createMinimalPatient('pt_fail_cons', 'Fail Cons Patient');
+  const baseVisit: ClinicalVisit = {
+    visit_id: 'vis_fail_cons_1',
+    patient_id: patient.id,
+    visit_date: '2026-10-01',
+    visit_type: 'baseline_consultation',
+    status: 'completed',
+    created_at: '2026-10-01T10:00:00Z'
+  };
+  const apt: FollowUpAppointment = {
+    appointment_id: 'apt_fail_cons_1',
+    patient_id: patient.id,
+    scheduled_date: '2026-11-20',
+    reason: 'Follow-up check',
+    status: 'scheduled',
+    created_at: '2026-10-01T10:30:00Z'
+  };
+  const record = createMinimalRecord(patient, [baseVisit], [apt]);
+  storage.setItem('shuddho_saved_patients', [record]);
+
+  // Inject failure
+  storage.shouldFail = true;
+
+  const tx = savePatientTransaction({
+    currentRecord: record,
+    storageEngine: storage,
+    action: {
+      type: 'START_CONSULTATION_FOR_APPOINTMENT',
+      payload: { appointmentId: 'apt_fail_cons_1' }
+    },
+    savedPatientsList: [record]
+  });
+
+  assert(tx.success === false, 'Scenario C: Transaction reports failure on storage write fault');
+  assert(tx.committedRecord.clinical_visits?.length === 1, 'Scenario C: In-memory visits array rolled back / unchanged');
+  assert(tx.committedRecord.follow_up_appointments?.[0].actual_visit_id === undefined, 'Scenario C: No phantom actual_visit_id linkage');
+
+  // Verify storage unaffected
+  storage.shouldFail = false;
+  const reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert(reloaded[0].clinical_visits?.length === 1, 'Scenario C: Storage persisted visits strictly unchanged (1 visit)');
+  assert(reloaded[0].follow_up_appointments?.[0].actual_visit_id === undefined, 'Scenario C: Storage appointment unlinked');
+}
+
+// Scenario D: Schedule Failure (No Phantom Appointment)
+{
+  const storage = new MockStorage();
+  const patient = createMinimalPatient('pt_fail_sched', 'Fail Sched Patient');
+  const record = createMinimalRecord(patient, []);
+  storage.setItem('shuddho_saved_patients', [record]);
+
+  const newApt: FollowUpAppointment = {
+    appointment_id: 'apt_phantom',
+    patient_id: patient.id,
+    scheduled_date: '2026-11-22',
+    status: 'scheduled',
+    created_at: new Date().toISOString()
+  };
+
+  storage.shouldFail = true;
+  const tx = savePatientTransaction({
+    currentRecord: record,
+    storageEngine: storage,
+    action: {
+      type: 'SAVE_RECORD',
+      payload: { follow_up_appointments: [newApt] }
+    },
+    savedPatientsList: [record]
+  });
+
+  assert(tx.success === false, 'Scenario D: Schedule transaction rejected on storage error');
+  storage.shouldFail = false;
+  const reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert((reloaded[0].follow_up_appointments || []).length === 0, 'Scenario D: Zero phantom appointments persisted');
+}
+
+// Scenario E: Reschedule Failure (Preserve Original Date & Status)
+{
+  const storage = new MockStorage();
+  const patient = createMinimalPatient('pt_fail_resched', 'Fail Resched Patient');
+  const initialApt: FollowUpAppointment = {
+    appointment_id: 'apt_orig',
+    patient_id: patient.id,
+    scheduled_date: '2026-11-20',
+    status: 'scheduled',
+    created_at: '2026-10-01T10:00:00Z'
+  };
+  const record = createMinimalRecord(patient, [], [initialApt]);
+  storage.setItem('shuddho_saved_patients', [record]);
+
+  const proposedResched: FollowUpAppointment = {
+    ...initialApt,
+    scheduled_date: '2026-11-28',
+    status: 'rescheduled',
+    rescheduled_from: '2026-11-20',
+    rescheduled_history: [{
+      previous_date: '2026-11-20',
+      rescheduled_at: new Date().toISOString(),
+      reason: 'Failed try'
+    }]
+  };
+
+  storage.shouldFail = true;
+  const tx = savePatientTransaction({
+    currentRecord: record,
+    storageEngine: storage,
+    action: {
+      type: 'SAVE_RECORD',
+      payload: { follow_up_appointments: [proposedResched] }
+    },
+    savedPatientsList: [record]
+  });
+
+  assert(tx.success === false, 'Scenario E: Reschedule transaction rejected on storage error');
+  storage.shouldFail = false;
+  const reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  const persistedApt = reloaded[0].follow_up_appointments?.[0];
+  assert(persistedApt?.scheduled_date === '2026-11-20', 'Scenario E: Original date preserved (2026-11-20)');
+  assert(persistedApt?.status === 'scheduled', 'Scenario E: Original status preserved');
+  assert(!persistedApt?.rescheduled_history || persistedApt.rescheduled_history.length === 0, 'Scenario E: No false reschedule history appended');
+}
+
+// Scenario F: Cancel Failure (Preserve Previous State)
+{
+  const storage = new MockStorage();
+  const patient = createMinimalPatient('pt_fail_cancel', 'Fail Cancel Patient');
+  const initialApt: FollowUpAppointment = {
+    appointment_id: 'apt_cancel_target',
+    patient_id: patient.id,
+    scheduled_date: '2026-11-20',
+    status: 'scheduled',
+    created_at: '2026-10-01T10:00:00Z'
+  };
+  const record = createMinimalRecord(patient, [], [initialApt]);
+  storage.setItem('shuddho_saved_patients', [record]);
+
+  const proposedCancel: FollowUpAppointment = {
+    ...initialApt,
+    status: 'cancelled',
+    cancellation_reason: 'Clinician emergency'
+  };
+
+  storage.shouldFail = true;
+  const tx = savePatientTransaction({
+    currentRecord: record,
+    storageEngine: storage,
+    action: {
+      type: 'SAVE_RECORD',
+      payload: { follow_up_appointments: [proposedCancel] }
+    },
+    savedPatientsList: [record]
+  });
+
+  assert(tx.success === false, 'Scenario F: Cancel transaction rejected on storage error');
+  storage.shouldFail = false;
+  const reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert(reloaded[0].follow_up_appointments?.[0].status === 'scheduled', 'Scenario F: Appointment status remains scheduled');
+}
+
+// Scenario G: Complete Failure (Appointment Not Falsely Marked Completed)
+{
+  const storage = new MockStorage();
+  const patient = createMinimalPatient('pt_fail_comp', 'Fail Comp Patient');
+  const initialApt: FollowUpAppointment = {
+    appointment_id: 'apt_comp_target',
+    patient_id: patient.id,
+    scheduled_date: '2026-11-20',
+    actual_visit_id: 'vis_comp_1',
+    status: 'scheduled',
+    created_at: '2026-10-01T10:00:00Z'
+  };
+  const record = createMinimalRecord(patient, [], [initialApt]);
+  storage.setItem('shuddho_saved_patients', [record]);
+
+  const proposedComplete: FollowUpAppointment = {
+    ...initialApt,
+    status: 'completed',
+    completed_visit_id: 'vis_comp_1'
+  };
+
+  storage.shouldFail = true;
+  const tx = savePatientTransaction({
+    currentRecord: record,
+    storageEngine: storage,
+    action: {
+      type: 'SAVE_RECORD',
+      payload: { follow_up_appointments: [proposedComplete] }
+    },
+    savedPatientsList: [record]
+  });
+
+  assert(tx.success === false, 'Scenario G: Complete transaction rejected on storage error');
+  storage.shouldFail = false;
+  const reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert(reloaded[0].follow_up_appointments?.[0].status === 'scheduled', 'Scenario G: Appointment status remains scheduled (not completed)');
+}
+
+// Scenario H: Normal Appointment Lifecycle Throughout
+{
+  const storage = new MockStorage();
+  const patient = createMinimalPatient('pt_lifecycle', 'Lifecycle Patient');
+  const baseVisitId = patient.current_visit_id || `vis_${patient.id}_1`;
+  const baseVisit: ClinicalVisit = {
+    visit_id: baseVisitId,
+    patient_id: patient.id,
+    visit_date: '2026-10-01',
+    visit_type: 'baseline_consultation',
+    status: 'completed',
+    created_at: '2026-10-01T10:00:00Z'
+  };
+  let record = createMinimalRecord(patient, [baseVisit]);
+  storage.setItem('shuddho_saved_patients', [record]);
+
+  // 1. Schedule
+  const apt: FollowUpAppointment = {
+    appointment_id: 'apt_life_1',
+    patient_id: patient.id,
+    scheduled_date: '2026-11-22',
+    scheduled_time: '10:00 AM',
+    reason: 'Monthly check',
+    status: 'scheduled',
+    created_at: new Date().toISOString()
+  };
+  let tx = savePatientTransaction({
+    currentRecord: record,
+    storageEngine: storage,
+    action: { type: 'SAVE_RECORD', payload: { follow_up_appointments: [apt] } },
+    savedPatientsList: [record]
+  });
+  assert(tx.success, 'Scenario H1: Scheduled successfully');
+
+  // 2. Reload after Schedule
+  let reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert(reloaded[0].follow_up_appointments?.[0].appointment_id === 'apt_life_1', 'Scenario H2: Appointment preserved after schedule reload');
+
+  // 3. Reschedule
+  const reschedApt: FollowUpAppointment = {
+    ...reloaded[0].follow_up_appointments![0],
+    scheduled_date: '2026-11-24',
+    status: 'rescheduled',
+    rescheduled_from: '2026-11-22',
+    rescheduled_history: [{ previous_date: '2026-11-22', rescheduled_at: new Date().toISOString() }]
+  };
+  tx = savePatientTransaction({
+    currentRecord: reloaded[0],
+    storageEngine: storage,
+    action: { type: 'SAVE_RECORD', payload: { follow_up_appointments: [reschedApt] } },
+    savedPatientsList: reloaded
+  });
+  assert(tx.success, 'Scenario H3: Rescheduled successfully');
+
+  // 4. Reload after Reschedule
+  reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert(reloaded[0].follow_up_appointments?.[0].scheduled_date === '2026-11-24', 'Scenario H4: Rescheduled date preserved on reload');
+
+  // 5. Start Consultation
+  tx = savePatientTransaction({
+    currentRecord: reloaded[0],
+    storageEngine: storage,
+    action: { type: 'START_CONSULTATION_FOR_APPOINTMENT', payload: { appointmentId: 'apt_life_1' } },
+    savedPatientsList: reloaded
+  });
+  assert(tx.success && Boolean(tx.newVisit), 'Scenario H5: Consultation started successfully');
+  const consultationVisitId = tx.newVisit!.visit_id;
+
+  // 6. Reload after Consultation Start
+  reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert(reloaded[0].clinical_visits?.length === 2, 'Scenario H6: 2 visits exist after consultation start');
+  const lifeApt = reloaded[0].follow_up_appointments?.[0];
+  assert(lifeApt?.actual_visit_id === consultationVisitId, 'Scenario H6: actual_visit_id linked to consultation visit');
+  assert(lifeApt?.status !== 'completed', 'Scenario H6: Appointment remains active (not completed)');
+
+  // 7. Complete Appointment
+  const completedApt: FollowUpAppointment = {
+    ...lifeApt!,
+    status: 'completed',
+    completed_visit_id: consultationVisitId
+  };
+  tx = savePatientTransaction({
+    currentRecord: reloaded[0],
+    storageEngine: storage,
+    action: { type: 'SAVE_RECORD', payload: { follow_up_appointments: [completedApt] } },
+    savedPatientsList: reloaded
+  });
+  assert(tx.success, 'Scenario H7: Completed appointment successfully');
+
+  // 8. Reload after Complete
+  reloaded = storage.getItem<PatientRecord[]>('shuddho_saved_patients')!;
+  assert(reloaded[0].follow_up_appointments?.[0].status === 'completed', 'Scenario H8: Status is completed on reload');
+  assert(reloaded[0].follow_up_appointments?.[0].completed_visit_id === consultationVisitId, 'Scenario H8: completed_visit_id preserved');
+}
+
+console.log('\n=====================================================================');
 console.log(`STEP 03 UNIT & INTEGRATION TEST RESULTS: ${passedAssertions}/${totalAssertions} PASSED (0 FAILED)`);
 console.log('=====================================================================\n');

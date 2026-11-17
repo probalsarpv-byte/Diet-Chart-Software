@@ -215,7 +215,8 @@ export interface StorageEngine {
 export type TransactionAction =
   | { type: 'SAVE_RECORD'; payload?: Partial<PatientRecord> }
   | { type: 'START_NEW_VISIT'; payload: { visitType?: ClinicalVisitType; visitDate?: string; notes?: string } }
-  | { type: 'REGISTER_PATIENT'; payload: PatientRecord };
+  | { type: 'REGISTER_PATIENT'; payload: PatientRecord }
+  | { type: 'START_CONSULTATION_FOR_APPOINTMENT'; payload: { appointmentId: string; visitType?: ClinicalVisitType; visitDate?: string; notes?: string } };
 
 export interface TransactionResult {
   success: boolean;
@@ -240,7 +241,81 @@ export function savePatientTransaction(params: {
   let proposedRecord: PatientRecord;
   let newVisit: ClinicalVisit | undefined;
 
-  if (action.type === 'START_NEW_VISIT') {
+  if (action.type === 'START_CONSULTATION_FOR_APPOINTMENT') {
+    const appointmentId = action.payload.appointmentId;
+    const existingApts = currentRecord.follow_up_appointments || [];
+    const apt = existingApts.find(a => a.appointment_id === appointmentId || a.id === appointmentId);
+
+    if (!apt) {
+      return {
+        success: false,
+        error: `Appointment not found: ${appointmentId}`,
+        committedRecord: currentRecord,
+        committedPatientsList: savedPatientsList
+      };
+    }
+
+    if (apt.patient_id !== currentRecord.patient.id) {
+      return {
+        success: false,
+        error: `Cross-patient mismatch: appointment belongs to ${apt.patient_id}, not ${currentRecord.patient.id}`,
+        committedRecord: currentRecord,
+        committedPatientsList: savedPatientsList
+      };
+    }
+
+    if (apt.status === 'cancelled' || apt.status === 'completed') {
+      return {
+        success: false,
+        error: `Cannot start consultation for ${apt.status} appointment ${appointmentId}`,
+        committedRecord: currentRecord,
+        committedPatientsList: savedPatientsList
+      };
+    }
+
+    // Repeated click protection: check if a valid consultation is already linked
+    if (apt.actual_visit_id) {
+      const existingVisit = (currentRecord.clinical_visits || []).find(
+        v => v.visit_id === apt.actual_visit_id || v.id === apt.actual_visit_id
+      );
+      if (existingVisit) {
+        return {
+          success: true,
+          committedRecord: currentRecord,
+          committedPatientsList: savedPatientsList,
+          newVisit: existingVisit
+        };
+      }
+    }
+
+    // Pure visit transition
+    const transition = createNewVisitTransition({
+      patient: currentRecord.patient,
+      existingVisits: currentRecord.clinical_visits || [],
+      visitType: action.payload.visitType || 'routine_followup',
+      visitDate: action.payload.visitDate,
+      notes: action.payload.notes || `Follow-up from appointment ${appointmentId}`
+    });
+    newVisit = transition.newVisit;
+
+    const updatedApts = existingApts.map(a => {
+      if (a.appointment_id === appointmentId || a.id === appointmentId) {
+        return {
+          ...a,
+          actual_visit_id: newVisit!.visit_id
+        };
+      }
+      return a;
+    });
+
+    proposedRecord = {
+      ...currentRecord,
+      patient: transition.updatedPatient,
+      clinical_visits: transition.updatedVisits,
+      follow_up_appointments: updatedApts,
+      updated_at: new Date().toISOString()
+    };
+  } else if (action.type === 'START_NEW_VISIT') {
     const transition = createNewVisitTransition({
       patient: currentRecord.patient,
       existingVisits: currentRecord.clinical_visits || [],
