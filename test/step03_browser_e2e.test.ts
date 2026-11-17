@@ -323,6 +323,83 @@ async function runStep03BrowserE2E() {
     const totalAfterReload = await reloadedKpis.first().locator('.text-xl.font-extrabold').textContent();
     assert(parseInt(totalAfterReload?.trim() || '0', 10) >= 1, `KPIs persisted across reload without data loss (count: ${totalAfterReload?.trim()})`);
 
+    // -------------------------------------------------------------------
+    // Scenario 9: Dashboard -> Patient B Appointment -> Start Consultation -> Reload Linkage
+    // -------------------------------------------------------------------
+    console.log('\n--- Scenario 9: Dashboard -> Patient B Appointment -> Start Consultation -> Reload Linkage ---');
+    // 1. Quick register Patient B from Dashboard
+    const quickRegBtn2 = page.locator('button:has-text("+ নতুন রোগী নিবন্ধন"), button:has-text("+ Register Patient")').first();
+    await quickRegBtn2.click();
+    await page.waitForTimeout(300);
+
+    const regModal2 = page.locator('.fixed.inset-0');
+    await regModal2.locator('input[type="text"]').first().fill('Tariqul Islam (Patient B)');
+    await regModal2.locator('input[type="number"]').first().fill('42');
+    await regModal2.locator('button[type="submit"]').click();
+    await page.waitForTimeout(600);
+
+    // 2. Schedule follow-up appointment for Patient B
+    const followUpTabBtn2 = page.locator('button:has-text("৬. ফলো-আপ"), button:has-text("6. Follow-Up")');
+    await followUpTabBtn2.click();
+    await page.waitForTimeout(500);
+
+    const schedBtn2 = page.locator('button:has-text("+ নতুন অ্যাপয়েন্টমেন্ট শিডিউল"), button:has-text("+ Schedule Follow-Up")');
+    await schedBtn2.click();
+    await page.waitForTimeout(300);
+
+    const schedModal2 = page.locator('.fixed.inset-0');
+    await schedModal2.locator('input[type="text"]').first().fill('Follow-up Review for Patient B');
+    await schedModal2.locator('button[type="submit"]').click();
+    await page.waitForTimeout(500);
+
+    // 3. Switch active patient back to Patient A (Mrs. Nasreen Akhter)
+    const dashNav = page.locator('button:has-text("১. ড্যাশবোর্ড"), button:has-text("1. Dashboard")');
+    await dashNav.click();
+    await page.waitForTimeout(400);
+
+    const nasreenRow = page.locator('tr').filter({ hasText: 'Mrs. Nasreen Akhter' });
+    if ((await nasreenRow.count()) > 0) {
+      await nasreenRow.locator('button:has-text("প্রবেশ করুন"), button:has-text("Open")').first().click();
+      await page.waitForTimeout(500);
+    }
+
+    // 4. Return to Dashboard while Patient A is active
+    await dashNav.click();
+    await page.waitForTimeout(400);
+
+    // 5. Locate Patient B's appointment card on Dashboard and click Start Visit
+    const patientBCard = page.locator('div.border.rounded-xl').filter({ hasText: 'Tariqul Islam' }).first();
+    assert((await patientBCard.count()) > 0, 'Patient B appointment card visible on Dashboard');
+
+    const startVisitFromDashBtn = patientBCard.locator('button:has-text("ভিজিট শুরু করুন"), button:has-text("Start Visit")').first();
+    await startVisitFromDashBtn.click();
+    await page.waitForTimeout(600);
+
+    // 6. Verify active patient switched cleanly to Tariqul Islam
+    const activeHeaderPatientB = page.locator('text=Tariqul Islam (Patient B)');
+    assert((await activeHeaderPatientB.count()) > 0, 'Active patient switched cleanly to Tariqul Islam');
+
+    // 7. Reload page to verify atomic persistence of appointment linkage
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForTimeout(600);
+
+    // 8. Verify LocalStorage integrity after reload
+    const storageData = await page.evaluate(() => {
+      const raw = localStorage.getItem('shuddho_saved_patients');
+      return raw ? JSON.parse(raw) : [];
+    });
+
+    const storedPatientB = storageData.find((p: any) => p.patient?.name?.includes('Tariqul Islam'));
+    assert(Boolean(storedPatientB), 'Patient B found in reloaded localStorage');
+    assert((storedPatientB?.clinical_visits || []).length >= 2, 'Patient B has distinct consultation visits persisted');
+    
+    const storedAptB = (storedPatientB?.follow_up_appointments || [])[0];
+    assert(Boolean(storedAptB?.actual_visit_id), 'Patient B appointment has actual_visit_id linked');
+    assert(storedAptB?.status !== 'completed', 'Patient B appointment is not prematurely completed');
+
+    const storedPatientA = storageData.find((p: any) => p.patient?.name?.includes('Nasreen Akhter'));
+    assert(Boolean(storedPatientA), 'Patient A preserved uncorrupted in localStorage');
+
     console.log('\n=====================================================================');
     console.log(`STEP 03 PLAYWRIGHT E2E RESULTS: ${passedAssertions}/${totalAssertions} PASSED (${failedAssertions} FAILED)`);
     console.log('=====================================================================\n');

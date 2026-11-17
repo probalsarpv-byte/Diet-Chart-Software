@@ -129,7 +129,6 @@ export const DashboardTab: React.FC = () => {
       alert(bn ? "ফলো-আপ ভিজিট শুরু করা যায়নি: স্টোরেজ সীমা বা এরর।" : "Failed to start follow-up visit: Storage persistence error or quota exceeded.");
       return;
     }
-    loadPatient(apt.patient_id);
     setActiveTab('assessment');
   };
 
@@ -484,7 +483,12 @@ export const DashboardTab: React.FC = () => {
                       </button>
 
                       <button
-                        onClick={() => cancelFollowUp(apt.appointment_id, 'Cancelled from dashboard')}
+                        onClick={() => {
+                          const ok = cancelFollowUp(apt.appointment_id, 'Cancelled from dashboard');
+                          if (!ok) {
+                            alert(bn ? 'অ্যাপয়েন্টমেন্ট বাতিল করা যায়নি: স্টোরেজ সীমা বা ত্রুটি।' : 'Failed to cancel appointment: Storage error or quota exceeded.');
+                          }
+                        }}
                         className="px-2 py-1.5 rounded-lg border text-rose-500 hover:bg-rose-500/10 text-xs transition"
                         title={bn ? 'বাতিল করুন' : 'Cancel appointment'}
                       >

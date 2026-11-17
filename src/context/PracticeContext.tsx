@@ -1310,7 +1310,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       saveCurrentPatient();
     }
 
-    const match = savedPatients.find(p => p.patient.id === id);
+    const currentSaved = safeStorage.getItem<PatientRecord[]>('shuddho_saved_patients') || savedPatients;
+    const match = currentSaved.find(p => p.patient.id === id);
     if (match) {
       const migrated = migratePatientRecord(match);
       setPatient(migrated.patient);

@@ -279,7 +279,7 @@ export const FollowUpTab: React.FC = () => {
 
   const handleScheduleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    scheduleFollowUp({
+    const created = scheduleFollowUp({
       patient_id: patient.id,
       patient_name: patient.name,
       scheduled_date: aptDate,
@@ -288,13 +288,21 @@ export const FollowUpTab: React.FC = () => {
       appointment_type: aptType,
       clinician_notes: aptNotes
     });
+    if (!created) {
+      alert(bn ? "অ্যাপয়েন্টমেন্ট শিডিউল করা যায়নি: স্টোরেজ সীমা বা ত্রুটি।" : "Failed to schedule appointment: Storage error or quota exceeded.");
+      return;
+    }
     setShowScheduleModal(false);
     setAptNotes('');
   };
 
   const handleConfirmReschedule = () => {
     if (!showRescheduleModal) return;
-    rescheduleFollowUp(showRescheduleModal.appointment_id, reschedDate, reschedTime, reschedReason);
+    const ok = rescheduleFollowUp(showRescheduleModal.appointment_id, reschedDate, reschedTime, reschedReason);
+    if (!ok) {
+      alert(bn ? "রি-শিডিউল ব্যর্থ হয়েছে: স্টোরেজ সীমা বা ত্রুটি।" : "Failed to reschedule appointment: Storage error or quota exceeded.");
+      return;
+    }
     setShowRescheduleModal(null);
     setReschedReason('');
   };
@@ -500,14 +508,24 @@ export const FollowUpTab: React.FC = () => {
                               </button>
 
                               <button
-                                onClick={() => completeFollowUp(apt.appointment_id)}
+                                onClick={() => {
+                                  const ok = completeFollowUp(apt.appointment_id);
+                                  if (!ok) {
+                                    alert(bn ? "অ্যাপয়েন্টমেন্ট সম্পন্ন করা যায়নি: স্টোরেজ ত্রুটি।" : "Failed to complete appointment: Storage error or quota exceeded.");
+                                  }
+                                }}
                                 className="px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 text-[11px] font-semibold transition"
                               >
                                 {bn ? 'সম্পন্ন' : 'Complete'}
                               </button>
 
                               <button
-                                onClick={() => cancelFollowUp(apt.appointment_id)}
+                                onClick={() => {
+                                  const ok = cancelFollowUp(apt.appointment_id);
+                                  if (!ok) {
+                                    alert(bn ? "অ্যাপয়েন্টমেন্ট বাতিল করা যায়নি: স্টোরেজ ত্রুটি।" : "Failed to cancel appointment: Storage error or quota exceeded.");
+                                  }
+                                }}
                                 className="p-1 rounded text-rose-500 hover:bg-rose-500/10 transition inline-block align-middle"
                                 title="Cancel"
                               >
