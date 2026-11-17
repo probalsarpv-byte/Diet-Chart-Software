@@ -149,9 +149,11 @@ function createTestPatient(id: string, name: string, overrides: Partial<PatientP
       target_protein_g: 75,
       target_carbs_g: 135,
       target_fat_g: 45,
-      protein_ratio: 0.22,
-      carbs_ratio: 0.40,
-      fat_ratio: 0.38,
+      protein_ratio_used: '20%',
+      population_group: 'adult_standard',
+      bmr_floor_strategy: 'clamped_to_bmr',
+      is_estimated: false,
+      energy_calculation_method: 'mifflin_st_jeor',
       population_warning: undefined
     },
     is_diet_plan_dirty: false,
@@ -193,21 +195,27 @@ console.log('\n--- SCENARIO B: Visit-Specific Assessment (Reports Match Selected
     assessment_id: 'asmt_01',
     patient_id: patient.id,
     visit_id: 'vis_01',
-    created_at: '2026-10-01T10:00:00Z',
-    updated_at: '2026-10-01T10:00:00Z',
-    status: 'completed',
-    questionnaire_version: '1.0.0',
+    assessment_date: '2026-10-01T10:00:00Z',
+    mode: 'quick',
+    questionnaire_version: '2.0.0',
+    primary_population: 'adult_standard',
+    clinical_pathways: ['metabolic'],
+    feeding_status: { route: 'oral_standard', oral_intake_permitted: true, requires_specialist_support: false },
     anthropometrics: { height_cm: 160, weight_kg: 80, waist_cm: 94, bmi: 31.25, whtr: 0.59, bmr: 1450, target_calories: 1450 },
-    medical_history: { conditions: [], other_conditions: [] },
-    clinical_safety: { insulin_treatment: false, sulfonylurea_treatment: false, dysphagia: false, fluid_restriction: false, feeding_route: 'oral_standard' },
-    medications: { records: [] },
-    allergies: { allergens: [], confirmed_allergies: [], status: 'reconciled_no_known_allergies' },
-    symptoms: { selected_symptoms: [], symptom_burden_scores: {} },
-    labs: { entries: [{ marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 8.0, unit: '%', status: 'previously_tested' }] },
-    metabolic_health: { risk_factors: [], metabolic_syndrome_criteria_met: 0 },
-    gut_health: { bloating_frequency: 'none', acid_reflux: false, agni_pattern: 'samagni', bristol_stool_score: 4 },
-    dietary_lifestyle: { meals_per_day: 3, shift_worker: false, sleep_hours_per_night: 7 },
-    completion: { administrative_completed: true, clinical_safety_completed: true, mandatory_sections_completed: true, laboratory_data_available: true, requires_clinical_review: false, unanswered_critical_questions: [] }
+    functional_answers: {},
+    dietary_frequency: {} as any,
+    ayurveda: {} as any,
+    population_data: {},
+    labs: {
+      entries: {
+        hba1c: { marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 8.0, unit: '%', status: 'previously_tested' }
+      },
+      last_updated: '2026-10-01T10:00:00Z',
+      total_tested_count: 1,
+      pending_count: 0
+    },
+    completion: { administrative_completed: true, clinical_safety_completed: true, mandatory_sections_completed: true, laboratory_data_available: true, requires_clinical_review: false, unanswered_critical_questions: [] },
+    safety_warnings_acknowledged: true
   };
 
   // Visit 2 Assessment: Weight 76 kg, HbA1c 7.1%
@@ -216,7 +224,14 @@ console.log('\n--- SCENARIO B: Visit-Specific Assessment (Reports Match Selected
     assessment_id: 'asmt_02',
     visit_id: 'vis_02',
     anthropometrics: { height_cm: 160, weight_kg: 76, waist_cm: 90, bmi: 29.69, whtr: 0.56, bmr: 1400, target_calories: 1400 },
-    labs: { entries: [{ marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 7.1, unit: '%', status: 'previously_tested' }] }
+    labs: {
+      entries: {
+        hba1c: { marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 7.1, unit: '%', status: 'previously_tested' }
+      },
+      last_updated: '2026-10-15T10:00:00Z',
+      total_tested_count: 1,
+      pending_count: 0
+    }
   };
 
   const reportV1 = runP2Analysis({ patient: { ...patient, current_visit_id: 'vis_01' }, assessment: asmtV1 }).report;
@@ -241,25 +256,27 @@ console.log('\n--- SCENARIO C: Structured Laboratory Report Integration ---');
     assessment_id: 'asmt_structured',
     patient_id: patient.id,
     visit_id: 'vis_structured',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    status: 'completed',
-    questionnaire_version: '1.0.0',
+    assessment_date: new Date().toISOString(),
+    mode: 'quick',
+    questionnaire_version: '2.0.0',
+    primary_population: 'adult_standard',
+    clinical_pathways: ['metabolic'],
+    feeding_status: { route: 'oral_standard', oral_intake_permitted: true, requires_specialist_support: false },
     anthropometrics: { height_cm: 165, weight_kg: 70, waist_cm: 84, bmi: 25.7, whtr: 0.51, bmr: 1350, target_calories: 1350 },
-    medical_history: { conditions: [], other_conditions: [] },
-    clinical_safety: { insulin_treatment: false, sulfonylurea_treatment: false, dysphagia: false, fluid_restriction: false, feeding_route: 'oral_standard' },
-    medications: { records: [] },
-    allergies: { allergens: [], confirmed_allergies: [], status: 'reconciled_no_known_allergies' },
-    symptoms: { selected_symptoms: [], symptom_burden_scores: {} },
+    functional_answers: {},
+    dietary_frequency: {} as any,
+    ayurveda: {} as any,
+    population_data: {},
     labs: {
-      entries: [
-        { marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 7.3, unit: '%', status: 'previously_tested' }
-      ]
+      entries: {
+        hba1c: { marker_id: 'hba1c', category: 'glycemic', name_en: 'HbA1c', name_bn: 'এইচবিএওয়ানসি', numeric_value: 7.3, unit: '%', status: 'previously_tested' }
+      },
+      last_updated: new Date().toISOString(),
+      total_tested_count: 1,
+      pending_count: 0
     },
-    metabolic_health: { risk_factors: [], metabolic_syndrome_criteria_met: 0 },
-    gut_health: { bloating_frequency: 'none', acid_reflux: false, agni_pattern: 'samagni', bristol_stool_score: 4 },
-    dietary_lifestyle: { meals_per_day: 3, shift_worker: false, sleep_hours_per_night: 7 },
-    completion: { administrative_completed: true, clinical_safety_completed: true, mandatory_sections_completed: true, laboratory_data_available: true, requires_clinical_review: false, unanswered_critical_questions: [] }
+    completion: { administrative_completed: true, clinical_safety_completed: true, mandatory_sections_completed: true, laboratory_data_available: true, requires_clinical_review: false, unanswered_critical_questions: [] },
+    safety_warnings_acknowledged: true
   };
 
   const report = runP2Analysis({ patient, assessment: structuredAssessment }).report;
