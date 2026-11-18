@@ -884,6 +884,19 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setVisitSnapshots(match.visit_snapshots || []);
           setProgressReports(match.progress_reports || []);
           setDietChart(match.current_diet_chart || []);
+
+          // Rehydrate P2 analysis for restored patient and active visit
+          const targetVisitId = match.patient.current_visit_id || activeVisit?.visit_id || activeVisit?.id;
+          const visitDateClean = (match.patient.visit_date || '').replace(/[^0-9]/g, '');
+          const p2Key = `shuddho_p2_analysis_${match.patient.id}_${targetVisitId || `visit_${match.patient.id}_${visitDateClean}`}`;
+          try {
+            const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+            if (savedP2) {
+              setP2AnalysisResult(savedP2);
+            }
+          } catch (err) {
+            console.warn('Failed to rehydrate P2 analysis on mount:', err);
+          }
         }
       }
     } catch (e) {
