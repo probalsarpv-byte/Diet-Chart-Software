@@ -270,13 +270,18 @@ export const ReportTab: React.FC = () => {
             )}
 
             {activeReportType === 'weekly_diet_plan' && (
-              weeklyDietPlan?.is_approved || weeklyDietPlan?.status === 'approved' ? (
+              Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true) ? (
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <CheckCircle className="h-3 w-3" />
                   <span>
                     {bn ? 'অনুমোদিত: ' : 'Approved: '}
-                    {weeklyDietPlan.approved_by || weeklyDietPlan.approval_metadata?.clinician_name} ({weeklyDietPlan.approved_at?.split('T')[0] || weeklyDietPlan.approval_date?.split('T')[0]})
+                    {weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name} ({weeklyDietPlan?.approved_at?.split('T')[0] || weeklyDietPlan?.approval_date?.split('T')[0]})
                   </span>
+                </span>
+              ) : weeklyDietPlan?.status === 'requires_review' ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>{bn ? 'পুনঃনিরীক্ষণ প্রয়োজন' : 'Requires Re-Review'}</span>
                 </span>
               ) : (weeklyDietPlan?.overall_safety_status === 'HARD_STOP' || hasHardStops) ? (
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center gap-1">
@@ -821,7 +826,7 @@ export const ReportTab: React.FC = () => {
             </div>
 
             {/* Approval / Draft Banner */}
-            {weeklyDietPlan?.is_approved || weeklyDietPlan?.status === 'approved' ? (
+            {Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true) ? (
               <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2.5">
                   <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -831,14 +836,34 @@ export const ReportTab: React.FC = () => {
                     </span>
                     <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
                       {bn ? 'অনুমোদনকারী: ' : 'Signed by: '} 
-                      <strong>{weeklyDietPlan.approved_by || weeklyDietPlan.approval_metadata?.clinician_name}</strong> 
-                      {weeklyDietPlan.approved_at ? ` • ${weeklyDietPlan.approved_at.split('T')[0]}` : ''}
-                      {weeklyDietPlan.clinician_notes ? ` • Note: ${weeklyDietPlan.clinician_notes}` : ''}
+                      <strong>{weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name}</strong> 
+                      {weeklyDietPlan?.approved_at ? ` • ${weeklyDietPlan.approved_at.split('T')[0]}` : ''}
+                      {weeklyDietPlan?.clinician_notes ? ` • Note: ${weeklyDietPlan.clinician_notes}` : ''}
                     </p>
                   </div>
                 </div>
                 <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white">
                   VERIFIED
+                </span>
+              </div>
+            ) : weeklyDietPlan?.status === 'requires_review' ? (
+              <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-amber-800 dark:text-amber-300">
+                      {bn ? 'ক্লিনিক্যাল প্রেসক্রিপশন পুনঃনিরীক্ষণ প্রয়োজন (অনুমোদন বাতিল)' : 'Clinical Prescription Requires Re-Review — Prior Approval Invalidated'}
+                    </span>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                      {weeklyDietPlan.invalidation_reason 
+                        ? `${bn ? 'বাতিলের কারণ: ' : 'Invalidation Reason: '}${weeklyDietPlan.invalidation_reason}. `
+                        : ''}
+                      {bn ? 'পরিমার্জিত পরিকল্পনার জন্য লাইসেন্সপ্রাপ্ত ক্লিনিক্যাল নিউট্রিশনিস্টের পুনঃঅনুমোদন আবশ্যক।' : 'Modified plan requires licensed clinician re-approval prior to patient dispensation.'}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-amber-500 text-white">
+                  REQUIRES REVIEW
                 </span>
               </div>
             ) : (
@@ -1054,8 +1079,14 @@ export const ReportTab: React.FC = () => {
               </div>
 
               <div className="text-right shrink-0">
-                <div className="border-b border-foreground/40 pb-1 w-48 ml-auto text-center font-bold font-mono">
-                  {weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Dr. Specialist'}
+                <div className={`border-b pb-1 w-56 ml-auto text-center font-mono ${
+                  Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true)
+                    ? 'border-foreground/40 font-bold text-foreground'
+                    : 'border-dashed border-amber-500/60 font-medium text-amber-600 dark:text-amber-400 text-[11px]'
+                }`}>
+                  {Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true)
+                    ? (weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Dr. Specialist')
+                    : (bn ? '[ স্বাক্ষরহীন খসড়া / অনুমোদন বাকি ]' : '[ Unsigned Draft / Requires Sign-Off ]')}
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1 text-center">
                   {bn ? 'লাইসেন্সধারী ক্লিনিক্যাল নিউট্রিশনিস্ট' : 'Licensed Clinical Nutritionist'}

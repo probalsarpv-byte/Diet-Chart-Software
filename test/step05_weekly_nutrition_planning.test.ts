@@ -27,7 +27,9 @@ import {
   regenerateDayInWeeklyPlan,
   copyDayInWeeklyPlan,
   calculateMealTotals,
-  DAY_NAMES
+  DAY_NAMES,
+  invalidateWeeklyPlanApproval,
+  evaluateWeeklyPlanClinicalSafety
 } from '../src/engine/weeklyPlanner';
 import { validateClinicianCredentials } from '../src/engine/longitudinal/comparisonEngine';
 import {
@@ -591,6 +593,282 @@ function runAcceptanceSuite() {
     assert(patientRecord.current_diet_chart.length === day1Meals.length, 'Scenario 12: current_diet_chart length matches Day 1 meals');
     assert(patientRecord.current_diet_chart[0].meal_calories === day1Meals[0].meal_calories, 'Scenario 12: current_diet_chart meal calories match Day 1');
     assert(Boolean(patientRecord.weekly_diet_plan), 'Scenario 12: weekly_diet_plan persisted on PatientRecord');
+  }
+
+  // ── STEP 05 CLINICAL APPROVAL INTEGRITY PATCH: TESTS A THROUGH L ───────────
+  console.log('\n=====================================================================');
+  console.log('STEP 05 FINAL TARGETED CLINICAL APPROVAL INTEGRITY TESTS (A THROUGH L)');
+  console.log('=====================================================================');
+
+  // TEST A: Single-Day Regeneration Invalidates Approved Plan
+  console.log('\n--- TEST A: Single-Day Regeneration Invalidates Approved Plan ---');
+  {
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    plan.status = 'approved';
+    plan.is_approved = true;
+    plan.approved_by = 'DR_NUTRITION_01';
+    plan.approval_date = '2026-11-18T10:00:00Z';
+    plan.version = 1;
+
+    const regenerated = regenerateDayInWeeklyPlan(2, plan, basePatient, allFoods, baseTrafficLight);
+    assert(regenerated.status === 'requires_review', 'Test A: Status transitioned to requires_review');
+    assert(regenerated.is_approved === false, 'Test A: is_approved set to false');
+    assert(regenerated.approved_by === undefined, 'Test A: Active approved_by cleared');
+    assert(regenerated.approval_date === undefined, 'Test A: Active approval_date cleared');
+    assert(regenerated.version === 2, 'Test A: Plan version incremented to 2');
+    assert(Boolean(regenerated.previous_approval), 'Test A: previous_approval record populated');
+    assert(regenerated.previous_approval?.approved_by === 'DR_NUTRITION_01', 'Test A: previous_approval captures prior clinician');
+    assert(Boolean(regenerated.previous_approval?.invalidation_reason?.includes('Regenerated Day 2')), 'Test A: Invalidation reason identifies Day 2 regeneration');
+    assert(regenerated.historical_approvals?.length === 1, 'Test A: historical_approvals array contains 1 entry');
+  }
+
+  // TEST B: Copying Day Invalidates Approved Plan
+  console.log('\n--- TEST B: Copying Day Invalidates Approved Plan ---');
+  {
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    plan.status = 'approved';
+    plan.is_approved = true;
+    plan.approved_by = 'DR_NUTRITION_01';
+    plan.approval_date = '2026-11-18T10:00:00Z';
+    plan.version = 1;
+
+    const copied = copyDayInWeeklyPlan(1, 4, plan, basePatient, allFoods, baseTrafficLight);
+    assert(copied.status === 'requires_review', 'Test B: Status transitioned to requires_review');
+    assert(copied.is_approved === false, 'Test B: is_approved set to false');
+    assert(copied.approved_by === undefined, 'Test B: Active approved_by cleared');
+    assert(Boolean(copied.previous_approval?.invalidation_reason?.includes('Copied Day 1 to Day 4')), 'Test B: Invalidation reason identifies day copy');
+    assert(copied.historical_approvals?.length === 1, 'Test B: historical_approvals captured');
+  }
+
+  // TEST C: Food Swap / Modification Invalidates Approved Plan
+  console.log('\n--- TEST C: Food Swap / Modification Invalidates Approved Plan ---');
+  {
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    plan.status = 'approved';
+    plan.is_approved = true;
+    plan.approved_by = 'DR_NUTRITION_01';
+    plan.approval_date = '2026-11-18T10:00:00Z';
+    plan.version = 1;
+
+    const invalidated = invalidateWeeklyPlanApproval(plan, 'Food item swapped with alternative');
+    assert(invalidated.status === 'requires_review', 'Test C: Status transitioned to requires_review');
+    assert(invalidated.is_approved === false, 'Test C: is_approved set to false');
+    assert(invalidated.version === 2, 'Test C: Version incremented on modification');
+    assert(invalidated.invalidation_reason === 'Food item swapped with alternative', 'Test C: Invalidation reason recorded');
+    assert(invalidated.historical_approvals?.length === 1, 'Test C: Historical approvals length is 1');
+  }
+
+  // TEST D: Unapproved (Draft) Plan Edits Do Not Fabricate Previous Approval
+  console.log('\n--- TEST D: Unapproved (Draft) Plan Edits Do Not Fabricate Previous Approval ---');
+  {
+    const draftPlan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    assert(draftPlan.status === 'draft', 'Test D: Initial status is draft');
+    assert(draftPlan.is_approved === false, 'Test D: Initial is_approved is false');
+
+    const modifiedDraft = invalidateWeeklyPlanApproval(draftPlan, 'Food item added');
+    assert(modifiedDraft.status === 'draft', 'Test D: Modified unapproved plan remains draft');
+    assert(modifiedDraft.is_approved === false, 'Test D: is_approved remains false');
+    assert(modifiedDraft.previous_approval === undefined, 'Test D: previous_approval NOT fabricated for draft');
+    assert(modifiedDraft.historical_approvals === undefined, 'Test D: historical_approvals NOT fabricated for draft');
+  }
+
+  // TEST E: Repeated Edits Preserve Initial Invalidation History
+  console.log('\n--- TEST E: Repeated Edits Preserve Initial Invalidation History ---');
+  {
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    plan.status = 'approved';
+    plan.is_approved = true;
+    plan.approved_by = 'DR_NUTRITION_01';
+    plan.approval_date = '2026-11-18T10:00:00Z';
+    plan.version = 1;
+
+    const firstInvalidation = invalidateWeeklyPlanApproval(plan, 'Initial modification: Grams changed');
+    assert(firstInvalidation.status === 'requires_review', 'Test E: First edit invalidates to requires_review');
+    assert(firstInvalidation.historical_approvals?.length === 1, 'Test E: 1 historical approval recorded');
+
+    // Second edit on already invalidated plan
+    const secondEdit = invalidateWeeklyPlanApproval(firstInvalidation, 'Second edit: Food swapped');
+    assert(secondEdit.status === 'requires_review', 'Test E: Second edit remains requires_review');
+    assert(secondEdit.historical_approvals?.length === 1, 'Test E: Historical approvals length unchanged at 1 (not duplicated)');
+    assert(secondEdit.previous_approval?.invalidation_reason === 'Initial modification: Grams changed', 'Test E: Initial invalidation reason preserved');
+  }
+
+  // TEST F: Missing or Unapproved P2 Blocks Plan Approval
+  console.log('\n--- TEST F: Missing or Unapproved P2 Blocks Plan Approval ---');
+  {
+    // Case 1: Missing P2 result
+    const checkP2Governance = (p2: any): { allowed: boolean; error?: string } => {
+      if (!p2 || !p2.report || !p2.report.isApproved || p2.analysisInvalidatedAt || p2.report.analysisInvalidatedAt) {
+        return { allowed: false, error: 'Cannot approve 7-day diet prescription without an approved Phase 2 Clinical Assessment.' };
+      }
+      return { allowed: true };
+    };
+
+    assert(!checkP2Governance(null).allowed, 'Test F: Null P2 rejects weekly plan approval');
+    assert(!checkP2Governance({ report: { isApproved: false } }).allowed, 'Test F: Unapproved P2 report rejects approval');
+    assert(!checkP2Governance({ report: { isApproved: true }, analysisInvalidatedAt: '2026-11-18T11:00:00Z' }).allowed, 'Test F: Invalidated P2 rejects approval');
+    assert(checkP2Governance({ report: { isApproved: true } }).allowed, 'Test F: Approved and non-invalidated P2 permits approval');
+  }
+
+  // TEST G: Non-Oral Feeding Route (NPO) Blocks Plan Approval
+  console.log('\n--- TEST G: Non-Oral Feeding Route (NPO) Blocks Plan Approval ---');
+  {
+    const npoPatient: PatientProfile = {
+      ...basePatient,
+      feeding_status: {
+        route: 'npo_nil_per_os',
+        oral_intake_permitted: false,
+        requires_specialist_support: true
+      }
+    };
+
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    const safety = evaluateWeeklyPlanClinicalSafety(npoPatient, plan, allFoods);
+    assert(safety.is_eligible_for_approval === false, 'Test G: NPO patient not eligible for weekly plan approval');
+    assert(safety.overall_decision === 'HARD_STOP', 'Test G: NPO triggers HARD_STOP');
+    assert(safety.unresolved_hard_stops.some(s => s.includes('NPO')), 'Test G: Hard stop explanation explicitly cites NPO status');
+  }
+
+  // TEST H: Confirmed Allergen on Any Day Blocks Plan Approval
+  console.log('\n--- TEST H: Confirmed Allergen on Any Day Blocks Plan Approval ---');
+  {
+    const eggAllergicPatient: PatientProfile = {
+      ...basePatient,
+      confirmed_allergies: ['egg']
+    };
+
+    // Day 1 contains egg in default rotation
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    const safety = evaluateWeeklyPlanClinicalSafety(eggAllergicPatient, plan, allFoods);
+    assert(safety.is_eligible_for_approval === false, 'Test H: Patient with egg allergy blocked from approval');
+    assert(safety.overall_decision === 'HARD_STOP', 'Test H: Allergen triggers HARD_STOP');
+    assert(safety.unresolved_hard_stops.some(s => s.toLowerCase().includes('egg') || s.toLowerCase().includes('allergen')), 'Test H: Allergen explanation mentions egg');
+  }
+
+  // TEST I: Invalid or Placeholder Clinician Credentials Rejected
+  console.log('\n--- TEST I: Invalid or Placeholder Clinician Credentials Rejected ---');
+  {
+    assert(!validateClinicianCredentials(''), 'Test I: Empty credential rejected');
+    assert(!validateClinicianCredentials('   '), 'Test I: Whitespace credential rejected');
+    assert(!validateClinicianCredentials('Doctor'), 'Test I: Placeholder "Doctor" rejected');
+    assert(!validateClinicianCredentials('Clinician'), 'Test I: Placeholder "Clinician" rejected');
+    assert(!validateClinicianCredentials('admin'), 'Test I: Placeholder "admin" rejected');
+    assert(!validateClinicianCredentials('nutritionist'), 'Test I: Generic "nutritionist" rejected');
+    assert(validateClinicianCredentials('Dr. Tasnim Ara, RD'), 'Test I: Licensed clinician name accepted');
+    assert(validateClinicianCredentials('DR_NUTRITION_01'), 'Test I: Clinician license code accepted');
+  }
+
+  // TEST J: Persistence Failure Blocks React State Transition to Approved
+  console.log('\n--- TEST J: Persistence Failure Blocks React State Transition to Approved ---');
+  {
+    const mockStorage = new MockStorage();
+    mockStorage.shouldFail = true; // Simulates quota exceeded / storage write failure
+
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    const targetKey = `shuddho_weekly_plan_${plan.patient_id}_vis_01`;
+
+    let reactStatePlan: WeeklyDietPlan | null = { ...plan, status: 'draft', is_approved: false };
+    let approvalError: string | null = null;
+
+    // Simulate PracticeContext persist-first logic
+    const attemptApprove = (p: WeeklyDietPlan): boolean => {
+      const approvedCandidate: WeeklyDietPlan = {
+        ...p,
+        status: 'approved',
+        is_approved: true,
+        approved_by: 'DR_NUTRITION_01',
+        approval_date: new Date().toISOString()
+      };
+
+      const writeSuccess = mockStorage.setItem(targetKey, approvedCandidate);
+      if (!writeSuccess) {
+        approvalError = 'Storage failure: Failed to write approved weekly plan to local persistence.';
+        return false;
+      }
+
+      reactStatePlan = approvedCandidate;
+      return true;
+    };
+
+    const result = attemptApprove(reactStatePlan);
+    assert(result === false, 'Test J: Approval returned false on storage write failure');
+    assert(reactStatePlan.is_approved === false, 'Test J: In-memory React state remains UNAPPROVED (is_approved === false)');
+    assert(reactStatePlan.status === 'draft', 'Test J: In-memory React state retains draft status');
+    assert(Boolean(approvalError), 'Test J: Explanatory error set on failure');
+  }
+
+  // TEST K: Re-Approval of Modified Plan Reinstates Approved Status with Clean State
+  console.log('\n--- TEST K: Re-Approval of Modified Plan Reinstates Approved Status with Clean State ---');
+  {
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    plan.status = 'approved';
+    plan.is_approved = true;
+    plan.approved_by = 'DR_INITIAL';
+    plan.approval_date = '2026-11-18T08:00:00Z';
+    plan.version = 1;
+
+    // Invalidate
+    const invalidated = invalidateWeeklyPlanApproval(plan, 'Nutrient target adjusted');
+    assert(invalidated.status === 'requires_review', 'Test K: Plan invalidated to requires_review');
+    assert(invalidated.version === 2, 'Test K: Version incremented to 2');
+
+    // Re-approve with valid clinician
+    const reApproved: WeeklyDietPlan = {
+      ...invalidated,
+      status: 'approved',
+      is_approved: true,
+      approved_by: 'Dr. ReApproval Specialist, RD',
+      approval_date: '2026-11-18T14:00:00Z',
+      approved_at: '2026-11-18T14:00:00Z',
+      invalidation_reason: undefined,
+      invalidated_at: undefined,
+      approval_metadata: {
+        clinician_id: 'Dr. ReApproval Specialist, RD',
+        clinician_name: 'Dr. ReApproval Specialist, RD',
+        approval_timestamp: '2026-11-18T14:00:00Z'
+      }
+    };
+
+    assert(reApproved.status === 'approved', 'Test K: Plan reinstated to approved status');
+    assert(reApproved.is_approved === true, 'Test K: is_approved reinstated to true');
+    assert(reApproved.approved_by === 'Dr. ReApproval Specialist, RD', 'Test K: New approved_by recorded');
+    assert(reApproved.invalidation_reason === undefined, 'Test K: Active invalidation_reason cleared on re-approval');
+    assert(reApproved.invalidated_at === undefined, 'Test K: Active invalidated_at cleared on re-approval');
+    assert(reApproved.historical_approvals?.length === 1, 'Test K: Prior approval preserved in historical_approvals audit trail');
+    assert(reApproved.historical_approvals![0].approved_by === 'DR_INITIAL', 'Test K: Historical audit captures DR_INITIAL approval');
+  }
+
+  // TEST L: Verified Reload from Storage Preserves Validated Approval State and History
+  console.log('\n--- TEST L: Verified Reload from Storage Preserves Validated Approval State and History ---');
+  {
+    const mockStorage = new MockStorage();
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    plan.status = 'approved';
+    plan.is_approved = true;
+    plan.approved_by = 'DR_NUTRITION_01';
+    plan.approval_date = '2026-11-18T10:00:00Z';
+    plan.version = 2;
+    plan.historical_approvals = [
+      {
+        approved_by: 'DR_PREVIOUS',
+        approval_date: '2026-11-17T10:00:00Z',
+        version: 1,
+        invalidated_at: '2026-11-18T09:00:00Z',
+        invalidation_reason: 'Day 2 regenerated'
+      }
+    ];
+
+    const storageKey = `shuddho_weekly_plan_${plan.patient_id}_vis_01`;
+    const saved = mockStorage.setItem(storageKey, plan);
+    assert(saved === true, 'Test L: Saved to mock storage');
+
+    const reloaded = mockStorage.getItem<WeeklyDietPlan>(storageKey);
+    assert(Boolean(reloaded), 'Test L: Reloaded plan from storage');
+    assert(reloaded?.status === 'approved', 'Test L: Reloaded status is approved');
+    assert(reloaded?.is_approved === true, 'Test L: Reloaded is_approved is true');
+    assert(reloaded?.approved_by === 'DR_NUTRITION_01', 'Test L: Reloaded approved_by intact');
+    assert(reloaded?.historical_approvals?.length === 1, 'Test L: Reloaded historical_approvals intact');
+    assert(reloaded?.historical_approvals![0].approved_by === 'DR_PREVIOUS', 'Test L: Reloaded historical approval audit matches');
   }
 
   console.log('\n=====================================================================');

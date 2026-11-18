@@ -21,6 +21,7 @@ import {
   DayPlan,
   DayPlanSummary,
   WeeklyDietPlan,
+  WeeklyDietPlanApprovalRecord,
   FoodCategory
 } from '../types';
 import { 
@@ -809,7 +810,7 @@ export function generateWeeklyDietPlan(
 
   const timestamp = new Date().toISOString();
 
-  return {
+  const rawPlan: WeeklyDietPlan = {
     plan_id: planId,
     patient_id: patient.id,
     visit_id: visitId,
@@ -818,14 +819,181 @@ export function generateWeeklyDietPlan(
     created_at: existingPlan?.created_at || timestamp,
     updated_at: timestamp,
     status: existingPlan?.status === 'approved' && !options?.forceRegenerate ? 'approved' : 'draft',
+    is_approved: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.is_approved : false,
     approved_by: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approved_by : undefined,
     approval_date: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approval_date : undefined,
+    approved_at: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approved_at : undefined,
     approval_notes: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approval_notes : undefined,
+    approval_metadata: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approval_metadata : undefined,
+    previous_approval: existingPlan?.previous_approval,
+    historical_approvals: existingPlan?.historical_approvals,
     target_macros: targetMacros,
     days,
     overall_safety_status: overallSafety,
     unresolved_hard_stops: unresolvedHardStops.length > 0 ? unresolvedHardStops : undefined,
     p2_handoff_summary: p2HandoffSummary
+  };
+
+  if (existingPlan && (existingPlan.status === 'approved' || existingPlan.is_approved) && options?.forceRegenerate) {
+    return invalidateWeeklyPlanApproval(rawPlan, 'Regenerated full 7-day plan');
+  }
+
+  return rawPlan;
+}
+
+/**
+ * Centralized Approval Invalidation Engine
+ * Transitions approved weekly plan to 'requires_review', increments version,
+ * and maintains immutable historical approval records with timestamp and reason.
+ */
+export function invalidateWeeklyPlanApproval(plan: WeeklyDietPlan, reason: string): WeeklyDietPlan {
+  const isCurrentlyApproved = Boolean(plan.status === 'approved' || plan.is_approved === true);
+  const timestamp = new Date().toISOString();
+
+  if (!isCurrentlyApproved) {
+    // If not approved, preserve current status without fabricating previous_approval
+    return {
+      ...plan,
+      status: plan.status === 'requires_review' ? 'requires_review' : 'draft',
+      is_approved: false,
+      approved_by: undefined,
+      approval_date: undefined,
+      approved_at: undefined,
+      approval_notes: undefined,
+      approval_metadata: undefined,
+      updated_at: timestamp
+    };
+  }
+
+  const previousRecord: WeeklyDietPlanApprovalRecord = {
+    approved_by: plan.approved_by || plan.approval_metadata?.clinician_name || 'Clinician',
+    approval_date: plan.approval_date || plan.approved_at || timestamp,
+    version: plan.version,
+    approval_metadata: plan.approval_metadata,
+    invalidated_at: timestamp,
+    invalidation_reason: reason
+  };
+
+  return {
+    ...plan,
+    version: plan.version + 1,
+    status: 'requires_review',
+    is_approved: false,
+    approved_by: undefined,
+    approval_date: undefined,
+    approved_at: undefined,
+    approval_notes: undefined,
+    approval_metadata: undefined,
+    invalidation_reason: reason,
+    invalidated_at: timestamp,
+    previous_approval: previousRecord,
+    historical_approvals: [...(plan.historical_approvals || []), previousRecord],
+    updated_at: timestamp
+  };
+}
+
+export interface WeeklyPlanSafetyEvaluation {
+  overall_decision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP';
+  is_eligible_for_approval: boolean;
+  unresolved_hard_stops: string[];
+  reasons: string[];
+  day_evaluations: {
+    day_number: number;
+    decision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP';
+    notes: string[];
+  }[];
+}
+
+/**
+ * Comprehensive 7-Day Clinical Safety Revalidation Engine
+ * Evaluates all 7 days without trusting cached safety flags.
+ * Validates allergies, food contraindications (RED), feeding route (NPO),
+ * drug-nutrient interactions, and clinician prescriptions.
+ */
+export function evaluateWeeklyPlanClinicalSafety(
+  patient: PatientProfile,
+  weeklyPlan: WeeklyDietPlan,
+  allFoods: FoodItem[],
+  p3Context?: P3NutritionPlanningContext | null
+): WeeklyPlanSafetyEvaluation {
+  const unresolvedHardStops: string[] = [];
+  const reasons: string[] = [];
+  const dayEvals: WeeklyPlanSafetyEvaluation['day_evaluations'] = [];
+
+  // 1. Feeding Route Safety (NPO, enteral, parenteral prohibition for standard solid food plans)
+  const routeStr = String(patient.feeding_status?.route || p3Context?.feedingRoute?.route || '').toLowerCase();
+  const isFeedingRouteContraindicated = 
+    p3Context?.feedingRoute?.oral_intake_permitted === false ||
+    patient.feeding_status?.oral_intake_permitted === false ||
+    routeStr.includes('npo') ||
+    routeStr.includes('enteral') ||
+    routeStr.includes('parenteral');
+
+  if (isFeedingRouteContraindicated) {
+    const routeMsg = 'Non-oral feeding route / NPO status prohibits standard solid food weekly diet plan.';
+    unresolvedHardStops.push(routeMsg);
+    reasons.push(routeMsg);
+  }
+
+  // 2. Evaluate all 7 days independently without relying on cached flags
+  let overallDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = isFeedingRouteContraindicated ? 'HARD_STOP' : 'SAFE';
+
+  // Merge allergies from both patient.confirmed_allergies and p3Context?.confirmedAllergies
+  const mergedPatient: PatientProfile = {
+    ...patient,
+    confirmed_allergies: Array.from(new Set([
+      ...(patient.confirmed_allergies || []),
+      ...(p3Context?.confirmedAllergies || [])
+    ]))
+  };
+
+  for (const day of (weeklyPlan.days || [])) {
+    const dayNotes: string[] = [];
+    const dayEval = validateInterventionPlan(mergedPatient, day.meals, allFoods);
+
+    if (dayEval.hardStops.length > 0) {
+      for (const hs of dayEval.hardStops) {
+        const msg = `Day ${day.day_number}: ${hs.title_en} - ${hs.clinical_explanation_en}`;
+        dayNotes.push(msg);
+        if (!unresolvedHardStops.includes(msg)) {
+          unresolvedHardStops.push(msg);
+        }
+      }
+    }
+
+    if (dayEval.clinicalReviewsRequired.length > 0) {
+      for (const cr of dayEval.clinicalReviewsRequired) {
+        const msg = `Day ${day.day_number}: ${cr.title_en} - ${cr.clinical_explanation_en}`;
+        dayNotes.push(msg);
+      }
+    }
+
+    let dayDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = 'SAFE';
+    if (dayNotes.some(n => unresolvedHardStops.includes(n))) {
+      dayDecision = 'HARD_STOP';
+      overallDecision = 'HARD_STOP';
+    } else if (dayNotes.length > 0) {
+      dayDecision = 'CLINICAL_REVIEW_REQUIRED';
+      if (overallDecision !== 'HARD_STOP') {
+        overallDecision = 'CLINICAL_REVIEW_REQUIRED';
+      }
+    }
+
+    dayEvals.push({
+      day_number: day.day_number,
+      decision: dayDecision,
+      notes: dayNotes
+    });
+  }
+
+  const isEligible = overallDecision !== 'HARD_STOP' && unresolvedHardStops.length === 0;
+
+  return {
+    overall_decision: overallDecision,
+    is_eligible_for_approval: isEligible,
+    unresolved_hard_stops: unresolvedHardStops,
+    reasons: unresolvedHardStops.length > 0 ? unresolvedHardStops : reasons,
+    day_evaluations: dayEvals
   };
 }
 
@@ -874,14 +1042,15 @@ export function regenerateDayInWeeklyPlan(
     }
   }
 
-  return {
+  const updatedPlan: WeeklyDietPlan = {
     ...currentPlan,
     days: updatedDays,
     updated_at: new Date().toISOString(),
-    status: 'draft', // Any regeneration moves plan to draft review
     overall_safety_status: overallSafety,
     unresolved_hard_stops: unresolvedHardStops.length > 0 ? unresolvedHardStops : undefined
   };
+
+  return invalidateWeeklyPlanApproval(updatedPlan, `Regenerated Day ${dayNumber}`);
 }
 
 /**
@@ -929,10 +1098,11 @@ export function copyDayInWeeklyPlan(
     return d;
   });
 
-  return {
+  const updatedPlan: WeeklyDietPlan = {
     ...currentPlan,
     days: updatedDays,
-    updated_at: new Date().toISOString(),
-    status: 'draft'
+    updated_at: new Date().toISOString()
   };
+
+  return invalidateWeeklyPlanApproval(updatedPlan, `Copied Day ${sourceDayNumber} to Day ${targetDayNumber}`);
 }

@@ -556,6 +556,21 @@ export interface DayPlan {
   safety_notes_bn?: string[];
 }
 
+export interface WeeklyDietPlanApprovalRecord {
+  approved_by: string;
+  approval_date: string;
+  version: number;
+  approval_metadata?: {
+    clinician_id: string;
+    clinician_name: string;
+    approval_timestamp: string;
+    license_number?: string;
+    notes?: string;
+  };
+  invalidated_at?: string;
+  invalidation_reason?: string;
+}
+
 export interface WeeklyDietPlan {
   plan_id: string;
   patient_id: string;
@@ -578,6 +593,8 @@ export interface WeeklyDietPlan {
     license_number?: string;
     notes?: string;
   };
+  previous_approval?: WeeklyDietPlanApprovalRecord;
+  historical_approvals?: WeeklyDietPlanApprovalRecord[];
   target_macros: {
     calories: number;
     protein_g: number;

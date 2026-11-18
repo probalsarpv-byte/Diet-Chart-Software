@@ -21,6 +21,7 @@ import {
   Unlock,
   AlertOctagon,
   CheckCircle2,
+  AlertCircle,
   Copy,
   Calendar,
   FileText,
@@ -66,7 +67,9 @@ export const DietChartTab: React.FC = () => {
     toggleMealLockInDay,
     toggleItemLockInDay,
     copyDayPlan,
-    approveWeeklyPlan
+    approveWeeklyPlan,
+    weeklyPlanApprovalError,
+    clearWeeklyPlanApprovalError
   } = usePractice();
 
   const bn = language === 'bn';
@@ -148,14 +151,15 @@ export const DietChartTab: React.FC = () => {
       }, 1000);
     } else {
       setApprovalFeedback(
-        bn 
-          ? 'অনুমোদন ব্যর্থ হয়েছে। সক্রিয় হার্ড স্টপ বা লাইসেন্স আইডি পরীক্ষা করুন।' 
-          : 'Approval failed. Verify clinician ID or resolve active hard stops.'
+        weeklyPlanApprovalError || (bn 
+          ? 'অনুমোদন ব্যর্থ হয়েছে। সক্রিয় হার্ড স্টপ, P2 অনুমোদন বা লাইসেন্স আইডি পরীক্ষা করুন।' 
+          : 'Approval failed. Verify clinician ID, P2 assessment approval, or resolve active hard stops.')
       );
     }
   };
 
-  const isWeeklyPlanApproved = Boolean(weeklyDietPlan?.is_approved || weeklyDietPlan?.status === 'approved');
+  const isWeeklyPlanApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
+  const isRequiresReview = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'requires_review');
   const hasHardStop = weeklyDietPlan?.overall_safety_status === 'HARD_STOP' || clinicalSafetyEvaluation.overallDecision === 'HARD_STOP';
 
   return (
@@ -295,10 +299,13 @@ export const DietChartTab: React.FC = () => {
             </button>
           </div>
 
-          {/* Clinician Approval Button */}
+          {/* Clinician Approval Button & Status Badges */}
           <div className="flex items-center gap-2">
             {isWeeklyPlanApproved ? (
-              <div className="px-3.5 py-1.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 shadow-sm">
+              <div 
+                data-testid="badge-approved-plan"
+                className="px-3.5 py-1.5 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              >
                 <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 <span>
                   {bn 
@@ -306,12 +313,44 @@ export const DietChartTab: React.FC = () => {
                     : `Approved Plan (${weeklyDietPlan?.approved_by || 'Verified'})`}
                 </span>
               </div>
+            ) : isRequiresReview ? (
+              <div className="flex items-center gap-2">
+                <div 
+                  data-testid="badge-requires-review"
+                  className="px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+                  title={weeklyDietPlan?.invalidation_reason ? `Invalidated: ${weeklyDietPlan.invalidation_reason}` : undefined}
+                >
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                  <span>{bn ? 'পুনঃনিরীক্ষণ প্রয়োজন (পরিমার্জিত)' : 'Requires Re-review (Modified)'}</span>
+                </div>
+                <button
+                  type="button"
+                  data-testid="btn-approve-weekly-plan"
+                  disabled={hasHardStop}
+                  onClick={() => {
+                    clearWeeklyPlanApprovalError();
+                    setIsSignOffModalOpen(true);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
+                    hasHardStop
+                      ? 'bg-muted text-muted-foreground cursor-not-allowed border'
+                      : 'bg-amber-600 text-white hover:bg-amber-700'
+                  }`}
+                  title={hasHardStop ? 'Cannot approve: Clinical hard stops exist' : 'Re-approve modified 7-day diet prescription'}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>{bn ? 'পুনরায় অনুমোদন করুন' : 'Re-Approve Sign-Off'}</span>
+                </button>
+              </div>
             ) : (
               <button
                 type="button"
                 data-testid="btn-approve-weekly-plan"
                 disabled={hasHardStop}
-                onClick={() => setIsSignOffModalOpen(true)}
+                onClick={() => {
+                  clearWeeklyPlanApprovalError();
+                  setIsSignOffModalOpen(true);
+                }}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
                   hasHardStop
                     ? 'bg-muted text-muted-foreground cursor-not-allowed border'

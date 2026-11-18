@@ -50,7 +50,9 @@ import {
   generateWeeklyDietPlan, 
   regenerateDayInWeeklyPlan, 
   copyDayInWeeklyPlan, 
-  calculateMealTotals 
+  calculateMealTotals,
+  invalidateWeeklyPlanApproval,
+  evaluateWeeklyPlanClinicalSafety
 } from '@/engine/weeklyPlanner';
 import { advanceToNextPhase, recordFollowUpVisit, TransitionOptions } from '@/engine/phaseProgression';
 import { runP2Analysis } from '@/engine/p2';
@@ -232,6 +234,8 @@ export interface PracticeContextType {
   toggleItemLockInDay: (dayNumber: number, itemId: string) => void;
   copyDayPlan: (sourceDayNumber: number, targetDayNumber: number) => boolean;
   approveWeeklyPlan: (clinicianId: string, notes?: string) => boolean;
+  weeklyPlanApprovalError: string | null;
+  clearWeeklyPlanApprovalError: () => void;
 }
 
 const PracticeContext = createContext<PracticeContextType | undefined>(undefined);
@@ -316,6 +320,21 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [dietChart, setDietChart] = useState<DietChartMeal[]>([]);
   const [weeklyDietPlan, setWeeklyDietPlan] = useState<WeeklyDietPlan | null>(null);
   const [activeDayNumber, setActiveDayNumber] = useState<number>(1);
+  const [weeklyPlanApprovalError, setWeeklyPlanApprovalError] = useState<string | null>(null);
+  const clearWeeklyPlanApprovalError = useCallback(() => setWeeklyPlanApprovalError(null), []);
+
+  const persistWeeklyPlan = useCallback((plan: WeeklyDietPlan): boolean => {
+    if (!plan || !plan.patient_id) return false;
+    const targetVisitId = plan.visit_id || patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id || 'default_visit';
+    const planKey = `shuddho_weekly_plan_${plan.patient_id}_${targetVisitId}`;
+    const saved = safeStorage.setItem(planKey, plan);
+    if (!saved) return false;
+    const readBack = safeStorage.getItem<WeeklyDietPlan>(planKey);
+    if (!readBack || readBack.plan_id !== plan.plan_id || readBack.version !== plan.version) {
+      return false;
+    }
+    return true;
+  }, [patient?.current_visit_id, currentVisit]);
   const [candidateSupplements, setCandidateSupplements] = useState<CandidateSupplement[]>([]);
   const [savedPatients, setSavedPatients] = useState<PatientRecord[]>([]);
 
@@ -387,7 +406,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
       return updated;
     });
-  }, [patient?.id, patient?.visit_date, patient?.current_visit_id]);
+
+    setWeeklyDietPlan(wPrev => {
+      if (!wPrev || (!wPrev.is_approved && wPrev.status !== 'approved')) return wPrev;
+      const inv = invalidateWeeklyPlanApproval(wPrev, `Clinical assessment invalidated: ${reason}`);
+      persistWeeklyPlan(inv);
+      return inv;
+    });
+  }, [patient?.id, patient?.visit_date, patient?.current_visit_id, persistWeeklyPlan]);
 
   // Load patient-isolated P2 analysis from LocalStorage
   useEffect(() => {
@@ -1234,15 +1260,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         manual_edits_preserved: false
       }));
     }
-  }, [patient, trafficLight]);
 
-  // Step 05: 7-Day Personalized Diet Planning & Prescription Implementation
-  const persistWeeklyPlan = useCallback((plan: WeeklyDietPlan) => {
-    if (!plan || !plan.patient_id) return;
-    const targetVisitId = plan.visit_id || patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id || 'default_visit';
-    const planKey = `shuddho_weekly_plan_${plan.patient_id}_${targetVisitId}`;
-    safeStorage.setItem(planKey, plan);
-  }, [patient.current_visit_id, currentVisit]);
+    if (weeklyDietPlan && (weeklyDietPlan.status === 'approved' || weeklyDietPlan.is_approved)) {
+      const invalidated = invalidateWeeklyPlanApproval(weeklyDietPlan, 'Patient profile or nutrition targets updated');
+      setWeeklyDietPlan(invalidated);
+      persistWeeklyPlan(invalidated);
+    }
+  }, [patient, trafficLight, weeklyDietPlan, persistWeeklyPlan]);
 
   const recalculateDayPlanSummary = useCallback((day: DayPlan, patientProfile: PatientProfile): DayPlan => {
     const total_calories = day.meals.reduce((sum, m) => sum + m.meal_calories, 0);
@@ -1376,11 +1400,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updated_at: new Date().toISOString()
       };
 
+      const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food quantity modified');
       if (dayNumber === 1 && updatedDays[0]) {
         setDietChart(updatedDays[0].meals);
       }
-      persistWeeklyPlan(updatedPlan);
-      return updatedPlan;
+      persistWeeklyPlan(invalidated);
+      return invalidated;
     });
 
     setPatient(prev => ({
@@ -1452,11 +1477,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updated_at: new Date().toISOString()
       };
 
+      const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item swapped with alternative');
       if (dayNumber === 1 && updatedDays[0]) {
         setDietChart(updatedDays[0].meals);
       }
-      persistWeeklyPlan(updatedPlan);
-      return updatedPlan;
+      persistWeeklyPlan(invalidated);
+      return invalidated;
     });
 
     setPatient(prev => ({
@@ -1490,11 +1516,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updated_at: new Date().toISOString()
       };
 
+      const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item removed');
       if (dayNumber === 1 && updatedDays[0]) {
         setDietChart(updatedDays[0].meals);
       }
-      persistWeeklyPlan(updatedPlan);
-      return updatedPlan;
+      persistWeeklyPlan(invalidated);
+      return invalidated;
     });
 
     setPatient(prev => ({
@@ -1572,11 +1599,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updated_at: new Date().toISOString()
       };
 
+      const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item added');
       if (dayNumber === 1 && updatedDays[0]) {
         setDietChart(updatedDays[0].meals);
       }
-      persistWeeklyPlan(updatedPlan);
-      return updatedPlan;
+      persistWeeklyPlan(invalidated);
+      return invalidated;
     });
 
     setPatient(prev => ({
@@ -1658,43 +1686,149 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [weeklyDietPlan, patient, allFoods, trafficLight, persistWeeklyPlan]);
 
   const approveWeeklyPlan = useCallback((clinicianId: string, notes?: string): boolean => {
-    if (!validateClinicianCredentials(clinicianId)) {
-      console.warn('Weekly diet plan approval rejected: Invalid licensed clinician credentials.');
-      return false;
-    }
-    if (!weeklyDietPlan) {
-      console.warn('Weekly diet plan approval rejected: No active weekly plan.');
-      return false;
-    }
-    if (weeklyDietPlan.overall_safety_status === 'HARD_STOP') {
-      console.warn('Weekly diet plan approval rejected: Unresolved clinical hard stops exist.');
+    // Step A — Clinical Governance & Identity Verification
+    // 1. Patient & Visit Identity
+    if (!patient || !patient.id) {
+      const err = 'No active patient selected.';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
       return false;
     }
 
+    const activeVisitId = currentVisit?.visit_id || currentVisit?.id || patient.current_visit_id;
+    if (!activeVisitId) {
+      const err = 'No active clinical visit selected.';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    if (!weeklyDietPlan || weeklyDietPlan.patient_id !== patient.id) {
+      const err = 'Weekly diet plan does not belong to active patient.';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    // 2. Clinician Authorization
+    if (!validateClinicianCredentials(clinicianId)) {
+      const err = 'Invalid licensed clinician credentials. Sign-off requires an authorized clinician with valid license/credentials.';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    // 3. P2 Clinical Governance Prerequisite
+    if (!p2AnalysisResult || !p2AnalysisResult.report || !p2AnalysisResult.report.isApproved || p2AnalysisResult.analysisInvalidatedAt || p2AnalysisResult.report.analysisInvalidatedAt) {
+      const err = 'Cannot approve 7-day diet prescription without an approved Phase 2 Clinical Assessment.';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    if (p2AnalysisResult.patientId && p2AnalysisResult.patientId !== patient.id) {
+      const err = 'P2 Clinical Assessment does not match active patient.';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    if (p2AnalysisResult.visitId && p2AnalysisResult.visitId !== activeVisitId) {
+      const err = 'P2 Clinical Assessment visit does not match active clinical visit.';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    // Step B — Comprehensive 7-Day Clinical Safety Revalidation
+    const safetyEval = evaluateWeeklyPlanClinicalSafety(
+      patient,
+      weeklyDietPlan,
+      allFoods,
+      p2AnalysisResult?.p3PlanningContext
+    );
+
+    if (!safetyEval.is_eligible_for_approval || safetyEval.overall_decision === 'HARD_STOP') {
+      const reason = safetyEval.unresolved_hard_stops.length > 0 
+        ? safetyEval.unresolved_hard_stops.join('; ')
+        : 'Clinical safety contraindications detected across weekly plan.';
+      const err = `Clinical safety validation failed: ${reason}`;
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    // Step C — Persist-First Sequence
     const trimmed = clinicianId.trim();
     const timestamp = new Date().toISOString();
-    const updated: WeeklyDietPlan = {
+    const targetVisitId = weeklyDietPlan.visit_id || activeVisitId;
+    const planKey = `shuddho_weekly_plan_${weeklyDietPlan.patient_id}_${targetVisitId}`;
+
+    const approvedPlan: WeeklyDietPlan = {
       ...weeklyDietPlan,
+      version: weeklyDietPlan.status === 'approved' ? weeklyDietPlan.version : weeklyDietPlan.version + 1,
       status: 'approved',
       is_approved: true,
       approved_by: trimmed,
       approval_date: timestamp,
       approved_at: timestamp,
-      approval_notes: notes || '',
-      clinician_notes: notes || weeklyDietPlan.clinician_notes,
+      approval_notes: notes?.trim() || undefined,
+      clinician_notes: notes?.trim() || weeklyDietPlan.clinician_notes,
+      invalidation_reason: undefined,
+      invalidated_at: undefined,
       approval_metadata: {
         clinician_id: trimmed,
         clinician_name: trimmed,
         approval_timestamp: timestamp,
         license_number: trimmed,
-        notes: notes || ''
-      }
+        notes: notes?.trim() || undefined
+      },
+      updated_at: timestamp
     };
 
-    setWeeklyDietPlan(updated);
-    persistWeeklyPlan(updated);
+    // 1. Save to primary weekly plan storage
+    const saveSucceeded = safeStorage.setItem(planKey, approvedPlan);
+    if (!saveSucceeded) {
+      const err = 'Storage failure: Failed to write approved weekly plan to local persistence.';
+      console.error(`[Weekly Diet Plan Approval Persistence Error] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    // 2. Read-back verification
+    const readBack = safeStorage.getItem<WeeklyDietPlan>(planKey);
+    if (!readBack || readBack.plan_id !== approvedPlan.plan_id || readBack.version !== approvedPlan.version || !readBack.is_approved) {
+      const err = 'Persistence verification failed: Stored plan read-back did not match approved plan.';
+      console.error(`[Weekly Diet Plan Approval Persistence Error] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
+    // 3. Update saved_patients record in storage
+    const currentSaved = safeStorage.getItem<PatientRecord[]>('shuddho_saved_patients') || savedPatients;
+    const existingPatientRecord = currentSaved.find(p => p.patient.id === patient.id);
+    if (existingPatientRecord) {
+      const updatedRecord: PatientRecord = {
+        ...existingPatientRecord,
+        weekly_diet_plan: approvedPlan,
+        updated_at: timestamp
+      };
+      const tx = savePatientTransaction({
+        currentRecord: updatedRecord,
+        storageEngine: safeStorage,
+        action: { type: 'SAVE_RECORD' },
+        savedPatientsList: currentSaved
+      });
+      if (tx.success) {
+        setSavedPatients(tx.committedPatientsList);
+      }
+    }
+
+    // 4. ONLY commit in-memory React state after verified persistence
+    setWeeklyDietPlan(approvedPlan);
+    setWeeklyPlanApprovalError(null);
     return true;
-  }, [weeklyDietPlan, persistWeeklyPlan]);
+  }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult, allFoods, savedPatients]);
 
   const updateMealItemRawGrams = useCallback((mealId: string, itemId: string, rawGrams: number) => {
     if (weeklyDietPlan) {
@@ -3414,7 +3548,9 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         toggleMealLockInDay,
         toggleItemLockInDay,
         copyDayPlan,
-        approveWeeklyPlan
+        approveWeeklyPlan,
+        weeklyPlanApprovalError,
+        clearWeeklyPlanApprovalError
       }}
     >
       {children}

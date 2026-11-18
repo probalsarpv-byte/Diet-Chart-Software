@@ -241,11 +241,78 @@ async function runStep05BrowserE2E() {
 
     const confirmApproveBtn = page.locator('[data-testid="btn-submit-approval"]');
     assert((await confirmApproveBtn.isEnabled()), 'Scenario 6: Submit Approval button is enabled after valid ID entry');
+    
+    // Verify approval is blocked without approved P2 Clinical Assessment
     await confirmApproveBtn.click();
+    await page.waitForTimeout(400);
+
+    const feedback = page.locator('text=/Cannot approve|ব্যর্থ/');
+    assert((await feedback.count()) > 0, 'Scenario 6: Approval strictly blocked when P2 assessment is unapproved');
+
+    // Close sign-off modal
+    await page.locator('button:has-text("Cancel"), button:has-text("বাতিল")').click();
+    await page.waitForTimeout(300);
+
+    // Approve P2 Assessment in Tab 7 View 2 as clinical governance prerequisite
+    const reportTabForP2 = page.locator('button:has-text("৭. "), button:has-text("7. ")').first();
+    await reportTabForP2.click();
+    await page.waitForTimeout(500);
+
+    const p2ReportBtn = page.locator('button:has-text("২. প্রাক-হস্তক্ষেপ পূর্ণাঙ্গ স্বাস্থ্য প্রতিবেদন"), button:has-text("2. Pre-Intervention Health Report")');
+    await p2ReportBtn.click();
+    await page.waitForTimeout(500);
+
+    const p2ClinicianInput = page.locator('input[placeholder*="ডা. ফারহানা"], input[placeholder*="Farhana Ahmed"]').first();
+    await p2ClinicianInput.fill('Dr. Farhana Rahman, MBBS, MD');
+    const safetyCheckbox = page.locator('input[type="checkbox"]').first();
+    if ((await safetyCheckbox.count()) > 0) {
+      await safetyCheckbox.check();
+    }
+    await page.waitForTimeout(200);
+    await page.locator('button:has-text("Approve Clinical Assessment"), button:has-text("Sign Off")').first().click();
+    await page.waitForTimeout(800);
+
+    // Return to Tab 5 (Diet Planning) and approve weekly plan now that P2 is approved
+    const dietTabReturn = page.locator('button:has-text("৫. "), button:has-text("5. ")').first();
+    await dietTabReturn.click();
     await page.waitForTimeout(600);
 
-    const approvedBadge = page.locator('text=/অনুমোদিত|Approved/');
+    await signOffBtn.click();
+    await page.waitForTimeout(400);
+
+    await clinicianIdInput.fill('DR_PROBAL_MD_PHD');
+    await confirmApproveBtn.click();
+    await page.waitForTimeout(1200);
+
+    const approvedBadge = page.locator('[data-testid="badge-approved-plan"]');
     assert((await approvedBadge.count()) > 0, 'Scenario 6: Plan successfully transitioned to Approved state with clinician metadata');
+
+    // -------------------------------------------------------------------
+    // Scenario 6b: Modification Invalidation & Re-Approval UI Flow
+    // -------------------------------------------------------------------
+    console.log('\n--- Scenario 6b: Modification Invalidation & Re-Approval UI Flow ---');
+    const regenDayBtn = page.locator('[data-testid="btn-regenerate-day"]');
+    await regenDayBtn.click();
+    await page.waitForTimeout(600);
+
+    const requiresReviewBadge = page.locator('[data-testid="badge-requires-review"]');
+    assert((await requiresReviewBadge.count()) > 0, 'Scenario 6b: Modification dynamically transitions UI to Requires Re-review');
+
+    // Re-approve the plan
+    const reApproveBtn = page.locator('[data-testid="btn-approve-weekly-plan"]');
+    await reApproveBtn.click();
+    await page.waitForTimeout(400);
+
+    const reApproveClinicianInput = page.locator('[data-testid="input-clinician-id"]');
+    await reApproveClinicianInput.fill('DR_PROBAL_MD_PHD');
+    await page.waitForTimeout(200);
+
+    const reApproveSubmitBtn = page.locator('[data-testid="btn-submit-approval"]');
+    await reApproveSubmitBtn.click();
+    await page.waitForTimeout(1200);
+
+    const reApprovedBadge = page.locator('[data-testid="badge-approved-plan"]');
+    assert((await reApprovedBadge.count()) > 0, 'Scenario 6b: Plan successfully re-approved and returns to Verified state');
 
     // -------------------------------------------------------------------
     // Scenario 7: Reports Hub Integration — 7-Day Weekly Diet Prescription (View 4)
