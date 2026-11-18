@@ -575,7 +575,8 @@ export function buildDayPlan(
   trafficLightResult: TrafficLightResult,
   targetMacros: { calories: number; protein_g: number; carbs_g: number; fat_g: number },
   existingDayPlan?: DayPlan,
-  preserveLocks: boolean = true
+  preserveLocks: boolean = true,
+  p3Context?: P3NutritionPlanningContext
 ): DayPlan {
   const dayName = DAY_NAMES[(dayNumber - 1) % DAY_NAMES.length];
 
@@ -584,8 +585,16 @@ export function buildDayPlan(
     return existingDayPlan;
   }
 
-  const lockedMeals = preserveLocks ? existingDayPlan?.locked_meals : undefined;
-  const lockedItems = preserveLocks ? existingDayPlan?.locked_items : undefined;
+  const lockedMeals: Record<string, boolean> = { ...(existingDayPlan?.locked_meals || {}) };
+  const lockedItems: Record<string, boolean> = { ...(existingDayPlan?.locked_items || {}) };
+  if (preserveLocks && existingDayPlan?.meals) {
+    for (const m of existingDayPlan.meals) {
+      if (m.is_locked) lockedMeals[m.id] = true;
+      for (const it of m.items) {
+        if (it.is_locked) lockedItems[it.id] = true;
+      }
+    }
+  }
 
   const meals = generateMealsForDay(
     dayNumber,
@@ -638,8 +647,48 @@ export function buildDayPlan(
     safetyNotesBn.push(warn.title_bn + ': ' + warn.clinical_explanation_bn);
   }
 
+  // Check feeding route contraindications
+  const isFeedingRouteContraindicated = 
+    p3Context?.feedingRoute?.oral_intake_permitted === false ||
+    patient.feeding_status?.oral_intake_permitted === false;
+
+  if (isFeedingRouteContraindicated) {
+    safetyNotes.unshift('Non-oral feeding route / NPO status prohibits standard solid food weekly diet plan.');
+    safetyNotesBn.unshift('নন-ওরাল ফিডিং রুট / এনপিও স্ট্যাটাসের কারণে স্বাভাবিক কঠিন খাবারের পরিকল্পনা নিষিদ্ধ।');
+  }
+
+  // Check clinician-specified nutrient prescriptions
+  if (p3Context?.prescriptions?.fluid?.hasConfirmedLimit && p3Context.prescriptions.fluid.numericalLimit) {
+    const limit = p3Context.prescriptions.fluid.numericalLimit;
+    const unit = p3Context.prescriptions.fluid.unit || 'mL/day';
+    const reason = p3Context.prescriptions.fluid.clinicalReason ? ` (${p3Context.prescriptions.fluid.clinicalReason})` : '';
+    safetyNotes.push(`Fluid restriction: Maximum ${limit} ${unit}${reason}`);
+    safetyNotesBn.push(`তরল গ্রহণ সীমাবদ্ধতা: সর্বোচ্চ ${limit} ${unit}${reason}`);
+  }
+  if (p3Context?.prescriptions?.sodium?.hasConfirmedLimit && p3Context.prescriptions.sodium.numericalLimit) {
+    const limit = p3Context.prescriptions.sodium.numericalLimit;
+    const unit = p3Context.prescriptions.sodium.unit || 'mg/day';
+    const reason = p3Context.prescriptions.sodium.clinicalReason ? ` (${p3Context.prescriptions.sodium.clinicalReason})` : '';
+    safetyNotes.push(`Sodium restriction: Maximum ${limit} ${unit}${reason}`);
+    safetyNotesBn.push(`সোডিয়াম গ্রহণ সীমাবদ্ধতা: সর্বোচ্চ ${limit} ${unit}${reason}`);
+  }
+  if (p3Context?.prescriptions?.potassium?.hasConfirmedLimit && p3Context.prescriptions.potassium.numericalLimit) {
+    const limit = p3Context.prescriptions.potassium.numericalLimit;
+    const unit = p3Context.prescriptions.potassium.unit || 'mg/day';
+    const reason = p3Context.prescriptions.potassium.clinicalReason ? ` (${p3Context.prescriptions.potassium.clinicalReason})` : '';
+    safetyNotes.push(`Potassium restriction: Maximum ${limit} ${unit}${reason}`);
+    safetyNotesBn.push(`পটাশিয়াম গ্রহণ সীমাবদ্ধতা: সর্বোচ্চ ${limit} ${unit}${reason}`);
+  }
+  if (p3Context?.prescriptions?.protein?.hasConfirmedLimit && p3Context.prescriptions.protein.numericalLimit) {
+    const limit = p3Context.prescriptions.protein.numericalLimit;
+    const unit = p3Context.prescriptions.protein.unit || 'g/day';
+    const reason = p3Context.prescriptions.protein.clinicalReason ? ` (${p3Context.prescriptions.protein.clinicalReason})` : '';
+    safetyNotes.push(`Protein prescription limit: ${limit} ${unit}${reason}`);
+    safetyNotesBn.push(`আমিষ প্রেসক্রিপশন সীমা: ${limit} ${unit}${reason}`);
+  }
+
   let safetyDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = 'SAFE';
-  if (safetyEval.overallDecision === 'HARD_STOP') {
+  if (isFeedingRouteContraindicated || safetyEval.overallDecision === 'HARD_STOP') {
     safetyDecision = 'HARD_STOP';
   } else if (safetyEval.overallDecision === 'CLINICAL_REVIEW_REQUIRED' || safetyEval.overallDecision === 'ADVISORY') {
     safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
@@ -655,8 +704,8 @@ export function buildDayPlan(
     day_name_en: dayName.en,
     meals,
     is_locked: existingDayPlan?.is_locked || false,
-    locked_items: existingDayPlan?.locked_items || {},
-    locked_meals: existingDayPlan?.locked_meals || {},
+    locked_items: lockedItems,
+    locked_meals: lockedMeals,
     summary,
     slot_errors: slotErrors.length > 0 ? slotErrors : undefined,
     safety_decision: safetyDecision,
@@ -717,7 +766,8 @@ export function generateWeeklyDietPlan(
       trafficLightResult,
       targetMacros,
       existingDay,
-      preserveLocks
+      preserveLocks,
+      p3Context || undefined
     );
     days.push(dayPlan);
   }
@@ -750,10 +800,10 @@ export function generateWeeklyDietPlan(
   }
 
   const p2HandoffSummary = p3Context ? {
-    clinicalAssessmentApproved: p3Context.clinicalAssessmentApproved,
-    confirmedAllergies: p3Context.confirmedAllergies,
-    feedingRoute: p3Context.feedingRoute.route,
-    prescriptions: p3Context.prescriptions,
+    clinicalAssessmentApproved: Boolean(p3Context.clinicalAssessmentApproved),
+    confirmedAllergies: p3Context.confirmedAllergies || [],
+    feedingRoute: p3Context.feedingRoute?.route || patient.feeding_status?.route || 'oral_standard',
+    prescriptions: p3Context.prescriptions || {},
     targetsDerivedFrom: p3Context.clinicalAssessmentApproved ? 'Authoritative Approved P2 Assessment' : 'Draft P2 Assessment / Anthropometrics'
   } : undefined;
 
@@ -764,7 +814,7 @@ export function generateWeeklyDietPlan(
     patient_id: patient.id,
     visit_id: visitId,
     version: existingPlan ? existingPlan.version + 1 : 1,
-    schema_version: 1,
+    schema_version: 2,
     created_at: existingPlan?.created_at || timestamp,
     updated_at: timestamp,
     status: existingPlan?.status === 'approved' && !options?.forceRegenerate ? 'approved' : 'draft',
@@ -802,7 +852,8 @@ export function regenerateDayInWeeklyPlan(
       trafficLightResult,
       currentPlan.target_macros,
       d,
-      preserveLocks
+      preserveLocks,
+      p3Context || undefined
     );
   });
 

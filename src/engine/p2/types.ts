@@ -258,6 +258,7 @@ export interface PrescribedNutrientRestriction {
   requiresClarification: boolean;
   clarificationNote_en?: string;
   clarificationNote_bn?: string;
+  clinicalReason?: string;
 }
 
 // ─── Targeted Laboratory Recommendation ──────────────────────────
@@ -428,6 +429,7 @@ export interface P3NutritionPlanningContext {
   approvedByClinicianId?: string;
   analysisInvalidatedAt?: string;
   invalidationReason?: string;
+  targetsDerivedFrom?: string;
   
   confirmedAllergies: string[];
   allergyReconciliation?: AllergyReconciliationRecord;

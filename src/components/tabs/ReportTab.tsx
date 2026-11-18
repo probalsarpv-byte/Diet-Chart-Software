@@ -19,14 +19,15 @@ import {
   Award,
   Sparkles,
   UserCheck,
-  Calendar
+  Calendar,
+  CheckCircle2
 } from 'lucide-react';
 import { ComparativeProgressReportView } from '@/components/reports/ComparativeProgressReportView';
 import { FunctionalNutritionReport } from '@/components/p2/FunctionalNutritionReport';
 import { getLatestVisitSnapshot } from '@/engine/snapshot/snapshotManager';
-import { ClinicalVisit } from '@/types';
+import { ClinicalVisit, WeeklyDietPlan } from '@/types';
 
-type ReportType = 'diet_prescription' | 'comparative_progress' | 'clinical_assessment';
+type ReportType = 'diet_prescription' | 'comparative_progress' | 'clinical_assessment' | 'weekly_diet_plan';
 
 export const ReportTab: React.FC = () => {
   const { 
@@ -52,7 +53,9 @@ export const ReportTab: React.FC = () => {
     selectedReportVisitId,
     selectReportVisit,
     progressReports,
-    visitSnapshots
+    visitSnapshots,
+    weeklyDietPlan,
+    generateWeeklyPlan
   } = usePractice();
 
   const [activeReportType, setActiveReportType] = useState<ReportType>('diet_prescription');
@@ -107,6 +110,13 @@ export const ReportTab: React.FC = () => {
       );
       return;
     }
+    if (activeReportType === 'weekly_diet_plan' && (hasHardStops || weeklyDietPlan?.overall_safety_status === 'HARD_STOP')) {
+      alert(bn
+        ? "ত্রুটি: ৭-দিনের খাদ্যতালিকায় অমীমাংসিত ক্লিনিক্যাল সেফটি হার্ড স্টপ রয়েছে। রোগীর নিরাপত্তার স্বার্থে এই রিপোর্ট প্রিন্ট বা অনুমোদন করা যাবে না।"
+        : "Error: The 7-day plan contains active Clinical Safety HARD STOPS. For clinical safety, this report cannot be printed until resolved."
+      );
+      return;
+    }
     window.print();
   };
 
@@ -140,6 +150,7 @@ export const ReportTab: React.FC = () => {
           </button>
 
           <button
+            data-testid="btn-print-report"
             onClick={handlePrint}
             className="px-4 py-1.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-90 text-xs font-bold flex items-center gap-1.5 shadow-md transition"
           >
@@ -257,6 +268,28 @@ export const ReportTab: React.FC = () => {
                 </span>
               )
             )}
+
+            {activeReportType === 'weekly_diet_plan' && (
+              weeklyDietPlan?.is_approved || weeklyDietPlan?.status === 'approved' ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3" />
+                  <span>
+                    {bn ? 'অনুমোদিত: ' : 'Approved: '}
+                    {weeklyDietPlan.approved_by || weeklyDietPlan.approval_metadata?.clinician_name} ({weeklyDietPlan.approved_at?.split('T')[0] || weeklyDietPlan.approval_date?.split('T')[0]})
+                  </span>
+                </span>
+              ) : (weeklyDietPlan?.overall_safety_status === 'HARD_STOP' || hasHardStops) ? (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                  <XCircle className="h-3 w-3" />
+                  <span>{bn ? 'অমীমাংসিত হার্ড স্টপ' : 'Active Hard Stops'}</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{bn ? 'খসড়া ৭-দিনের প্রেসক্রিপশন' : 'Draft 7-Day Prescription'}</span>
+                </span>
+              )
+            )}
           </div>
 
           {/* Progress Report Selector when in comparative_progress and multiple reports exist */}
@@ -315,6 +348,19 @@ export const ReportTab: React.FC = () => {
         >
           <TrendingUp className="h-4 w-4" />
           <span>{bn ? '৩. লংগিটিউডিনাল তুলনামূলক অগ্রগতি রিপোর্ট' : '3. Longitudinal Progress Report'}</span>
+        </button>
+
+        <button
+          data-testid="tab-report-weekly-diet"
+          onClick={() => setActiveReportType('weekly_diet_plan')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+            activeReportType === 'weekly_diet_plan'
+              ? 'bg-primary text-primary-foreground shadow-sm'
+              : 'hover:bg-muted text-muted-foreground'
+          }`}
+        >
+          <Calendar className="h-4 w-4" />
+          <span>{bn ? '৪. ৭-দিনের সমন্বিত ডায়েট প্রেসক্রিপশন' : '4. 7-Day Weekly Diet Prescription'}</span>
         </button>
       </div>
 
@@ -731,6 +777,293 @@ export const ReportTab: React.FC = () => {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* VIEW 4: 7-Day Weekly Clinical Diet Prescription */}
+      {activeReportType === 'weekly_diet_plan' && (
+        <div className="space-y-6" data-testid="weekly-diet-report-view">
+          {/* Printable A4 Report Container */}
+          <div className="print-container bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 border rounded-3xl p-6 sm:p-10 max-w-4xl mx-auto shadow-xl space-y-6 print:p-0 print:border-none print:shadow-none print:bg-white print:text-black">
+            
+            {/* Clinic Letterhead */}
+            <div className="border-b-2 border-emerald-600 pb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="h-9 w-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-lg">
+                    শু
+                  </div>
+                  <div>
+                    <h1 className="font-extrabold text-xl tracking-tight text-emerald-800 dark:text-emerald-400">
+                      SHUDDHO
+                    </h1>
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
+                      Functional & Precision Nutrition Clinic
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Dhaka, Bangladesh • Clinical Dietetics & Metabolic Health
+                </p>
+              </div>
+
+              <div className="text-right text-xs">
+                <div className="font-bold text-sm text-foreground">
+                  {bn ? '৭-দিনের ব্যক্তিগতকৃত পুষ্টি প্রেসক্রিপশন' : '7-Day Personalized Diet Prescription'}
+                </div>
+                <div className="text-muted-foreground font-mono mt-0.5">
+                  Plan ID: {weeklyDietPlan?.plan_id || `plan_${effectivePatientForReport.id}_v1`}
+                </div>
+                <div className="text-muted-foreground mt-0.5">
+                  {bn ? 'তারিখ: ' : 'Prescribed: '} {effectivePatientForReport.visit_date}
+                </div>
+              </div>
+            </div>
+
+            {/* Approval / Draft Banner */}
+            {weeklyDietPlan?.is_approved || weeklyDietPlan?.status === 'approved' ? (
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                      {bn ? 'ক্লিনিক্যালি অনুমোদিত ও স্বাক্ষরিত প্রেসক্রিপশন' : 'Clinically Verified & Licensed Prescription'}
+                    </span>
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                      {bn ? 'অনুমোদনকারী: ' : 'Signed by: '} 
+                      <strong>{weeklyDietPlan.approved_by || weeklyDietPlan.approval_metadata?.clinician_name}</strong> 
+                      {weeklyDietPlan.approved_at ? ` • ${weeklyDietPlan.approved_at.split('T')[0]}` : ''}
+                      {weeklyDietPlan.clinician_notes ? ` • Note: ${weeklyDietPlan.clinician_notes}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-emerald-600 text-white">
+                  VERIFIED
+                </span>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-amber-800 dark:text-amber-300">
+                      {bn ? 'খসড়া / প্রোভিশনাল প্রেসক্রিপশন (অনুমোদন বাকি)' : 'Provisional / Draft Prescription (Sign-Off Required)'}
+                    </span>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                      {bn ? 'চূড়ান্ত বিতরণের পূর্বে লাইসেন্সপ্রাপ্ত ক্লিনিক্যাল নিউট্রিশনিস্টের স্বাক্ষর আবশ্যক।' : 'Requires sign-off by a licensed clinical nutritionist prior to patient dispensation.'}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase bg-amber-500 text-white">
+                  DRAFT
+                </span>
+              </div>
+            )}
+
+            {/* Patient Demographics & Targets Header */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-secondary/30 border text-xs">
+              <div>
+                <span className="text-muted-foreground block text-[10px]">{bn ? 'রোগীর নাম:' : 'Patient Name:'}</span>
+                <span className="font-bold text-foreground text-sm">{effectivePatientForReport.name}</span>
+                <span className="text-muted-foreground block font-mono text-[10px] mt-0.5">{effectivePatientForReport.id}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px]">{bn ? 'শারীরিক পরিমাপ:' : 'Anthropometrics:'}</span>
+                <span className="font-semibold text-foreground">
+                  {effectivePatientForReport.weight_kg} kg • {effectivePatientForReport.height_cm} cm
+                </span>
+                <span className="text-muted-foreground block text-[10px] mt-0.5">
+                  BMI: {effectivePatientForReport.calculated.bmi || '—'}
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px]">{bn ? 'দৈনিক লক্ষ্যমাত্রা:' : 'Daily Macro Targets:'}</span>
+                <span className="font-bold text-primary">
+                  {weeklyDietPlan?.target_macros?.calories || effectivePatientForReport.calculated.target_calories} kcal
+                </span>
+                <span className="text-muted-foreground block text-[10px] mt-0.5">
+                  P: {weeklyDietPlan?.target_macros?.protein_g || effectivePatientForReport.calculated.target_protein_g}g • C: {weeklyDietPlan?.target_macros?.carbs_g || effectivePatientForReport.calculated.target_carbs_g}g • F: {weeklyDietPlan?.target_macros?.fat_g || effectivePatientForReport.calculated.target_fat_g}g
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block text-[10px]">{bn ? 'পর্যায় ও স্থিতি:' : 'Phase & Status:'}</span>
+                <span className="font-bold text-foreground capitalize">
+                  {bn ? `পর্যায় ${effectivePatientForReport.current_phase || 1}` : `Phase ${effectivePatientForReport.current_phase || 1}`}
+                </span>
+                <span className="text-muted-foreground block text-[10px] mt-0.5">
+                  Visit {activeReportVisit?.visit_number || 1} ({effectivePatientForReport.visit_date})
+                </span>
+              </div>
+            </div>
+
+            {/* 7-Day Meal Schedule Tables */}
+            <div className="space-y-6">
+              {(weeklyDietPlan?.days || []).length > 0 ? (
+                weeklyDietPlan!.days.map(day => (
+                  <div key={day.day_number} data-testid={`report-day-${day.day_number}`} className="border rounded-2xl overflow-hidden shadow-sm page-break-inside-avoid">
+                    {/* Day Header */}
+                    <div className="p-3 bg-secondary/50 border-b flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-6 w-6 rounded-md bg-primary text-primary-foreground font-bold text-xs flex items-center justify-center">
+                          {day.day_number}
+                        </span>
+                        <h3 className="font-bold text-xs text-foreground">
+                          {bn ? day.day_name_bn : day.day_name_en}
+                        </h3>
+                        {day.is_locked && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-semibold">
+                            {bn ? 'লকড' : 'Locked'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">
+                        <span><strong>{day.summary?.calories || 0}</strong> kcal</span>
+                        <span>•</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">P: {day.summary?.protein_g || 0}g</span>
+                        <span>•</span>
+                        <span className="text-blue-600 dark:text-blue-400">C: {day.summary?.carbs_g || 0}g</span>
+                        <span>•</span>
+                        <span className="text-amber-600 dark:text-amber-400">F: {day.summary?.fat_g || 0}g</span>
+                      </div>
+                    </div>
+
+                    {/* Meals for this day */}
+                    <div className="divide-y divide-border/60">
+                      {day.meals.map(meal => (
+                        <div key={meal.id} className="p-3 bg-card space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted font-bold text-muted-foreground">
+                                {meal.target_time}
+                              </span>
+                              <span className="font-bold text-foreground">
+                                {bn ? meal.title_bn : meal.title_en}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-muted-foreground">
+                              {meal.meal_calories} kcal (P: {meal.meal_protein_g}g, C: {meal.meal_carbs_g}g, F: {meal.meal_fat_g}g)
+                            </span>
+                          </div>
+
+                          {/* Items row */}
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead className="text-[10px] text-muted-foreground bg-muted/20">
+                                <tr>
+                                  <th className="py-1 px-2">{bn ? 'খাবার' : 'Food Item'}</th>
+                                  <th className="py-1 px-2">{bn ? 'কাঁচা ওজন' : 'Raw Weight'}</th>
+                                  <th className="py-1 px-2">{bn ? 'রান্না করা গৃহস্থালি পরিমাপ' : 'Cooked Portion'}</th>
+                                  <th className="py-1 px-2">Kcal</th>
+                                  <th className="py-1 px-2">P / C / F</th>
+                                  <th className="py-1 px-2">{bn ? 'প্রস্তুত প্রণালী' : 'Preparation Note'}</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border/40 text-[11px]">
+                                {meal.items.map(item => (
+                                  <tr key={item.id}>
+                                    <td className="py-1 px-2 font-medium text-foreground">
+                                      {bn ? item.food_name_bn : item.food_name_en}
+                                    </td>
+                                    <td className="py-1 px-2 font-mono text-muted-foreground">
+                                      {item.raw_weight_g}g
+                                    </td>
+                                    <td className="py-1 px-2 font-medium text-foreground">
+                                      {bn ? item.cooked_display_bn : item.cooked_display_en}
+                                    </td>
+                                    <td className="py-1 px-2 font-bold text-foreground">
+                                      {item.kcal}
+                                    </td>
+                                    <td className="py-1 px-2 text-muted-foreground font-mono text-[10px]">
+                                      {item.protein_g}p / {item.carbs_g}c / {item.fat_g}f
+                                    </td>
+                                    <td className="py-1 px-2 text-muted-foreground text-[10px]">
+                                      {bn ? item.prep_note_bn : item.prep_note_en}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center bg-card border rounded-2xl space-y-3">
+                  <Calendar className="h-10 w-10 text-muted-foreground mx-auto" />
+                  <p className="text-xs text-muted-foreground">
+                    {bn ? '৭-দিনের ডায়েট চার্ট এখনো তৈরি করা হয়নি।' : '7-Day Weekly Diet Plan not yet generated.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => generateWeeklyPlan(true)}
+                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold"
+                  >
+                    {bn ? '৭-দিনের প্ল্যান তৈরি করুন' : 'Generate 7-Day Plan'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Foundations: Discretionary Protocol, Salt & Hydration Guidance */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-secondary/30 border text-xs">
+              <div className="space-y-1">
+                <span className="font-bold text-foreground block">
+                  {bn ? '১. রান্নার তেল ও ঘি বরাদ্দ:' : '1. Discretionary Oil / Ghee:'}
+                </span>
+                <p className="text-muted-foreground text-[11px]">
+                  {bn ? 'দৈনিক ১৫ গ্রাম (~১৩৫ কিলোক্যালরি)। খাঁটি সরিষার তেল অথবা দেশি ঘি ব্যবহার করুন।' : '15g daily limit (~135 kcal). Cold-pressed mustard oil or pure desi ghee.'}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <span className="font-bold text-foreground block">
+                  {bn ? '২. রান্নার লবণ নির্দেশনা:' : '2. Cooking Salt Guidelines:'}
+                </span>
+                <p className="text-muted-foreground text-[11px]">
+                  {bn ? 'দৈনিক ৫ গ্রাম (১ চা চামচ সমান, ~১৯৬৭ মিলিগ্রাম সোডিয়াম)। বাড়তি লবণ পরিহার করুন।' : '5g daily limit (~1 level tsp, ~1,967 mg sodium). Avoid raw table salt.'}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <span className="font-bold text-foreground block">
+                  {bn ? '৩. দৈনিক তরল ও পানীয় গ্রহণ:' : '3. Daily Fluid & Hydration:'}
+                </span>
+                <p className="text-muted-foreground text-[11px]">
+                  {activeDisplayP2?.p3PlanningContext?.prescriptions?.fluid?.hasConfirmedLimit ? (
+                    <strong className="text-rose-600 dark:text-rose-400">
+                      {bn 
+                        ? `ক্লিনিক্যাল নির্দেশনা: দৈনিক সর্বাধিক ${activeDisplayP2.p3PlanningContext.prescriptions.fluid.numericalLimit} মিলি (সীমা অতিক্রম করবেন না)।` 
+                        : `Prescribed Clinical Limit: Max ${activeDisplayP2.p3PlanningContext.prescriptions.fluid.numericalLimit} mL / day. Do not exceed.`}
+                    </strong>
+                  ) : (
+                    bn ? 'দৈনিক ২,৫০০ মিলি (পানি, হালকা ভেষজ চা, পাতলা সুপ)।' : '2,500 mL / day functional hydration (water, herbal infusions, clear broth).'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Clinician Signature Block */}
+            <div className="pt-6 border-t flex flex-col sm:flex-row sm:items-end justify-between gap-4 text-xs">
+              <div className="text-[10px] text-muted-foreground max-w-md">
+                <p className="font-semibold text-foreground mb-0.5">{bn ? 'ক্লিনিক্যাল ডিসক্লেইমার:' : 'Clinical Disclaimer:'}</p>
+                {bn 
+                  ? 'এই ৭-দিনের খাদ্যতালিকা শুধুমাত্র সংশ্লিষ্ট রোগীর ক্লিনিক্যাল মূল্যায়নের উপর ভিত্তি করে প্রস্তুতকৃত। রোগীর শারীরিক অবস্থার উন্নতি বা ল্যাব টেস্টের ফলাফলের উপর ভিত্তি করে ডায়েট পুনরায় সমন্বয় করা হতে পারে।'
+                  : 'This 7-day nutritional prescription is tailored specifically to the patient’s clinical evaluation. Modifications may be made based on subsequent lab biomarkers and longitudinal response.'}
+              </div>
+
+              <div className="text-right shrink-0">
+                <div className="border-b border-foreground/40 pb-1 w-48 ml-auto text-center font-bold font-mono">
+                  {weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Dr. Specialist'}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-1 text-center">
+                  {bn ? 'লাইসেন্সধারী ক্লিনিক্যাল নিউট্রিশনিস্ট' : 'Licensed Clinical Nutritionist'}
+                </div>
+              </div>
+            </div>
+
+          </div>
         </div>
       )}
 

@@ -71,8 +71,8 @@ export const NavigationTabs: React.FC = () => {
     {
       id: 'diet' as const,
       icon: UtensilsCrossed,
-      label_bn: '৫. অটো-স্কেলড ডায়েট',
-      label_en: '5. Diet Generator',
+      label_bn: '৫. ৭-দিনের ডায়েট প্ল্যান',
+      label_en: '5. 7-Day Diet Planner',
       badge: isDietPlanDirty ? 'Sync' : (patient.calculated?.target_calories ? `${patient.calculated.target_calories} kcal` : null),
       badgeColor: isDietPlanDirty ? 'bg-amber-500 text-white font-bold animate-pulse' : 'bg-emerald-500/15 text-emerald-500'
     },
