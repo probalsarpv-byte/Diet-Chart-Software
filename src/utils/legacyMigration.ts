@@ -196,6 +196,7 @@ export function migratePatientRecord(record: any): PatientRecord {
     visit_snapshots: migratedSnapshots,
     progress_reports: Array.isArray(record.progress_reports) ? record.progress_reports : [],
     current_diet_chart: Array.isArray(record.current_diet_chart) ? record.current_diet_chart : [],
+    weekly_diet_plan: record.weekly_diet_plan || undefined,
     current_supplements: Array.isArray(record.current_supplements) ? record.current_supplements : [],
     timeline: Array.isArray(record.timeline) ? record.timeline : [],
     updated_at: record.updated_at || new Date().toISOString(),

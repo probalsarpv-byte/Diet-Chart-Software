@@ -489,6 +489,7 @@ export interface DietChartMealItem {
   traffic_status?: 'GREEN' | 'YELLOW' | 'RED';
   contraindicated_reasons?: string[];
   contraindicated_reasons_bn?: string[];
+  is_locked?: boolean;
 }
 
 export interface IncompatiblePairWarning {
@@ -521,6 +522,80 @@ export interface DietChartMeal {
   meal_pral: number;
   incompatible_warnings: IncompatiblePairWarning[];
   slot_errors?: MealSlotConstraintError[];
+  is_locked?: boolean;
+}
+
+// ─── 7-Day Personalized Weekly Nutrition Planning System ───────────
+export interface DayPlanSummary {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  fiber_g: number;
+  gl: number;
+  gl_is_estimated: boolean;
+  pral: number;
+  calorie_variance: number;
+  protein_variance: number;
+  carbs_variance: number;
+  fat_variance: number;
+}
+
+export interface DayPlan {
+  day_number: number; // 1 to 7
+  day_name_bn: string;
+  day_name_en: string;
+  meals: DietChartMeal[];
+  is_locked?: boolean;
+  locked_items?: Record<string, boolean>;
+  locked_meals?: Record<string, boolean>;
+  summary: DayPlanSummary;
+  slot_errors?: MealSlotConstraintError[];
+  safety_decision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP';
+  safety_notes?: string[];
+  safety_notes_bn?: string[];
+}
+
+export interface WeeklyDietPlan {
+  plan_id: string;
+  patient_id: string;
+  visit_id: string;
+  version: number;
+  schema_version: number;
+  created_at: string;
+  updated_at: string;
+  status: 'draft' | 'approved' | 'requires_review';
+  approved_by?: string;
+  approval_date?: string;
+  approval_notes?: string;
+  is_approved?: boolean;
+  approved_at?: string;
+  clinician_notes?: string;
+  approval_metadata?: {
+    clinician_id: string;
+    clinician_name: string;
+    approval_timestamp: string;
+    license_number?: string;
+    notes?: string;
+  };
+  target_macros: {
+    calories: number;
+    protein_g: number;
+    carbs_g: number;
+    fat_g: number;
+  };
+  days: DayPlan[];
+  overall_safety_status: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP';
+  unresolved_hard_stops?: string[];
+  p2_handoff_summary?: {
+    clinicalAssessmentApproved: boolean;
+    confirmedAllergies: string[];
+    feedingRoute: string;
+    prescriptions: Record<string, any>;
+    targetsDerivedFrom: string;
+  };
+  invalidation_reason?: string;
+  invalidated_at?: string;
 }
 
 export interface DailyTimelineItem {
@@ -573,6 +648,7 @@ export interface PatientRecord {
   follow_up_appointments?: FollowUpAppointment[];
   visit_snapshots?: ClinicalVisitSnapshot[];
   progress_reports?: ComparativeProgressReport[];
+  weekly_diet_plan?: WeeklyDietPlan;
 }
 
 // ─── Unified Clinical Visit & Scheduling Management ──────────────
