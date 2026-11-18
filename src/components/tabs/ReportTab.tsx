@@ -24,6 +24,7 @@ import {
 import { ComparativeProgressReportView } from '@/components/reports/ComparativeProgressReportView';
 import { FunctionalNutritionReport } from '@/components/p2/FunctionalNutritionReport';
 import { getLatestVisitSnapshot } from '@/engine/snapshot/snapshotManager';
+import { ClinicalVisit } from '@/types';
 
 type ReportType = 'diet_prescription' | 'comparative_progress' | 'clinical_assessment';
 
@@ -47,6 +48,8 @@ export const ReportTab: React.FC = () => {
     currentVisit,
     clinicalVisits,
     selectVisit,
+    selectedReportVisitId,
+    selectReportVisit,
     progressReports,
     visitSnapshots
   } = usePractice();
@@ -56,21 +59,32 @@ export const ReportTab: React.FC = () => {
   const bn = language === 'bn';
   const phaseInfo = CLINICAL_PHASES[patient.current_phase || 1];
 
+  // Derive the active visit specifically selected for report viewing
+  const activeReportVisitId = selectedReportVisitId || currentVisit?.visit_id || currentVisit?.id || patient.current_visit_id;
+  const activeReportVisit = React.useMemo<ClinicalVisit | null>(() => {
+    if (clinicalVisits && clinicalVisits.length > 0) {
+      const match = clinicalVisits.find(v => v.visit_id === activeReportVisitId || v.id === activeReportVisitId);
+      if (match) return match;
+    }
+    return currentVisit;
+  }, [clinicalVisits, activeReportVisitId, currentVisit]);
+
   // For historical visit reports, provide read-only demographic representation without mutating global patient state
   const effectivePatientForReport = React.useMemo(() => {
-    if (!currentVisit || currentVisit.visit_id === patient.current_visit_id || currentVisit.id === patient.current_visit_id) {
+    const targetVisitId = activeReportVisit?.visit_id || activeReportVisit?.id || patient.current_visit_id;
+    if (!activeReportVisit || targetVisitId === patient.current_visit_id) {
       return patient;
     }
-    const snap = getLatestVisitSnapshot(visitSnapshots, currentVisit.visit_id || currentVisit.id || '');
+    const snap = getLatestVisitSnapshot(visitSnapshots, targetVisitId || '');
     return {
       ...patient,
-      current_visit_id: currentVisit.visit_id || currentVisit.id,
-      visit_date: currentVisit.visit_date || patient.visit_date,
+      current_visit_id: targetVisitId,
+      visit_date: activeReportVisit.visit_date || patient.visit_date,
       weight_kg: p2AnalysisResult?.report?.sectionB_anthropometrics?.weight_kg ?? (snap?.anthropometrics?.weight_kg ?? patient.weight_kg),
       height_cm: p2AnalysisResult?.report?.sectionB_anthropometrics?.height_cm ?? (snap?.anthropometrics?.height_cm ?? patient.height_cm),
       waist_cm: snap?.anthropometrics?.waist_cm ?? patient.waist_cm
     };
-  }, [patient, currentVisit, visitSnapshots, p2AnalysisResult]);
+  }, [patient, activeReportVisit, visitSnapshots, p2AnalysisResult]);
 
   const redDietItems = dietChart.flatMap(m => m.items.filter(i => i.traffic_status === 'RED'));
   const hasHardStops = clinicalSafetyEvaluation?.overallDecision === 'HARD_STOP';
@@ -152,8 +166,8 @@ export const ReportTab: React.FC = () => {
             <Calendar className="h-4 w-4 text-muted-foreground" />
             <label className="text-xs font-semibold text-muted-foreground">{bn ? 'ক্লিনিক্যাল ভিজিট:' : 'Clinical Visit:'}</label>
             <select
-              value={currentVisit?.visit_id || ''}
-              onChange={(e) => selectVisit(e.target.value)}
+              value={activeReportVisit?.visit_id || ''}
+              onChange={(e) => selectReportVisit(e.target.value)}
               className="px-2.5 py-1.5 rounded-xl border bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
             >
               {(clinicalVisits && clinicalVisits.length > 0 ? clinicalVisits : [
@@ -653,7 +667,7 @@ export const ReportTab: React.FC = () => {
               analysis={p2AnalysisResult}
               patient={effectivePatientForReport}
               lang={language}
-              onApprove={(clinicianId, notes) => approveP2Analysis(clinicianId, notes)}
+              onApprove={(clinicianId, notes) => approveP2Analysis(clinicianId, notes, p2AnalysisResult.visitId)}
             />
           ) : (
             <div className="bg-card border rounded-2xl p-10 text-center space-y-4 shadow-sm max-w-xl mx-auto">

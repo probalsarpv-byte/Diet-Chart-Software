@@ -168,6 +168,8 @@ export interface PracticeContextType {
   registerNewPatient: (adminData: Partial<PatientProfile>) => PatientProfile | null;
   startNewVisit: (patientId: string, visitType?: ClinicalVisitType, notes?: string) => ClinicalVisit | null;
   selectVisit: (visitId: string) => void;
+  selectedReportVisitId: string | null;
+  selectReportVisit: (visitId: string) => void;
   completeCurrentVisit: (summary?: string) => void;
   scheduleFollowUp: (appointmentData: Omit<FollowUpAppointment, 'id' | 'appointment_id' | 'created_at' | 'status'> & { appointment_id?: string; status?: AppointmentStatus }) => FollowUpAppointment | null;
   rescheduleFollowUp: (appointmentId: string, newDate: string, newTime?: string, reason?: string) => boolean;
@@ -202,7 +204,7 @@ export interface PracticeContextType {
   currentClinicalAssessment: ClinicalAssessment | null;
   executeP2Analysis: (assessmentOrAnswers?: ClinicalAssessment | Record<string, any>) => P2AnalysisResult | null;
   updateHypothesisDecision: (hypothesisId: string, decision: ClinicianDecision, note?: string) => void;
-  approveP2Analysis: (clinicianId: string, notes?: string) => boolean;
+  approveP2Analysis: (clinicianId: string, notes?: string, targetVisitId?: string) => boolean;
   invalidateP2Approval: (reason?: string) => void;
 }
 
@@ -280,6 +282,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [visits, setVisits] = useState<LongitudinalVisit[]>([]);
   const [clinicalVisits, setClinicalVisits] = useState<ClinicalVisit[]>([]);
   const [currentVisit, setCurrentVisit] = useState<ClinicalVisit | null>(null);
+  const [selectedReportVisitId, setSelectedReportVisitId] = useState<string | null>(null);
   const [followUpAppointments, setFollowUpAppointments] = useState<FollowUpAppointment[]>([]);
   const [visitSnapshots, setVisitSnapshots] = useState<ClinicalVisitSnapshot[]>([]);
   const [progressReports, setProgressReports] = useState<ComparativeProgressReport[]>([]);
@@ -344,7 +347,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
 
       const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-      const visitId = patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
+      const visitId = prev.visitId || prev.report?.visitId || patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
       const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
       try {
         if (typeof window !== 'undefined') {
@@ -361,7 +364,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     if (!patient?.id) return;
     const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-    const visitId = patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
+    const visitId = p2AnalysisResult?.visitId || p2AnalysisResult?.report?.visitId || patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
     const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
     try {
       const saved = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
@@ -463,7 +466,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setP2AnalysisResult(updatedResult);
     const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-    const visitId = patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
+    const visitId = p2AnalysisResult?.visitId || p2AnalysisResult?.report?.visitId || patient.current_visit_id || `visit_${patient.id}_${visitDateClean}`;
     const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
     try {
       if (typeof window !== 'undefined') {
@@ -474,10 +477,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [patient, p2AnalysisResult]);
 
-  const approveP2Analysis = useCallback((clinicianId: string, notes?: string): boolean => {
-    if (!p2AnalysisResult) return false;
+  const approveP2Analysis = useCallback((clinicianId: string, notes?: string, targetVisitId?: string): boolean => {
+    if (!p2AnalysisResult || !p2AnalysisResult.report) {
+      console.warn('Rejected P2 approval: No active P2 analysis result or report available.');
+      return false;
+    }
 
-    // Strict validation of clinician identity: prohibit generic placeholders
+    // 1. Strict validation of clinician identity: prohibit generic placeholders
     const trimmedId = (clinicianId || '').trim();
     const isPlaceholder = [
       'clinician',
@@ -495,44 +501,147 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return false;
     }
 
-    // Require complete relevant clinical safety review before final approval
-    if (p2AnalysisResult.report.sectionK_clinicalSafety.hardStops.length > 0) {
-      console.warn('Rejected P2 approval: Active clinical safety hard stops exist. Must be clinically resolved before sign-off.');
+    // 2. Authoritative Report Identity Verification
+    const reportPatientId = p2AnalysisResult.patientId || p2AnalysisResult.report.patientId;
+    const reportVisitId = p2AnalysisResult.visitId || p2AnalysisResult.report.visitId;
+    const reportId = p2AnalysisResult.report.reportId;
+
+    // Cross-Patient Protection (Scenario D)
+    if (!reportPatientId || reportPatientId !== patient.id) {
+      console.warn(`Rejected P2 approval: Report patient ID (${reportPatientId}) does not match active patient ID (${patient.id}).`);
+      return false;
+    }
+    if (p2AnalysisResult.report.patientId && p2AnalysisResult.report.patientId !== patient.id) {
+      console.warn(`Rejected P2 approval: Embedded report patient ID does not match active patient ID.`);
       return false;
     }
 
-    // Require complete safety screening: allergies, medication reconciliation, feeding route, population risks, restrictions
-    if (currentClinicalAssessment) {
-      if (!currentClinicalAssessment.completion.clinical_safety_completed) {
-        console.warn('Rejected P2 approval: Clinical safety assessment is incomplete. Critical safety screening must be resolved.');
+    // Missing or Inconsistent Visit Identity (Scenario E)
+    if (!reportVisitId || typeof reportVisitId !== 'string' || reportVisitId.trim() === '') {
+      console.warn('Rejected P2 approval: Missing or empty report visit ID.');
+      return false;
+    }
+    if (p2AnalysisResult.report.visitId && p2AnalysisResult.report.visitId !== reportVisitId) {
+      console.warn(`Rejected P2 approval: Inconsistent report visit ID between result (${reportVisitId}) and report (${p2AnalysisResult.report.visitId}).`);
+      return false;
+    }
+    if (targetVisitId && targetVisitId !== reportVisitId) {
+      console.warn(`Rejected P2 approval: Target visit ID (${targetVisitId}) does not match authoritative report visit ID (${reportVisitId}).`);
+      return false;
+    }
+
+    // Verify visit belongs to patient's clinical visits or active visit
+    const visitExists = (clinicalVisits && clinicalVisits.some(v => v.visit_id === reportVisitId || v.id === reportVisitId)) ||
+      reportVisitId === patient.current_visit_id ||
+      (currentVisit && (reportVisitId === currentVisit.visit_id || reportVisitId === currentVisit.id));
+    if (!visitExists) {
+      console.warn(`Rejected P2 approval: Report visit ID (${reportVisitId}) is not recognized in patient clinical visits.`);
+      return false;
+    }
+
+    // Verify reportId
+    if (!reportId || typeof reportId !== 'string' || reportId.trim() === '') {
+      console.warn('Rejected P2 approval: Missing or empty reportId.');
+      return false;
+    }
+
+    // 3. Determine whether this is the active consultation visit or a historical visit
+    const isCurrentActiveVisit = Boolean(
+      (patient.current_visit_id && reportVisitId === patient.current_visit_id) ||
+      (!patient.current_visit_id && currentVisit && (reportVisitId === currentVisit.visit_id || reportVisitId === currentVisit.id))
+    );
+
+    const targetStorageKey = `shuddho_p2_analysis_${reportPatientId}_${reportVisitId}`;
+
+    // 4. Policy Checks
+    if (isCurrentActiveVisit) {
+      // Active Visit Approval (Scenario A)
+      if (p2AnalysisResult.report.sectionK_clinicalSafety?.hardStops && p2AnalysisResult.report.sectionK_clinicalSafety.hardStops.length > 0) {
+        console.warn('Rejected P2 approval: Active clinical safety hard stops exist. Must be clinically resolved before sign-off.');
         return false;
       }
-      if (!currentClinicalAssessment.completion.allergies_reconciled) {
-        console.warn('Rejected P2 approval: Allergy history is not explicitly reconciled.');
+
+      // Require complete safety screening if current assessment belongs to active visit
+      if (currentClinicalAssessment && (!currentClinicalAssessment.visit_id || currentClinicalAssessment.visit_id === reportVisitId)) {
+        if (!currentClinicalAssessment.completion.clinical_safety_completed) {
+          console.warn('Rejected P2 approval: Clinical safety assessment is incomplete. Critical safety screening must be resolved.');
+          return false;
+        }
+        if (!currentClinicalAssessment.completion.allergies_reconciled) {
+          console.warn('Rejected P2 approval: Allergy history is not explicitly reconciled.');
+          return false;
+        }
+        if (!currentClinicalAssessment.completion.medication_reconciliation_completed) {
+          console.warn('Rejected P2 approval: Complete medication reconciliation (dose, frequency, timing, verification) is required.');
+          return false;
+        }
+      }
+
+      // Nutrient restrictions clarification
+      if (p2AnalysisResult.p3PlanningContext?.prescriptions) {
+        const unclarified = Object.values(p2AnalysisResult.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
+        if (unclarified.length > 0) {
+          console.warn('Rejected P2 approval: Prescribed nutrient restrictions require clarification before sign-off.');
+          return false;
+        }
+      }
+    } else {
+      // Historical Visit Approval Policy (Scenario B & C)
+      // Preferred Policy: Original saved report must exist in durable storage
+      let existingSavedReport: P2AnalysisResult | null = null;
+      try {
+        existingSavedReport = safeStorage.getItem<P2AnalysisResult>(targetStorageKey);
+      } catch (err) {
+        console.error('Storage check failed during historical approval:', err);
         return false;
       }
-      if (!currentClinicalAssessment.completion.medication_reconciliation_completed) {
-        console.warn('Rejected P2 approval: Complete medication reconciliation (dose, frequency, timing, verification) is required.');
+      if (!existingSavedReport) {
+        console.warn(`Rejected historical P2 approval: Original saved report does not exist in storage for visit ${reportVisitId}. Cannot approve an unpersisted or fabricated historical report.`);
         return false;
+      }
+
+      // Report must not have been invalidated
+      if (p2AnalysisResult.analysisInvalidatedAt || existingSavedReport.analysisInvalidatedAt) {
+        console.warn('Rejected historical P2 approval: Historical report was previously invalidated. Cannot sign-off without re-review.');
+        return false;
+      }
+
+      // Safety review evidence must be available and free of active hard stops
+      if (p2AnalysisResult.report.sectionK_clinicalSafety?.hardStops && p2AnalysisResult.report.sectionK_clinicalSafety.hardStops.length > 0) {
+        console.warn('Rejected historical P2 approval: Active clinical safety hard stops exist in historical report.');
+        return false;
+      }
+      if (existingSavedReport.report.sectionK_clinicalSafety?.hardStops && existingSavedReport.report.sectionK_clinicalSafety.hardStops.length > 0) {
+        console.warn('Rejected historical P2 approval: Active clinical safety hard stops exist in saved historical report.');
+        return false;
+      }
+
+      // Nutrient restrictions clarification
+      if (p2AnalysisResult.p3PlanningContext?.prescriptions) {
+        const unclarified = Object.values(p2AnalysisResult.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
+        if (unclarified.length > 0) {
+          console.warn('Rejected historical P2 approval: Unclarified nutrient restrictions in historical context.');
+          return false;
+        }
       }
     }
 
-    // Check if any prescribed nutrient restrictions are marked Yes but missing confirmed limits
-    if (p2AnalysisResult.p3PlanningContext.prescriptions) {
-      const unclarified = Object.values(p2AnalysisResult.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
-      if (unclarified.length > 0) {
-        console.warn('Rejected P2 approval: Prescribed nutrient restrictions require clarification before sign-off.');
-        return false;
-      }
+    // 5. Avoid duplicate churn from repeated clicks if already approved with same clinician
+    if (p2AnalysisResult.report.isApproved && p2AnalysisResult.report.approvedBy === trimmedId) {
+      return true;
     }
 
+    // 6. Build Updated Result preserving authoritative identity
     const timestamp = new Date().toISOString();
     const updatedReport = {
       ...p2AnalysisResult.report,
+      patientId: reportPatientId,
+      visitId: reportVisitId,
+      reportId: reportId,
       isApproved: true,
       approvedBy: trimmedId,
       approvalDate: timestamp,
-      clinicianNotes: notes || p2AnalysisResult.report.clinicianNotes,
+      clinicianNotes: notes !== undefined ? notes : p2AnalysisResult.report.clinicianNotes,
       analysisInvalidatedAt: undefined,
       invalidationReason: undefined,
       sectionN_clinicianReview: {
@@ -540,12 +649,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         status: 'fully_approved' as const,
         reviewingNutritionist: trimmedId,
         reviewDate: timestamp.split('T')[0],
-        notes: notes || p2AnalysisResult.report.sectionN_clinicianReview.notes,
+        notes: notes !== undefined ? notes : p2AnalysisResult.report.sectionN_clinicianReview.notes,
       },
     };
 
     const updatedP3Context = {
       ...p2AnalysisResult.p3PlanningContext,
+      visitId: reportVisitId,
       clinicalAssessmentApproved: true,
       approvedByClinicianId: trimmedId,
       approvalTimestamp: timestamp,
@@ -555,34 +665,55 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     const updatedResult: P2AnalysisResult = {
       ...p2AnalysisResult,
+      patientId: reportPatientId,
+      visitId: reportVisitId,
       analysisInvalidatedAt: undefined,
       report: updatedReport,
       p3PlanningContext: updatedP3Context,
       dietPlanningContext: updatedP3Context,
+      approvalHistory: [
+        ...(p2AnalysisResult.approvalHistory || []),
+        {
+          targetId: reportId,
+          targetType: 'intervention',
+          decision: 'approved',
+          clinicianId: trimmedId,
+          timestamp,
+          reason: notes || 'Clinical assessment report approved',
+          evidenceSnapshot: JSON.stringify({ patientId: reportPatientId, visitId: reportVisitId }),
+          ruleVersion: '2.0.0'
+        }
+      ]
     };
 
-    // CLINICAL AUDIT RULE (Approval Persistence):
-    // Report successful approval only after a valid clinician review and successful persistence.
-    // If saving fails, return false and do not claim approval succeeded or mutate state.
-    const visitDateClean = (patient.visit_date || '').replace(/[^0-9]/g, '');
-    const visitId = patient.current_visit_id || currentClinicalAssessment?.visit_id || `visit_${patient.id}_${visitDateClean}`;
-    const storageKey = `shuddho_p2_analysis_${patient.id}_${visitId}`;
+    // 7. Persist-First Durable Storage with Verification (Scenario F: Storage Failure)
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(storageKey, JSON.stringify(updatedResult));
-        const verified = window.localStorage.getItem(storageKey);
-        if (!verified) {
+        window.localStorage.setItem(targetStorageKey, JSON.stringify(updatedResult));
+        const verifiedRaw = window.localStorage.getItem(targetStorageKey);
+        if (!verifiedRaw) {
           throw new Error('Verification read-back failed after localStorage write');
+        }
+        const verifiedObj = JSON.parse(verifiedRaw) as P2AnalysisResult;
+        if (
+          verifiedObj.patientId !== reportPatientId ||
+          verifiedObj.visitId !== reportVisitId ||
+          verifiedObj.report?.isApproved !== true ||
+          verifiedObj.report?.approvedBy !== trimmedId
+        ) {
+          throw new Error('Verification read-back validation mismatch');
         }
       }
     } catch (err) {
       console.error('CRITICAL: Failed to persist approved P2 analysis to localStorage:', err);
+      // Rollback / do NOT mutate React approval state
       return false;
     }
 
+    // 8. Commit in-memory React state only after storage confirmation
     setP2AnalysisResult(updatedResult);
     return true;
-  }, [patient, p2AnalysisResult, currentClinicalAssessment]);
+  }, [patient, p2AnalysisResult, currentClinicalAssessment, clinicalVisits, currentVisit]);
 
   // Pre-index foods in a lookup map for optimal performance
   const foodMap = useMemo(() => new Map(allFoods.map(f => [f.id, f])), []);
@@ -1347,6 +1478,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setCandidateSupplements(migrated.current_supplements);
     }
     setCurrentClinicalAssessment(null);
+    setSelectedReportVisitId(null);
 
     // Rehydrate or isolate P2 analysis for newly loaded patient and visit
     const targetVisitId = migrated.patient.current_visit_id || activeVisit?.visit_id || activeVisit?.id;
@@ -1482,6 +1614,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCandidateSupplements([]);
     setP2AnalysisResult(null);
     setCurrentClinicalAssessment(null);
+    setSelectedReportVisitId(null);
     setSavedPatients(tx.committedPatientsList);
     safeStorage.setItem('shuddho_active_patient_id', freshPatient.id);
 
@@ -1564,11 +1697,45 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return tx.newVisit;
   }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients, invalidateP2Approval]);
 
+  const selectReportVisit = useCallback((visitId: string) => {
+    const match = clinicalVisits.find(v => v.visit_id === visitId || v.id === visitId);
+    if (!match) return;
+
+    // Report preview only: maintain report-specific visit ID without mutating active consultation state
+    setSelectedReportVisitId(match.visit_id || match.id || null);
+
+    const isCurrentActiveVisit = Boolean(
+      (patient.current_visit_id && (match.visit_id === patient.current_visit_id || match.id === patient.current_visit_id)) ||
+      (!patient.current_visit_id && currentVisit && (match.visit_id === currentVisit.visit_id || match.id === currentVisit.id))
+    );
+
+    const targetVisitId = match.visit_id || match.id;
+    const p2Key = `shuddho_p2_analysis_${patient.id}_${targetVisitId}`;
+    try {
+      const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+      if (savedP2) {
+        setP2AnalysisResult(savedP2);
+      } else if (isCurrentActiveVisit) {
+        setP2AnalysisResult(runP2Analysis(patient));
+      } else {
+        // Historical visit with no saved P2 analysis: do NOT fabricate fake analysis from incomplete data
+        setP2AnalysisResult(null);
+      }
+    } catch {
+      if (isCurrentActiveVisit) {
+        setP2AnalysisResult(runP2Analysis(patient));
+      } else {
+        setP2AnalysisResult(null);
+      }
+    }
+  }, [clinicalVisits, patient, currentVisit]);
+
   const selectVisit = useCallback((visitId: string) => {
     const match = clinicalVisits.find(v => v.visit_id === visitId || v.id === visitId);
     if (!match) return;
 
     setCurrentVisit(match);
+    setSelectedReportVisitId(match.visit_id || match.id || null);
     const isCurrentActiveVisit = Boolean(
       (patient.current_visit_id && (match.visit_id === patient.current_visit_id || match.id === patient.current_visit_id)) ||
       (!patient.current_visit_id && match === clinicalVisits[0])
@@ -2036,6 +2203,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setCandidateSupplements(tx.committedRecord.current_supplements);
     }
     setCurrentClinicalAssessment(null);
+    setSelectedReportVisitId(null);
     invalidateP2Approval(`Follow-up consultation started: ${tx.newVisit.visit_id}`);
 
     return tx.newVisit;
@@ -2526,6 +2694,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const p2 = runP2Analysis(seedPatient);
     setP2AnalysisResult(p2);
     setCurrentClinicalAssessment(null);
+    setSelectedReportVisitId(null);
   }, [allFoods, allMedicines]);
 
   return (
@@ -2586,6 +2755,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         registerNewPatient,
         startNewVisit,
         selectVisit,
+        selectedReportVisitId,
+        selectReportVisit,
         completeCurrentVisit,
         scheduleFollowUp,
         rescheduleFollowUp,
