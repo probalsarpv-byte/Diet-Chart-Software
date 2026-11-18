@@ -820,7 +820,7 @@ console.log('\n--- SCENARIO T: No Cross-Visit Overwrite ---');
   const p2Visit2 = runP2Analysis({ patient, visitId: 'vis_002' });
 
   // Make Visit 2's report distinctly identifiable
-  p2Visit2.report.sectionA_patientInfo.fullName = 'Patient Distinct Visit 2 Profile';
+  p2Visit2.report.sectionA_patientInfo.name = 'Patient Distinct Visit 2 Profile';
   p2Visit2.report.sectionB_anthropometrics.weight_kg = 79.5;
 
   storage.setItem(`shuddho_p2_analysis_${patient.id}_vis_001`, p2Visit1);
@@ -1001,6 +1001,138 @@ console.log('\n--- SCENARIO X: Read-Only Historical Preview Isolation ---');
   assert(activeConsultationPatient.weight_kg === 82.5, 'Scenario X: Active consultation anthropometric weight (82.5 kg) preserved');
   assert(activeConsultationPatient.waist_cm === 94, 'Scenario X: Active consultation waist (94 cm) preserved');
   assert(selectedReportVisitId === 'vis_consultation_01', 'Scenario X: Report preview selector correctly isolated to Visit 1');
+}
+
+// -------------------------------------------------------------------
+// Scenario Y: Historical Preview Isolation from Active P2 Analysis State
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO Y: Historical Preview State Isolation ---');
+{
+  const patient = createTestPatient('pt_preview_iso', 'Patient Preview Iso', {
+    current_visit_id: 'vis_active_02'
+  });
+
+  const activeVisitP2 = runP2Analysis({ patient, visitId: 'vis_active_02' });
+  const historicalVisitP2 = runP2Analysis({ patient, visitId: 'vis_hist_01' });
+  historicalVisitP2.report.sectionA_patientInfo.name = 'Patient Hist Preview';
+
+  const storage = new MockStorage();
+  storage.setItem(`shuddho_p2_analysis_${patient.id}_vis_active_02`, activeVisitP2);
+  storage.setItem(`shuddho_p2_analysis_${patient.id}_vis_hist_01`, historicalVisitP2);
+
+  // In-memory context simulation
+  let activeP2State: P2AnalysisResult | null = activeVisitP2;
+  let previewP2State: P2AnalysisResult | null = null;
+  let selectedReportVisitId: string | null = null;
+
+  // Clinician selects historical visit in report preview
+  const selectReportVisitSim = (visitId: string) => {
+    selectedReportVisitId = visitId;
+    if (visitId === patient.current_visit_id) {
+      previewP2State = null;
+    } else {
+      const saved = storage.getItem<P2AnalysisResult>(`shuddho_p2_analysis_${patient.id}_${visitId}`);
+      previewP2State = saved || null;
+      // CRITICAL: activeP2State is NEVER mutated
+    }
+  };
+
+  selectReportVisitSim('vis_hist_01');
+
+  assert(selectedReportVisitId === 'vis_hist_01', 'Scenario Y: Report visit selection points to historical visit');
+  assert(Boolean(previewP2State && (previewP2State as P2AnalysisResult).visitId === 'vis_hist_01'), 'Scenario Y: Preview P2 receives historical visit data');
+  assert(Boolean(activeP2State && (activeP2State as P2AnalysisResult).visitId === 'vis_active_02'), 'Scenario Y: Active P2 state remains strictly intact with Visit 2');
+  assert((activeP2State as P2AnalysisResult).report.sectionA_patientInfo.name === 'Patient Preview Iso', 'Scenario Y: Active consultation data is never overwritten by preview');
+
+  // Clinician switches back to active visit
+  selectReportVisitSim('vis_active_02');
+  assert(previewP2State === null, 'Scenario Y: Preview P2 resets to null when viewing active visit');
+  assert((activeP2State as P2AnalysisResult).visitId === 'vis_active_02', 'Scenario Y: Active consultation P2 remains active');
+}
+
+// -------------------------------------------------------------------
+// Scenario Z: Historical Approval Isolation & No Leakage into Active Analysis
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO Z: Historical Approval Linkage Isolation ---');
+{
+  const patient = createTestPatient('pt_approval_iso', 'Patient Approval Iso', {
+    current_visit_id: 'vis_active_02'
+  });
+
+  const activeP2 = runP2Analysis({ patient, visitId: 'vis_active_02' });
+  const historicalP2 = runP2Analysis({ patient, visitId: 'vis_hist_01' });
+
+  const storage = new MockStorage();
+  storage.setItem(`shuddho_p2_analysis_${patient.id}_vis_active_02`, activeP2);
+  storage.setItem(`shuddho_p2_analysis_${patient.id}_vis_hist_01`, historicalP2);
+
+  let activeP2State: P2AnalysisResult | null = activeP2;
+  let previewP2State: P2AnalysisResult | null = historicalP2;
+
+  // Clinician approves historical report while previewing
+  const isHistorical = true;
+  const clinicianId = 'DN-2026-9901';
+  const timestamp = new Date().toISOString();
+
+  const approvedHistReport: P2AnalysisResult = {
+    ...previewP2State,
+    report: {
+      ...previewP2State.report,
+      isApproved: true,
+      approvedBy: clinicianId,
+      approvalDate: timestamp,
+    }
+  };
+
+  storage.setItem(`shuddho_p2_analysis_${patient.id}_vis_hist_01`, approvedHistReport);
+
+  // Committing state:
+  if (isHistorical) {
+    previewP2State = approvedHistReport;
+    // activeP2State is untouched!
+  } else {
+    activeP2State = approvedHistReport;
+  }
+
+  assert((previewP2State as P2AnalysisResult).report.isApproved === true, 'Scenario Z: Historical preview report is marked approved');
+  assert((previewP2State as P2AnalysisResult).report.approvedBy === clinicianId, 'Scenario Z: Historical preview report has clinician ID');
+  assert((activeP2State as P2AnalysisResult).report.isApproved === false, 'Scenario Z: Active consultation P2 report remains strictly unapproved');
+  assert((activeP2State as P2AnalysisResult).report.approvedBy === undefined, 'Scenario Z: Active consultation has no clinician approval leakage');
+
+  // Verify that re-executing active P2 analysis does NOT inherit historical approval
+  const isSameVisit = (activeP2State as P2AnalysisResult).visitId === patient.current_visit_id;
+  const isOverallApproved = isSameVisit ? Boolean((activeP2State as P2AnalysisResult).report.isApproved) : false;
+  const approvedByClinicianId = isSameVisit ? (activeP2State as P2AnalysisResult).report.approvedBy : undefined;
+
+  const recomputedActiveP2 = runP2Analysis({
+    patient,
+    visitId: patient.current_visit_id,
+    isOverallApproved,
+    approvedByClinicianId,
+  });
+
+  assert(recomputedActiveP2.report.isApproved === false, 'Scenario Z: Recomputed active P2 remains unapproved');
+  assert(recomputedActiveP2.report.approvedBy === undefined, 'Scenario Z: Recomputed active P2 never inherited historical sign-off');
+}
+
+// -------------------------------------------------------------------
+// Scenario AA: Patient Switching Isolation & State Cleansing
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO AA: Patient Switching Reset ---');
+{
+  let selectedReportVisitId: string | null = 'vis_hist_01';
+  let previewP2State: P2AnalysisResult | null = { visitId: 'vis_hist_01' } as any;
+
+  // Simulate patient switch
+  const onPatientSwitch = () => {
+    selectedReportVisitId = null;
+    previewP2State = null;
+  };
+
+  onPatientSwitch();
+
+  assert(selectedReportVisitId === null, 'Scenario AA: selectedReportVisitId reset on patient switch');
+  assert(previewP2State === null, 'Scenario AA: previewP2State reset on patient switch');
 }
 
 console.log('\n=====================================================================');

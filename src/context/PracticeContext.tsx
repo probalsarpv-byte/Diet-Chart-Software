@@ -200,6 +200,7 @@ export interface PracticeContextType {
 
   // Phase P2 Clinical Intelligence
   p2AnalysisResult: P2AnalysisResult | null;
+  previewP2AnalysisResult: P2AnalysisResult | null;
   isAnalyzingP2: boolean;
   currentClinicalAssessment: ClinicalAssessment | null;
   executeP2Analysis: (assessmentOrAnswers?: ClinicalAssessment | Record<string, any>) => P2AnalysisResult | null;
@@ -312,6 +313,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Phase P2 Clinical Intelligence State
   const [p2AnalysisResult, setP2AnalysisResult] = useState<P2AnalysisResult | null>(null);
+  const [previewP2AnalysisResult, setPreviewP2AnalysisResult] = useState<P2AnalysisResult | null>(null);
   const [currentClinicalAssessment, setCurrentClinicalAssessment] = useState<ClinicalAssessment | null>(null);
   const [isAnalyzingP2, setIsAnalyzingP2] = useState<boolean>(false);
 
@@ -401,15 +403,22 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const visitId = patient.current_visit_id || asmt?.visit_id || `visit_${patient.id}_${visitDateClean}`;
       const assessmentId = asmt?.assessment_id;
 
+      const isSameVisitAnalysis = Boolean(p2AnalysisResult && (!p2AnalysisResult.visitId || p2AnalysisResult.visitId === visitId));
+      const previousApprovals = isSameVisitAnalysis ? p2AnalysisResult?.approvalHistory : undefined;
+      const isOverallApproved = isSameVisitAnalysis ? Boolean(p2AnalysisResult?.report?.isApproved && !p2AnalysisResult?.analysisInvalidatedAt) : false;
+      const approvedByClinicianId = isSameVisitAnalysis ? p2AnalysisResult?.report?.approvedBy : undefined;
+      const approvalTimestamp = isSameVisitAnalysis ? p2AnalysisResult?.report?.approvalDate : undefined;
+      const clinicianNotes = isSameVisitAnalysis ? p2AnalysisResult?.report?.clinicianNotes : undefined;
+
       const result = runP2Analysis({
         patient,
         assessment: asmt,
         assessmentAnswers: answers,
-        previousApprovals: p2AnalysisResult?.approvalHistory,
-        isOverallApproved: Boolean(p2AnalysisResult?.report?.isApproved && !p2AnalysisResult?.analysisInvalidatedAt),
-        approvedByClinicianId: p2AnalysisResult?.report?.approvedBy,
-        approvalTimestamp: p2AnalysisResult?.report?.approvalDate,
-        clinicianNotes: p2AnalysisResult?.report?.clinicianNotes,
+        previousApprovals,
+        isOverallApproved,
+        approvedByClinicianId,
+        approvalTimestamp,
+        clinicianNotes,
         visitId,
         assessmentId,
       });
@@ -478,7 +487,28 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [patient, p2AnalysisResult]);
 
   const approveP2Analysis = useCallback((clinicianId: string, notes?: string, targetVisitId?: string): boolean => {
-    if (!p2AnalysisResult || !p2AnalysisResult.report) {
+    // Determine target analysis: preview report (if historical) vs active consultation p2
+    const isHistoricalTarget = Boolean(
+      (targetVisitId && patient.current_visit_id && targetVisitId !== patient.current_visit_id) ||
+      (!targetVisitId && selectedReportVisitId && patient.current_visit_id && selectedReportVisitId !== patient.current_visit_id)
+    );
+
+    let targetAnalysis: P2AnalysisResult | null = null;
+    if (isHistoricalTarget) {
+      if (previewP2AnalysisResult && (!targetVisitId || previewP2AnalysisResult.visitId === targetVisitId || previewP2AnalysisResult.report?.visitId === targetVisitId)) {
+        targetAnalysis = previewP2AnalysisResult;
+      } else if (targetVisitId) {
+        try {
+          targetAnalysis = safeStorage.getItem<P2AnalysisResult>(`shuddho_p2_analysis_${patient.id}_${targetVisitId}`);
+        } catch {
+          targetAnalysis = null;
+        }
+      }
+    } else {
+      targetAnalysis = p2AnalysisResult;
+    }
+
+    if (!targetAnalysis || !targetAnalysis.report) {
       console.warn('Rejected P2 approval: No active P2 analysis result or report available.');
       return false;
     }
@@ -502,16 +532,16 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     // 2. Authoritative Report Identity Verification
-    const reportPatientId = p2AnalysisResult.patientId || p2AnalysisResult.report.patientId;
-    const reportVisitId = p2AnalysisResult.visitId || p2AnalysisResult.report.visitId;
-    const reportId = p2AnalysisResult.report.reportId;
+    const reportPatientId = targetAnalysis.patientId || targetAnalysis.report.patientId;
+    const reportVisitId = targetAnalysis.visitId || targetAnalysis.report.visitId;
+    const reportId = targetAnalysis.report.reportId;
 
     // Cross-Patient Protection (Scenario D)
     if (!reportPatientId || reportPatientId !== patient.id) {
       console.warn(`Rejected P2 approval: Report patient ID (${reportPatientId}) does not match active patient ID (${patient.id}).`);
       return false;
     }
-    if (p2AnalysisResult.report.patientId && p2AnalysisResult.report.patientId !== patient.id) {
+    if (targetAnalysis.report.patientId && targetAnalysis.report.patientId !== patient.id) {
       console.warn(`Rejected P2 approval: Embedded report patient ID does not match active patient ID.`);
       return false;
     }
@@ -521,8 +551,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       console.warn('Rejected P2 approval: Missing or empty report visit ID.');
       return false;
     }
-    if (p2AnalysisResult.report.visitId && p2AnalysisResult.report.visitId !== reportVisitId) {
-      console.warn(`Rejected P2 approval: Inconsistent report visit ID between result (${reportVisitId}) and report (${p2AnalysisResult.report.visitId}).`);
+    if (targetAnalysis.report.visitId && targetAnalysis.report.visitId !== reportVisitId) {
+      console.warn(`Rejected P2 approval: Inconsistent report visit ID between result (${reportVisitId}) and report (${targetAnalysis.report.visitId}).`);
       return false;
     }
     if (targetVisitId && targetVisitId !== reportVisitId) {
@@ -546,7 +576,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     // 3. Determine whether this is the active consultation visit or a historical visit
-    const isCurrentActiveVisit = Boolean(
+    const isCurrentActiveVisit = !isHistoricalTarget && Boolean(
       (patient.current_visit_id && reportVisitId === patient.current_visit_id) ||
       (!patient.current_visit_id && currentVisit && (reportVisitId === currentVisit.visit_id || reportVisitId === currentVisit.id))
     );
@@ -556,7 +586,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // 4. Policy Checks
     if (isCurrentActiveVisit) {
       // Active Visit Approval (Scenario A)
-      if (p2AnalysisResult.report.sectionK_clinicalSafety?.hardStops && p2AnalysisResult.report.sectionK_clinicalSafety.hardStops.length > 0) {
+      if (targetAnalysis.report.sectionK_clinicalSafety?.hardStops && targetAnalysis.report.sectionK_clinicalSafety.hardStops.length > 0) {
         console.warn('Rejected P2 approval: Active clinical safety hard stops exist. Must be clinically resolved before sign-off.');
         return false;
       }
@@ -578,8 +608,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       // Nutrient restrictions clarification
-      if (p2AnalysisResult.p3PlanningContext?.prescriptions) {
-        const unclarified = Object.values(p2AnalysisResult.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
+      if (targetAnalysis.p3PlanningContext?.prescriptions) {
+        const unclarified = Object.values(targetAnalysis.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
         if (unclarified.length > 0) {
           console.warn('Rejected P2 approval: Prescribed nutrient restrictions require clarification before sign-off.');
           return false;
@@ -601,13 +631,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       // Report must not have been invalidated
-      if (p2AnalysisResult.analysisInvalidatedAt || existingSavedReport.analysisInvalidatedAt) {
+      if (targetAnalysis.analysisInvalidatedAt || existingSavedReport.analysisInvalidatedAt) {
         console.warn('Rejected historical P2 approval: Historical report was previously invalidated. Cannot sign-off without re-review.');
         return false;
       }
 
       // Safety review evidence must be available and free of active hard stops
-      if (p2AnalysisResult.report.sectionK_clinicalSafety?.hardStops && p2AnalysisResult.report.sectionK_clinicalSafety.hardStops.length > 0) {
+      if (targetAnalysis.report.sectionK_clinicalSafety?.hardStops && targetAnalysis.report.sectionK_clinicalSafety.hardStops.length > 0) {
         console.warn('Rejected historical P2 approval: Active clinical safety hard stops exist in historical report.');
         return false;
       }
@@ -617,8 +647,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
 
       // Nutrient restrictions clarification
-      if (p2AnalysisResult.p3PlanningContext?.prescriptions) {
-        const unclarified = Object.values(p2AnalysisResult.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
+      if (targetAnalysis.p3PlanningContext?.prescriptions) {
+        const unclarified = Object.values(targetAnalysis.p3PlanningContext.prescriptions).filter(p => p.requiresClarification);
         if (unclarified.length > 0) {
           console.warn('Rejected historical P2 approval: Unclarified nutrient restrictions in historical context.');
           return false;
@@ -627,34 +657,34 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     // 5. Avoid duplicate churn from repeated clicks if already approved with same clinician
-    if (p2AnalysisResult.report.isApproved && p2AnalysisResult.report.approvedBy === trimmedId) {
+    if (targetAnalysis.report.isApproved && targetAnalysis.report.approvedBy === trimmedId) {
       return true;
     }
 
     // 6. Build Updated Result preserving authoritative identity
     const timestamp = new Date().toISOString();
     const updatedReport = {
-      ...p2AnalysisResult.report,
+      ...targetAnalysis.report,
       patientId: reportPatientId,
       visitId: reportVisitId,
       reportId: reportId,
       isApproved: true,
       approvedBy: trimmedId,
       approvalDate: timestamp,
-      clinicianNotes: notes !== undefined ? notes : p2AnalysisResult.report.clinicianNotes,
+      clinicianNotes: notes !== undefined ? notes : targetAnalysis.report.clinicianNotes,
       analysisInvalidatedAt: undefined,
       invalidationReason: undefined,
       sectionN_clinicianReview: {
-        ...p2AnalysisResult.report.sectionN_clinicianReview,
+        ...targetAnalysis.report.sectionN_clinicianReview,
         status: 'fully_approved' as const,
         reviewingNutritionist: trimmedId,
         reviewDate: timestamp.split('T')[0],
-        notes: notes !== undefined ? notes : p2AnalysisResult.report.sectionN_clinicianReview.notes,
+        notes: notes !== undefined ? notes : targetAnalysis.report.sectionN_clinicianReview.notes,
       },
     };
 
     const updatedP3Context = {
-      ...p2AnalysisResult.p3PlanningContext,
+      ...targetAnalysis.p3PlanningContext,
       visitId: reportVisitId,
       clinicalAssessmentApproved: true,
       approvedByClinicianId: trimmedId,
@@ -664,7 +694,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     const updatedResult: P2AnalysisResult = {
-      ...p2AnalysisResult,
+      ...targetAnalysis,
       patientId: reportPatientId,
       visitId: reportVisitId,
       analysisInvalidatedAt: undefined,
@@ -672,7 +702,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       p3PlanningContext: updatedP3Context,
       dietPlanningContext: updatedP3Context,
       approvalHistory: [
-        ...(p2AnalysisResult.approvalHistory || []),
+        ...(targetAnalysis.approvalHistory || []),
         {
           targetId: reportId,
           targetType: 'intervention',
@@ -711,9 +741,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     // 8. Commit in-memory React state only after storage confirmation
-    setP2AnalysisResult(updatedResult);
+    if (isHistoricalTarget) {
+      setPreviewP2AnalysisResult(updatedResult);
+      // Active consultation p2AnalysisResult remains strictly untouched
+    } else {
+      setP2AnalysisResult(updatedResult);
+    }
     return true;
-  }, [patient, p2AnalysisResult, currentClinicalAssessment, clinicalVisits, currentVisit]);
+  }, [patient, p2AnalysisResult, previewP2AnalysisResult, currentClinicalAssessment, clinicalVisits, currentVisit, selectedReportVisitId]);
 
   // Pre-index foods in a lookup map for optimal performance
   const foodMap = useMemo(() => new Map(allFoods.map(f => [f.id, f])), []);
@@ -1492,6 +1527,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     setCurrentClinicalAssessment(null);
     setSelectedReportVisitId(null);
+    setPreviewP2AnalysisResult(null);
 
     // Rehydrate or isolate P2 analysis for newly loaded patient and visit
     const targetVisitId = migrated.patient.current_visit_id || activeVisit?.visit_id || activeVisit?.id;
@@ -1628,6 +1664,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setP2AnalysisResult(null);
     setCurrentClinicalAssessment(null);
     setSelectedReportVisitId(null);
+    setPreviewP2AnalysisResult(null);
     setSavedPatients(tx.committedPatientsList);
     safeStorage.setItem('shuddho_active_patient_id', freshPatient.id);
 
@@ -1705,6 +1742,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCurrentVisit(tx.newVisit);
     setPatient(tx.committedRecord.patient);
     setSavedPatients(tx.committedPatientsList);
+    setSelectedReportVisitId(tx.newVisit.visit_id || tx.newVisit.id || null);
+    setPreviewP2AnalysisResult(null);
 
     invalidateP2Approval(`New visit initiated: ${tx.newVisit.visit_id}`);
     return tx.newVisit;
@@ -1715,63 +1754,76 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!match) return;
 
     // Report preview only: maintain report-specific visit ID without mutating active consultation state
-    setSelectedReportVisitId(match.visit_id || match.id || null);
+    const targetVisitId = match.visit_id || match.id || null;
+    setSelectedReportVisitId(targetVisitId);
 
     const isCurrentActiveVisit = Boolean(
-      (patient.current_visit_id && (match.visit_id === patient.current_visit_id || match.id === patient.current_visit_id)) ||
-      (!patient.current_visit_id && currentVisit && (match.visit_id === currentVisit.visit_id || match.id === currentVisit.id))
+      (patient.current_visit_id && (targetVisitId === patient.current_visit_id)) ||
+      (!patient.current_visit_id && currentVisit && (targetVisitId === currentVisit.visit_id || targetVisitId === currentVisit.id))
     );
 
-    const targetVisitId = match.visit_id || match.id;
-    const p2Key = `shuddho_p2_analysis_${patient.id}_${targetVisitId}`;
-    try {
-      const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
-      if (savedP2) {
-        setP2AnalysisResult(savedP2);
-      } else if (isCurrentActiveVisit) {
-        setP2AnalysisResult(runP2Analysis(patient));
-      } else {
-        // Historical visit with no saved P2 analysis: do NOT fabricate fake analysis from incomplete data
-        setP2AnalysisResult(null);
+    if (isCurrentActiveVisit) {
+      setPreviewP2AnalysisResult(null);
+      // Rehydrate active consultation p2 if null (e.g. fresh reload on report tab)
+      if (!p2AnalysisResult && targetVisitId) {
+        const activeKey = `shuddho_p2_analysis_${patient.id}_${targetVisitId}`;
+        try {
+          const savedP2 = safeStorage.getItem<P2AnalysisResult>(activeKey);
+          if (savedP2) {
+            setP2AnalysisResult(savedP2);
+          } else {
+            setP2AnalysisResult(runP2Analysis(patient));
+          }
+        } catch {
+          setP2AnalysisResult(runP2Analysis(patient));
+        }
       }
-    } catch {
-      if (isCurrentActiveVisit) {
-        setP2AnalysisResult(runP2Analysis(patient));
-      } else {
-        setP2AnalysisResult(null);
+    } else {
+      // Historical visit preview: load into previewP2AnalysisResult ONLY
+      const p2Key = `shuddho_p2_analysis_${patient.id}_${targetVisitId}`;
+      try {
+        const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+        setPreviewP2AnalysisResult(savedP2 || null);
+      } catch {
+        setPreviewP2AnalysisResult(null);
       }
+      // CRITICAL: p2AnalysisResult is NEVER mutated when previewing a historical visit!
     }
-  }, [clinicalVisits, patient, currentVisit]);
+  }, [clinicalVisits, patient, currentVisit, p2AnalysisResult]);
 
   const selectVisit = useCallback((visitId: string) => {
     const match = clinicalVisits.find(v => v.visit_id === visitId || v.id === visitId);
     if (!match) return;
 
     setCurrentVisit(match);
-    setSelectedReportVisitId(match.visit_id || match.id || null);
+    const targetVisitId = match.visit_id || match.id || null;
+    setSelectedReportVisitId(targetVisitId);
     const isCurrentActiveVisit = Boolean(
-      (patient.current_visit_id && (match.visit_id === patient.current_visit_id || match.id === patient.current_visit_id)) ||
+      (patient.current_visit_id && (targetVisitId === patient.current_visit_id)) ||
       (!patient.current_visit_id && match === clinicalVisits[0])
     );
 
-    // Rehydrate P2 analysis specific to this selected visit
-    const p2Key = `shuddho_p2_analysis_${patient.id}_${match.visit_id || match.id}`;
-    try {
-      const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
-      if (savedP2) {
-        setP2AnalysisResult(savedP2);
-      } else if (isCurrentActiveVisit) {
-        // Only run analysis for the currently active consultation visit
+    if (isCurrentActiveVisit) {
+      setPreviewP2AnalysisResult(null);
+      const p2Key = `shuddho_p2_analysis_${patient.id}_${targetVisitId}`;
+      try {
+        const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+        if (savedP2) {
+          setP2AnalysisResult(savedP2);
+        } else {
+          setP2AnalysisResult(runP2Analysis(patient));
+        }
+      } catch {
         setP2AnalysisResult(runP2Analysis(patient));
-      } else {
-        // Historical visit with no saved P2 analysis: do NOT fabricate fake analysis from incomplete data
-        setP2AnalysisResult(null);
       }
-    } catch {
-      if (isCurrentActiveVisit) {
-        setP2AnalysisResult(runP2Analysis(patient));
-      } else {
-        setP2AnalysisResult(null);
+    } else {
+      // Historical visit: do not mutate active p2AnalysisResult
+      const p2Key = `shuddho_p2_analysis_${patient.id}_${targetVisitId}`;
+      try {
+        const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+        setPreviewP2AnalysisResult(savedP2 || null);
+      } catch {
+        setPreviewP2AnalysisResult(null);
       }
     }
   }, [clinicalVisits, patient]);
@@ -2217,6 +2269,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     setCurrentClinicalAssessment(null);
     setSelectedReportVisitId(null);
+    setPreviewP2AnalysisResult(null);
     invalidateP2Approval(`Follow-up consultation started: ${tx.newVisit.visit_id}`);
 
     return tx.newVisit;
@@ -2708,6 +2761,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setP2AnalysisResult(p2);
     setCurrentClinicalAssessment(null);
     setSelectedReportVisitId(null);
+    setPreviewP2AnalysisResult(null);
   }, [allFoods, allMedicines]);
 
   return (
@@ -2787,6 +2841,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         loadPatient,
         createNewPatient,
         p2AnalysisResult,
+        previewP2AnalysisResult,
         isAnalyzingP2,
         currentClinicalAssessment,
         executeP2Analysis,

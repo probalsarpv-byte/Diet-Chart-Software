@@ -39,6 +39,7 @@ export const ReportTab: React.FC = () => {
     setLanguage,
     clinicalSafetyEvaluation,
     p2AnalysisResult,
+    previewP2AnalysisResult,
     approveP2Analysis,
     currentProgressReport,
     generateProgressReport,
@@ -69,6 +70,14 @@ export const ReportTab: React.FC = () => {
     return currentVisit;
   }, [clinicalVisits, activeReportVisitId, currentVisit]);
 
+  // Isolate active consultation P2 analysis from historical report preview data
+  const isCurrentActiveVisit = Boolean(
+    (patient.current_visit_id && (activeReportVisitId === patient.current_visit_id)) ||
+    (!patient.current_visit_id && currentVisit && (activeReportVisitId === currentVisit.visit_id || activeReportVisitId === currentVisit.id))
+  );
+
+  const activeDisplayP2 = isCurrentActiveVisit ? p2AnalysisResult : previewP2AnalysisResult;
+
   // For historical visit reports, provide read-only demographic representation without mutating global patient state
   const effectivePatientForReport = React.useMemo(() => {
     const targetVisitId = activeReportVisit?.visit_id || activeReportVisit?.id || patient.current_visit_id;
@@ -80,11 +89,11 @@ export const ReportTab: React.FC = () => {
       ...patient,
       current_visit_id: targetVisitId,
       visit_date: activeReportVisit.visit_date || patient.visit_date,
-      weight_kg: p2AnalysisResult?.report?.sectionB_anthropometrics?.weight_kg ?? (snap?.anthropometrics?.weight_kg ?? patient.weight_kg),
-      height_cm: p2AnalysisResult?.report?.sectionB_anthropometrics?.height_cm ?? (snap?.anthropometrics?.height_cm ?? patient.height_cm),
+      weight_kg: activeDisplayP2?.report?.sectionB_anthropometrics?.weight_kg ?? (snap?.anthropometrics?.weight_kg ?? patient.weight_kg),
+      height_cm: activeDisplayP2?.report?.sectionB_anthropometrics?.height_cm ?? (snap?.anthropometrics?.height_cm ?? patient.height_cm),
       waist_cm: snap?.anthropometrics?.waist_cm ?? patient.waist_cm
     };
-  }, [patient, activeReportVisit, visitSnapshots, p2AnalysisResult]);
+  }, [patient, activeReportVisit, visitSnapshots, activeDisplayP2]);
 
   const redDietItems = dietChart.flatMap(m => m.items.filter(i => i.traffic_status === 'RED'));
   const hasHardStops = clinicalSafetyEvaluation?.overallDecision === 'HARD_STOP';
@@ -200,20 +209,20 @@ export const ReportTab: React.FC = () => {
             )}
 
             {activeReportType === 'clinical_assessment' && (
-              p2AnalysisResult?.report?.isApproved ? (
+              activeDisplayP2?.report?.isApproved ? (
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <CheckCircle className="h-3 w-3" />
                   <span>
                     {bn ? 'অনুমোদিত: ' : 'Approved: '}
-                    {p2AnalysisResult.report.approvedBy} ({p2AnalysisResult.report.approvalDate?.split('T')[0]})
+                    {activeDisplayP2.report.approvedBy} ({activeDisplayP2.report.approvalDate?.split('T')[0]})
                   </span>
                 </span>
-              ) : p2AnalysisResult?.analysisInvalidatedAt ? (
+              ) : activeDisplayP2?.analysisInvalidatedAt ? (
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
                   <span>{bn ? 'পুনঃপর্যালোচনা প্রয়োজন (ডাটা পরিবর্তন)' : 'Invalidated / Requires Re-review'}</span>
                 </span>
-              ) : p2AnalysisResult ? (
+              ) : activeDisplayP2 ? (
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   <span>{bn ? 'খসড়া / প্রোভিশনাল (অনুমোদন বাকি)' : 'Draft / Provisional (Sign-off Required)'}</span>
@@ -661,13 +670,13 @@ export const ReportTab: React.FC = () => {
       {/* VIEW 2: Pre-Intervention Clinical Health Assessment Report (P2) */}
       {activeReportType === 'clinical_assessment' && (
         <div className="space-y-4">
-          {p2AnalysisResult ? (
+          {activeDisplayP2 ? (
             <FunctionalNutritionReport
-              report={p2AnalysisResult.report}
-              analysis={p2AnalysisResult}
+              report={activeDisplayP2.report}
+              analysis={activeDisplayP2}
               patient={effectivePatientForReport}
               lang={language}
-              onApprove={(clinicianId, notes) => approveP2Analysis(clinicianId, notes, p2AnalysisResult.visitId)}
+              onApprove={(clinicianId, notes) => approveP2Analysis(clinicianId, notes, activeDisplayP2.visitId)}
             />
           ) : (
             <div className="bg-card border rounded-2xl p-10 text-center space-y-4 shadow-sm max-w-xl mx-auto">
