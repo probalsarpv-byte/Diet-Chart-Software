@@ -193,7 +193,7 @@ export interface PracticeContextType {
   // Patient Records Persistence
   savedPatients: PatientRecord[];
   saveCurrentPatient: () => boolean;
-  loadPatient: (id: string) => void;
+  loadPatient: (id: string) => boolean;
   createNewPatient: () => void;
 
   // Phase P2 Clinical Intelligence
@@ -1305,54 +1305,67 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return true;
   }, [patient, visits, clinicalVisits, followUpAppointments, visitSnapshots, progressReports, dietChart, candidateSupplements, dniResult.timeline, savedPatients]);
 
-  const loadPatient = useCallback((id: string) => {
+  const loadPatient = useCallback((id: string): boolean => {
     // 1. Flush/save currently active patient first to avoid data loss on patient switch
     if (patient && patient.id && patient.id !== id) {
-      saveCurrentPatient();
+      const saveSucceeded = saveCurrentPatient();
+      if (!saveSucceeded) {
+        console.error(`[Patient Switch Error] Failed to persist current patient (${patient.id}) before switching to ${id}. Aborting switch.`);
+        if (typeof window !== 'undefined') {
+          alert(language === 'bn' 
+            ? 'রোগী পরিবর্তন স্থগিত: বর্তমান রোগীর তথ্য সংরক্ষণে ব্যর্থতা (স্টোরেজ ত্রুটি বা কোটা অতিক্রান্ত)। তথ্য সুরক্ষার স্বার্থে রোগী পরিবর্তন বাতিল করা হলো।' 
+            : 'Patient switch aborted: Failed to persist current patient data to storage (quota exceeded or storage error). Switch was blocked to prevent data loss.');
+        }
+        return false;
+      }
     }
 
     const currentSaved = safeStorage.getItem<PatientRecord[]>('shuddho_saved_patients') || savedPatients;
     const match = currentSaved.find(p => p.patient.id === id);
-    if (match) {
-      const migrated = migratePatientRecord(match);
-      setPatient(migrated.patient);
-      setVisits(migrated.visits || []);
-      setClinicalVisits(migrated.clinical_visits || []);
+    if (!match) {
+      console.warn(`[Load Patient] Target patient "${id}" not found in saved records.`);
+      return false;
+    }
 
-      // Restore active visit: prefer migrated.patient.current_visit_id
-      const activeVisit = (migrated.clinical_visits || []).find(
-        v => v.visit_id === migrated.patient.current_visit_id || v.id === migrated.patient.current_visit_id
-      ) || (migrated.clinical_visits && migrated.clinical_visits.length > 0 ? migrated.clinical_visits[0] : null);
+    const migrated = migratePatientRecord(match);
+    setPatient(migrated.patient);
+    setVisits(migrated.visits || []);
+    setClinicalVisits(migrated.clinical_visits || []);
 
-      setCurrentVisit(activeVisit);
-      setFollowUpAppointments(migrated.follow_up_appointments || []);
-      setVisitSnapshots(migrated.visit_snapshots || []);
-      setProgressReports(migrated.progress_reports || []);
-      setCurrentProgressReport(migrated.progress_reports && migrated.progress_reports.length > 0 ? migrated.progress_reports[0] : null);
-      setDietChart(migrated.current_diet_chart || []);
-      if (migrated.current_supplements && migrated.current_supplements.length > 0) {
-        setCandidateSupplements(migrated.current_supplements);
-      }
-      setCurrentClinicalAssessment(null);
+    // Restore active visit: prefer migrated.patient.current_visit_id
+    const activeVisit = (migrated.clinical_visits || []).find(
+      v => v.visit_id === migrated.patient.current_visit_id || v.id === migrated.patient.current_visit_id
+    ) || (migrated.clinical_visits && migrated.clinical_visits.length > 0 ? migrated.clinical_visits[0] : null);
 
-      // Rehydrate or isolate P2 analysis for newly loaded patient and visit
-      const targetVisitId = migrated.patient.current_visit_id || activeVisit?.visit_id || activeVisit?.id;
-      const visitDateClean = (migrated.patient.visit_date || '').replace(/[^0-9]/g, '');
-      const p2Key = `shuddho_p2_analysis_${migrated.patient.id}_${targetVisitId || `visit_${migrated.patient.id}_${visitDateClean}`}`;
-      try {
-        const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
-        if (savedP2) {
-          setP2AnalysisResult(savedP2);
-        } else {
-          setP2AnalysisResult(runP2Analysis(migrated.patient));
-        }
-      } catch {
+    setCurrentVisit(activeVisit);
+    setFollowUpAppointments(migrated.follow_up_appointments || []);
+    setVisitSnapshots(migrated.visit_snapshots || []);
+    setProgressReports(migrated.progress_reports || []);
+    setCurrentProgressReport(migrated.progress_reports && migrated.progress_reports.length > 0 ? migrated.progress_reports[0] : null);
+    setDietChart(migrated.current_diet_chart || []);
+    if (migrated.current_supplements && migrated.current_supplements.length > 0) {
+      setCandidateSupplements(migrated.current_supplements);
+    }
+    setCurrentClinicalAssessment(null);
+
+    // Rehydrate or isolate P2 analysis for newly loaded patient and visit
+    const targetVisitId = migrated.patient.current_visit_id || activeVisit?.visit_id || activeVisit?.id;
+    const visitDateClean = (migrated.patient.visit_date || '').replace(/[^0-9]/g, '');
+    const p2Key = `shuddho_p2_analysis_${migrated.patient.id}_${targetVisitId || `visit_${migrated.patient.id}_${visitDateClean}`}`;
+    try {
+      const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
+      if (savedP2) {
+        setP2AnalysisResult(savedP2);
+      } else {
         setP2AnalysisResult(runP2Analysis(migrated.patient));
       }
-
-      safeStorage.setItem('shuddho_active_patient_id', id);
+    } catch {
+      setP2AnalysisResult(runP2Analysis(migrated.patient));
     }
-  }, [savedPatients, patient, saveCurrentPatient]);
+
+    safeStorage.setItem('shuddho_active_patient_id', id);
+    return true;
+  }, [savedPatients, patient, saveCurrentPatient, language]);
 
   // Dedicated Patient Registration without fictional labs or placeholder anthropometrics
   const registerNewPatient = useCallback((adminData: Partial<PatientProfile>): PatientProfile | null => {
@@ -1556,28 +1569,32 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!match) return;
 
     setCurrentVisit(match);
-    const snap = getLatestVisitSnapshot(visitSnapshots, match.visit_id || match.id || '');
-
-    const restoredPatient = restoreVisitState({
-      currentPatient: patient,
-      targetVisit: match,
-      targetSnapshot: snap
-    });
-    setPatient(restoredPatient);
+    const isCurrentActiveVisit = Boolean(
+      (patient.current_visit_id && (match.visit_id === patient.current_visit_id || match.id === patient.current_visit_id)) ||
+      (!patient.current_visit_id && match === clinicalVisits[0])
+    );
 
     // Rehydrate P2 analysis specific to this selected visit
-    const p2Key = `shuddho_p2_analysis_${restoredPatient.id}_${match.visit_id || match.id}`;
+    const p2Key = `shuddho_p2_analysis_${patient.id}_${match.visit_id || match.id}`;
     try {
       const savedP2 = safeStorage.getItem<P2AnalysisResult>(p2Key);
       if (savedP2) {
         setP2AnalysisResult(savedP2);
+      } else if (isCurrentActiveVisit) {
+        // Only run analysis for the currently active consultation visit
+        setP2AnalysisResult(runP2Analysis(patient));
       } else {
-        setP2AnalysisResult(runP2Analysis(restoredPatient));
+        // Historical visit with no saved P2 analysis: do NOT fabricate fake analysis from incomplete data
+        setP2AnalysisResult(null);
       }
     } catch {
-      setP2AnalysisResult(runP2Analysis(restoredPatient));
+      if (isCurrentActiveVisit) {
+        setP2AnalysisResult(runP2Analysis(patient));
+      } else {
+        setP2AnalysisResult(null);
+      }
     }
-  }, [clinicalVisits, visitSnapshots, patient]);
+  }, [clinicalVisits, patient]);
 
   const completeCurrentVisit = useCallback((summary?: string) => {
     if (!currentVisit) return;

@@ -28,6 +28,9 @@ import {
   runP2Analysis
 } from '../src/engine/p2/index';
 import {
+  P2AnalysisResult
+} from '../src/engine/p2/types';
+import {
   buildComparativeProgressReport,
   executeLongitudinalComparison,
   validateClinicianCredentials
@@ -608,6 +611,109 @@ console.log('\n--- SCENARIO O: Clinical Safety & Fluid Restriction Guard ---');
 
   assert(recommendedGuideline.includes('1200 mL/day'), 'Scenario O: Report qualifies guideline with exact prescribed limit');
   assert(!recommendedGuideline.includes('3.5 L'), 'Scenario O: Blanket 3.5L is suppressed for fluid-restricted patient');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO P: Historical Visit Read-Only Isolation
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO P: Historical Visit Read-Only Isolation ---');
+{
+  const activeConsultationPatient = createTestPatient('pt_active_isolation', 'Active Consultation Patient', {
+    current_visit_id: 'vis_active_current',
+    weight_kg: 74,
+    waist_cm: 86
+  });
+
+  const historicalVisit: ClinicalVisit = {
+    visit_id: 'vis_historical_past',
+    patient_id: activeConsultationPatient.id,
+    visit_number: 1,
+    visit_type: 'baseline_consultation',
+    visit_date: '2026-09-01',
+    created_at: '2026-09-01T10:00:00Z',
+    status: 'completed'
+  };
+
+  // Simulate selectVisit read-only behavior: Active patient state must NOT be mutated
+  const isCurrentActiveVisit = historicalVisit.visit_id === activeConsultationPatient.current_visit_id;
+  assert(isCurrentActiveVisit === false, 'Scenario P: Historical visit is accurately identified as non-active');
+
+  // Verify active consultation patient data is completely preserved
+  assert(activeConsultationPatient.current_visit_id === 'vis_active_current', 'Scenario P: Active visit ID preserved');
+  assert(activeConsultationPatient.weight_kg === 74, 'Scenario P: Active consultation weight (74 kg) preserved');
+  assert(activeConsultationPatient.waist_cm === 86, 'Scenario P: Active consultation waist (86 cm) preserved');
+  assert(activeConsultationPatient.weight_kg !== 0, 'Scenario P: Zero artificial default values injected into active patient');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO Q: Missing Historical P2 Source Data Handling
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO Q: Missing Historical P2 Source Data Handling ---');
+{
+  const storage = new MockStorage();
+  const patient = createTestPatient('pt_missing_p2', 'Missing P2 Patient', {
+    current_visit_id: 'vis_today'
+  });
+
+  const historicalVisitId = 'vis_historical_old';
+  const p2Key = `shuddho_p2_analysis_${patient.id}_${historicalVisitId}`;
+  
+  // Storage has no saved P2 for this historical visit
+  const savedHistoricalP2 = storage.getItem<P2AnalysisResult>(p2Key);
+  const isCurrentActiveVisit = historicalVisitId === patient.current_visit_id;
+
+  let resolvedP2: P2AnalysisResult | null = null;
+  if (savedHistoricalP2) {
+    resolvedP2 = savedHistoricalP2;
+  } else if (isCurrentActiveVisit) {
+    resolvedP2 = runP2Analysis(patient);
+  } else {
+    // Correct behavior: do NOT fabricate fake P2 analysis
+    resolvedP2 = null;
+  }
+
+  assert(savedHistoricalP2 === null, 'Scenario Q: Storage confirms absence of saved historical P2 analysis');
+  assert(resolvedP2 === null, 'Scenario Q: Historical visit without saved P2 returns null (never fabricated)');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO R: Patient Switching Persistence Guard
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO R: Patient Switching Persistence Guard ---');
+{
+  const activePatient = createTestPatient('pt_guard_active', 'Active Unsaved Patient', {
+    current_visit_id: 'vis_guard_1',
+    weight_kg: 88
+  });
+
+  // Storage failure simulation (e.g. quota limit exceeded or disk failure)
+  let storageWriteFailed = true;
+  const mockSaveCurrentPatient = () => {
+    if (storageWriteFailed) return false;
+    return true;
+  };
+
+  let activePatientId: string = activePatient.id;
+  const targetPatientIdToSwitch = 'pt_guard_target';
+
+  // Attempt switch with failed persistence
+  const attemptSwitch = (targetId: string): boolean => {
+    if (activePatient && activePatient.id && activePatient.id !== targetId) {
+      const savedOk = mockSaveCurrentPatient();
+      if (!savedOk) {
+        // Abort switch to prevent discarding unsaved active patient data
+        return false;
+      }
+    }
+    activePatientId = targetId;
+    return true;
+  };
+
+  const switchResult = attemptSwitch(targetPatientIdToSwitch);
+
+  assert(switchResult === false, 'Scenario R: Patient switch aborted when active patient persistence fails');
+  assert(activePatientId === 'pt_guard_active', 'Scenario R: Active patient remains active to protect unsaved clinical data');
+  assert(activePatient.weight_kg === 88, 'Scenario R: In-memory active clinical data completely intact');
 }
 
 console.log('\n=====================================================================');

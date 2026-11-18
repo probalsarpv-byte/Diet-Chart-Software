@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { ComparativeProgressReportView } from '@/components/reports/ComparativeProgressReportView';
 import { FunctionalNutritionReport } from '@/components/p2/FunctionalNutritionReport';
+import { getLatestVisitSnapshot } from '@/engine/snapshot/snapshotManager';
 
 type ReportType = 'diet_prescription' | 'comparative_progress' | 'clinical_assessment';
 
@@ -46,13 +47,30 @@ export const ReportTab: React.FC = () => {
     currentVisit,
     clinicalVisits,
     selectVisit,
-    progressReports
+    progressReports,
+    visitSnapshots
   } = usePractice();
 
   const [activeReportType, setActiveReportType] = useState<ReportType>('diet_prescription');
 
   const bn = language === 'bn';
   const phaseInfo = CLINICAL_PHASES[patient.current_phase || 1];
+
+  // For historical visit reports, provide read-only demographic representation without mutating global patient state
+  const effectivePatientForReport = React.useMemo(() => {
+    if (!currentVisit || currentVisit.visit_id === patient.current_visit_id || currentVisit.id === patient.current_visit_id) {
+      return patient;
+    }
+    const snap = getLatestVisitSnapshot(visitSnapshots, currentVisit.visit_id || currentVisit.id || '');
+    return {
+      ...patient,
+      current_visit_id: currentVisit.visit_id || currentVisit.id,
+      visit_date: currentVisit.visit_date || patient.visit_date,
+      weight_kg: p2AnalysisResult?.report?.sectionB_anthropometrics?.weight_kg ?? (snap?.anthropometrics?.weight_kg ?? patient.weight_kg),
+      height_cm: p2AnalysisResult?.report?.sectionB_anthropometrics?.height_cm ?? (snap?.anthropometrics?.height_cm ?? patient.height_cm),
+      waist_cm: snap?.anthropometrics?.waist_cm ?? patient.waist_cm
+    };
+  }, [patient, currentVisit, visitSnapshots, p2AnalysisResult]);
 
   const redDietItems = dietChart.flatMap(m => m.items.filter(i => i.traffic_status === 'RED'));
   const hasHardStops = clinicalSafetyEvaluation?.overallDecision === 'HARD_STOP';
@@ -181,10 +199,15 @@ export const ReportTab: React.FC = () => {
                   <AlertTriangle className="h-3 w-3" />
                   <span>{bn ? 'পুনঃপর্যালোচনা প্রয়োজন (ডাটা পরিবর্তন)' : 'Invalidated / Requires Re-review'}</span>
                 </span>
-              ) : (
+              ) : p2AnalysisResult ? (
                 <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   <span>{bn ? 'খসড়া / প্রোভিশনাল (অনুমোদন বাকি)' : 'Draft / Provisional (Sign-off Required)'}</span>
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{bn ? 'রিপোর্ট অপ্রাপ্য' : 'Report Unavailable'}</span>
                 </span>
               )
             )}
@@ -628,7 +651,7 @@ export const ReportTab: React.FC = () => {
             <FunctionalNutritionReport
               report={p2AnalysisResult.report}
               analysis={p2AnalysisResult}
-              patient={patient}
+              patient={effectivePatientForReport}
               lang={language}
               onApprove={(clinicianId, notes) => approveP2Analysis(clinicianId, notes)}
             />

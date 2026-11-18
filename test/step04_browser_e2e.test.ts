@@ -273,6 +273,10 @@ async function runStep04BrowserE2E() {
         await visitDropdown.selectOption(secondOptionVal);
         await page.waitForTimeout(400);
         assert(true, 'Scenario 4: Visit dropdown switched successfully to historical visit');
+
+        // Verify Issue 2: Historical visit without saved P2 does NOT fabricate fake analysis
+        const unavailableState = page.locator('text=/Pre-Intervention Assessment Report Pending|প্রাক-হস্তক্ষেপ ক্লিনিক্যাল স্বাস্থ্য প্রতিবেদন প্রস্তুত নয়|Report Unavailable|রিপোর্ট অপ্রাপ্য/');
+        assert((await unavailableState.count()) > 0, 'Scenario 4: Historical visit without saved P2 displays honest unavailable state (never fabricated)');
       }
       // Switch back to latest visit
       const firstOptionVal = await allOptions[0].getAttribute('value');
@@ -280,6 +284,10 @@ async function runStep04BrowserE2E() {
         await visitDropdown.selectOption(firstOptionVal);
         await page.waitForTimeout(400);
         assert(true, 'Scenario 4: Visit dropdown switched cleanly back to active consultation');
+
+        // Verify Issue 1: Active consultation data remains intact
+        const reApprovedBadge = page.locator('text=/Approved: Dr. Farhana Rahman|অনুমোদিত: Dr. Farhana Rahman/');
+        assert((await reApprovedBadge.count()) > 0, 'Scenario 4: Active consultation approved P2 analysis restored without data loss');
       }
     }
 
