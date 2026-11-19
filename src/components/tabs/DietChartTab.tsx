@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { 
   Utensils, 
@@ -29,7 +29,7 @@ import {
   CheckSquare,
   Eye
 } from 'lucide-react';
-import { FoodExchangeItem } from '@/types';
+import { FoodExchangeItem, FoodItem } from '@/types';
 
 export const DietChartTab: React.FC = () => {
   const { 
@@ -76,6 +76,9 @@ export const DietChartTab: React.FC = () => {
   const [selectedMealForAdd, setSelectedMealForAdd] = useState<string | null>(null);
   const [selectedFoodIdToAdd, setSelectedFoodIdToAdd] = useState<string>('');
   const [addFoodGrams, setAddFoodGrams] = useState<number>(100);
+  const [foodSearchQuery, setFoodSearchQuery] = useState<string>('');
+  const [foodCategoryFilter, setFoodCategoryFilter] = useState<string>('all');
+  const [foodSafetyFilter, setFoodSafetyFilter] = useState<'all' | 'green' | 'yellow'>('all');
 
   // Copy Day Modal state
   const [isCopyModalOpen, setIsCopyModalOpen] = useState<boolean>(false);
@@ -118,18 +121,90 @@ export const DietChartTab: React.FC = () => {
   const targetCarbs = weeklyDietPlan?.target_macros?.carbs_g ?? patient.calculated.target_carbs_g;
   const targetFat = weeklyDietPlan?.target_macros?.fat_g ?? patient.calculated.target_fat_g;
 
-  const redIds = new Set(trafficLight.red.map(r => r.id));
-  const safeAddCandidates = allFoods.filter(f => !redIds.has(f.id));
+  const greenIds = useMemo(() => new Set(trafficLight.green.map(g => g.id)), [trafficLight.green]);
+  const yellowIds = useMemo(() => new Set(trafficLight.yellow.map(y => y.id)), [trafficLight.yellow]);
+  const redIds = useMemo(() => new Set(trafficLight.red.map(r => r.id)), [trafficLight.red]);
 
-  // Fluid Restriction Guard
+  // Fluid Guidance: Distinguish Prescribed Limit vs Physiological Estimate vs Ad Libitum
   const fluidPrescription = p2AnalysisResult?.p3PlanningContext?.prescriptions?.fluid;
-  const hasFluidLimit = fluidPrescription?.hasConfirmedLimit && fluidPrescription.numericalLimit;
+  const patientFluidRestriction = patient.clinical_safety?.fluid_restriction;
+  const hasFluidLimit = Boolean(
+    (fluidPrescription && fluidPrescription.hasConfirmedLimit && fluidPrescription.numericalLimit) ||
+    (patientFluidRestriction && patientFluidRestriction.is_restricted && patientFluidRestriction.limit_ml)
+  );
+  const fluidLimitMl = (fluidPrescription?.numericalLimit) || (patientFluidRestriction?.limit_ml);
+  const fluidLimitReason = (fluidPrescription?.clinicalReason) || (patientFluidRestriction?.condition) || '';
+
+  const hasWeight = typeof patient.weight_kg === 'number' && patient.weight_kg > 0;
+  const estimatedMinFluid = hasWeight ? Math.round(patient.weight_kg * 30) : null;
+  const estimatedMaxFluid = hasWeight ? Math.round(patient.weight_kg * 35) : null;
+
+  const fluidTitle = hasFluidLimit
+    ? (bn ? 'ক্লিনিক্যাল তরল সীমা (নির্ধারিত):' : 'Clinical Fluid Prescription:')
+    : hasWeight
+    ? (bn ? 'শারীরবৃত্তীয় তরল চাহিদা (আনুমানিক ৩০-৩৫ মি.লি./কেজি):' : 'Physiological Baseline (30-35 mL/kg):')
+    : (bn ? 'দৈনিক তরল হিসাব (Hydration):' : 'Hydration Guidance:');
+
   const fluidDisplayText = hasFluidLimit
-    ? (bn ? `${fluidPrescription.numericalLimit} মিলি / দিন (ক্লিনিক্যাল সীমা)` : `${fluidPrescription.numericalLimit} mL / day (Prescribed Limit)`)
-    : (bn ? '২,৫০০ মিলি / দিন' : '2,500 mL / day');
+    ? (bn ? `${fluidLimitMl} মিলি / দিন (ক্লিনিক্যাল সীমা)` : `${fluidLimitMl} mL / day (Prescribed Limit)`)
+    : hasWeight
+    ? (bn ? `${estimatedMinFluid} - ${estimatedMaxFluid} মিলি / দিন (অনুমান)` : `${estimatedMinFluid} - ${estimatedMaxFluid} mL / day (Advisory Baseline)`)
+    : (bn ? 'স্বাভাবিক তৃষ্ণা অনুযায়ী গ্রহণ (Ad Libitum)' : 'Ad Libitum (Thirst-guided)');
+
   const fluidSubText = hasFluidLimit
-    ? (bn ? '⚠️ নিশ্চিত সীমা অতিক্রম করবেন না' : '⚠️ Strictly capped by clinical prescription')
-    : (bn ? 'পানি + ভেষজ পানীয় + স্যুপ' : 'Water + Functional Drinks');
+    ? (bn ? `⚠️ চিকিৎসকের নির্দেশিত সর্বোচ্চ সীমা অতিক্রম করবেন না${fluidLimitReason ? ` (${fluidLimitReason})` : ''}` : `⚠️ Strictly capped by clinical prescription${fluidLimitReason ? ` (${fluidLimitReason})` : ''}`)
+    : hasWeight
+    ? (bn ? `রোগীর ওজন (${patient.weight_kg} কেজি) ভিত্তিক আনুমানিক চাহিদা; তৃষ্ণা ও আবহাওয়া অনুযায়ী গ্রহণ করুন` : `Advisory estimate for ${patient.weight_kg}kg body weight; adjust for climate and thirst`)
+    : (bn ? 'কোনো বিশেষ তরল সীমাবদ্ধতা বা প্রেসক্রিপশন নির্ধারিত নেই' : 'No individual fluid restriction established');
+
+  const fluidBadgeColor = hasFluidLimit
+    ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+    : hasWeight
+    ? 'border-sky-500/30 bg-sky-500/5 text-sky-700 dark:text-sky-300'
+    : 'border-muted bg-muted/40 text-muted-foreground';
+
+  // Available food categories for Add Food Modal
+  const availableCategories = useMemo(() => {
+    const cats = new Set<string>();
+    allFoods.forEach(f => {
+      if (f.category) cats.add(f.category);
+    });
+    return Array.from(cats).sort();
+  }, [allFoods]);
+
+  // Filtered Food Candidates for Add Food Modal
+  const filteredFoodCandidates = useMemo(() => {
+    return allFoods.filter(f => {
+      const isRed = redIds.has(f.id);
+      if (foodSafetyFilter === 'green' && !greenIds.has(f.id)) return false;
+      if (foodSafetyFilter === 'yellow' && !yellowIds.has(f.id)) return false;
+      if (foodCategoryFilter !== 'all' && f.category !== foodCategoryFilter) return false;
+
+      if (foodSearchQuery.trim()) {
+        const q = foodSearchQuery.toLowerCase().trim();
+        const matchesNameBn = (f.name_bn || '').toLowerCase().includes(q);
+        const matchesNameEn = (f.name_en || '').toLowerCase().includes(q);
+        const matchesCat = (f.category || '').toLowerCase().includes(q);
+        return matchesNameBn || matchesNameEn || matchesCat;
+      }
+
+      if (isRed && !foodSearchQuery.trim()) return false;
+      return true;
+    });
+  }, [allFoods, redIds, greenIds, yellowIds, foodCategoryFilter, foodSafetyFilter, foodSearchQuery]);
+
+  const selectedFoodObj = useMemo(() => {
+    if (!selectedFoodIdToAdd) return null;
+    return allFoods.find(f => f.id === selectedFoodIdToAdd) || null;
+  }, [allFoods, selectedFoodIdToAdd]);
+
+  const selectedFoodTraffic = useMemo(() => {
+    if (!selectedFoodObj) return null;
+    if (redIds.has(selectedFoodObj.id)) return 'RED';
+    if (greenIds.has(selectedFoodObj.id)) return 'GREEN';
+    if (yellowIds.has(selectedFoodObj.id)) return 'YELLOW';
+    return 'NEUTRAL';
+  }, [selectedFoodObj, redIds, greenIds, yellowIds]);
 
   const handleCopyDay = () => {
     if (copySourceDay === copyTargetDay) return;
@@ -599,8 +674,8 @@ export const DietChartTab: React.FC = () => {
             </span>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
-            <span className="text-muted-foreground block text-[10px]">{bn ? 'দৈনিক তরল হিসাব (Hydration):' : 'Hydration Guidance:'}</span>
+          <div className={`p-2.5 rounded-xl border text-xs ${fluidBadgeColor}`} data-testid="hydration-guidance-card">
+            <span className="text-muted-foreground block text-[10px]">{fluidTitle}</span>
             <span className="font-bold text-foreground">{fluidDisplayText}</span>
             <span className="text-[10px] text-muted-foreground block mt-0.5">
               {fluidSubText}
@@ -959,70 +1034,233 @@ export const DietChartTab: React.FC = () => {
 
       {/* ── Add Custom Food Item Modal ─────────────────────────────────────────── */}
       {selectedMealForAdd && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-sm text-foreground">
-                {bn ? 'নিরাপদ খাবারের তালিকা থেকে যোগ করুন' : 'Add Clinically Safe Food'}
-              </h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" data-testid="add-food-modal">
+          <div className="bg-card border rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b pb-3 shrink-0">
+              <div>
+                <h3 className="font-bold text-sm text-foreground">
+                  {bn ? 'ক্লিনিক্যাল খাদ্য নির্বাচন ও সংযোজন' : 'Add Clinically Safe Food'}
+                </h3>
+                <p className="text-[11px] text-muted-foreground">
+                  {bn ? `নির্বাচিত মিল: ${selectedMealForAdd} • দিন: ${activeDayNumber}` : `Target Meal: ${selectedMealForAdd} • Day ${activeDayNumber}`}
+                </p>
+              </div>
               <button 
-                onClick={() => setSelectedMealForAdd(null)}
+                onClick={() => {
+                  setSelectedMealForAdd(null);
+                  setSelectedFoodIdToAdd('');
+                  setFoodSearchQuery('');
+                }}
                 className="text-muted-foreground hover:text-foreground text-sm font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">
-                  {bn ? 'খাবার নির্বাচন করুন (লাল তালিকাভুক্ত খাদ্য স্বয়ংক্রিয়ভাবে বাদ দেওয়া হয়েছে):' : 'Select Safe Food (RED items filtered out):'}
-                </label>
-                <select
-                  value={selectedFoodIdToAdd}
-                  onChange={e => setSelectedFoodIdToAdd(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
-                >
-                  <option value="">{bn ? '-- নিরাপদ খাবার বাছাই করুন --' : '-- Choose Safe Food --'}</option>
-                  {safeAddCandidates.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {bn ? f.name_bn : f.name_en} ({f.per_100g.kcal} kcal, P: {f.per_100g.protein_g}g)
-                    </option>
-                  ))}
-                </select>
+            <div className="space-y-3 overflow-y-auto pr-1 flex-1">
+              {/* Search & Filter Row */}
+              <div className="space-y-2">
+                <div>
+                  <input
+                    type="text"
+                    data-testid="input-food-search"
+                    placeholder={bn ? "খাবারের নাম বা ক্যাটাগরি খুঁজুন (বাংলা / English)..." : "Search food by name or category (Bn/En)..."}
+                    value={foodSearchQuery}
+                    onChange={e => setFoodSearchQuery(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1">
+                    <select
+                      data-testid="select-food-category"
+                      value={foodCategoryFilter}
+                      onChange={e => setFoodCategoryFilter(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      <option value="all">{bn ? '-- সকল ক্যাটাগরি --' : '-- All Categories --'}</option>
+                      {availableCategories.map((cat: string) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex gap-1 shrink-0 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setFoodSafetyFilter('all')}
+                      className={`px-2 py-1 rounded border transition ${foodSafetyFilter === 'all' ? 'bg-primary text-primary-foreground font-semibold' : 'bg-background hover:bg-muted text-muted-foreground'}`}
+                    >
+                      {bn ? 'সকল' : 'All'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFoodSafetyFilter('green')}
+                      className={`px-2 py-1 rounded border transition ${foodSafetyFilter === 'green' ? 'bg-emerald-600 text-white font-semibold' : 'bg-background hover:bg-muted text-emerald-600'}`}
+                    >
+                      🟢 {bn ? 'সুপারিশ' : 'Rec'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFoodSafetyFilter('yellow')}
+                      className={`px-2 py-1 rounded border transition ${foodSafetyFilter === 'yellow' ? 'bg-amber-600 text-white font-semibold' : 'bg-background hover:bg-muted text-amber-600'}`}
+                    >
+                      🟡 {bn ? 'সতর্ক' : 'Caution'}
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">
-                  {bn ? 'কাঁচা ওজন (গ্রাম):' : 'Raw Weight (Grams):'}
-                </label>
-                <input
-                  type="number"
-                  step="5"
-                  min="5"
-                  value={addFoodGrams}
-                  onChange={e => setAddFoodGrams(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
-                />
+              {/* Candidates List */}
+              <div className="border rounded-lg max-h-48 overflow-y-auto divide-y bg-background/50">
+                {filteredFoodCandidates.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-muted-foreground">
+                    {bn ? 'কোনো খাবার পাওয়া যায়নি।' : 'No matching foods found.'}
+                  </div>
+                ) : (
+                  filteredFoodCandidates.map((f: FoodItem) => {
+                    const isRed = redIds.has(f.id);
+                    const isGreen = greenIds.has(f.id);
+                    const isYellow = yellowIds.has(f.id);
+                    const isSelected = selectedFoodIdToAdd === f.id;
+
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setSelectedFoodIdToAdd(f.id)}
+                        className={`w-full text-left p-2 text-xs flex items-center justify-between transition hover:bg-muted/60 ${
+                          isSelected ? 'bg-primary/10 border-l-4 border-l-primary' : ''
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-semibold text-foreground truncate">
+                            {bn ? f.name_bn : f.name_en}
+                            {f.name_en !== f.name_bn && (
+                              <span className="text-[10px] text-muted-foreground font-normal ml-1">
+                                ({bn ? f.name_en : f.name_bn})
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {f.category} • {f.per_100g.kcal} kcal, P: {f.per_100g.protein_g}g, C: {f.per_100g.carbs_g}g, F: {f.per_100g.fat_g}g
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 text-[10px] font-medium">
+                          {isRed ? (
+                            <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 border border-rose-500/30">
+                              🔴 {bn ? 'নিষিদ্ধ' : 'Contraindicated'}
+                            </span>
+                          ) : isGreen ? (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/30">
+                              🟢 {bn ? 'সুপারিশকৃত' : 'Recommended'}
+                            </span>
+                          ) : isYellow ? (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/30">
+                              🟡 {bn ? 'সতর্কতা' : 'Caution'}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground border">
+                              ⚪ {bn ? 'সাধারণ' : 'General'}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
               </div>
+
+              {/* Selected Item Portion & Macro Preview */}
+              {selectedFoodObj && (
+                <div className="p-3 rounded-lg border bg-card space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-semibold text-foreground">
+                      {bn ? selectedFoodObj.name_bn : selectedFoodObj.name_en}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {selectedFoodObj.category}
+                    </span>
+                  </div>
+
+                  {selectedFoodTraffic === 'RED' ? (
+                    <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-medium">
+                      ⛔ {bn 
+                        ? 'ক্লিনিক্যাল সতর্কতা: এই খাদ্যটি রোগীর বর্তমান বায়োমার্কার বা অবস্থার সাথে সরাসরি সাংঘর্ষিক (Contraindicated)। এটি খাদ্য তালিকায় যোগ করা নিষিদ্ধ।'
+                        : 'Clinical Warning: This food is strictly contraindicated for the patient\'s active clinical conditions/biomarkers. Addition is blocked.'}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs font-medium text-muted-foreground shrink-0">
+                          {bn ? 'কাঁচা ওজন (গ্রাম):' : 'Raw Weight (g):'}
+                        </label>
+                        <input
+                          type="number"
+                          data-testid="input-add-food-grams"
+                          step="5"
+                          min="5"
+                          value={addFoodGrams}
+                          onChange={e => setAddFoodGrams(Number(e.target.value))}
+                          className="w-24 px-2 py-1 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-center font-bold"
+                        />
+                      </div>
+
+                      {/* Live calculated macros for portion */}
+                      {addFoodGrams > 0 && (
+                        <div className="text-[11px] grid grid-cols-5 gap-1 text-center bg-muted/40 p-2 rounded-lg">
+                          <div>
+                            <div className="text-muted-foreground text-[9px]">{bn ? 'ক্যালোরি' : 'Kcal'}</div>
+                            <div className="font-semibold">{Math.round(((selectedFoodObj.per_100g.kcal ?? 0) * addFoodGrams) / 100)}</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-[9px]">{bn ? 'প্রোটিন' : 'Protein'}</div>
+                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.protein_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-[9px]">{bn ? 'কার্ব' : 'Carbs'}</div>
+                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.carbs_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-[9px]">{bn ? 'ফ্যাট' : 'Fat'}</div>
+                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.fat_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                          </div>
+                          <div>
+                            <div className="text-muted-foreground text-[9px]">{bn ? 'ফাইবার' : 'Fiber'}</div>
+                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.fiber_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t">
+            <div className="flex justify-end gap-2 pt-2 border-t shrink-0">
               <button
                 type="button"
-                onClick={() => setSelectedMealForAdd(null)}
+                onClick={() => {
+                  setSelectedMealForAdd(null);
+                  setSelectedFoodIdToAdd('');
+                  setFoodSearchQuery('');
+                }}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-secondary transition"
               >
                 {bn ? 'বাতিল' : 'Cancel'}
               </button>
               <button
                 type="button"
-                disabled={!selectedFoodIdToAdd}
+                data-testid="btn-submit-add-food"
+                disabled={!selectedFoodIdToAdd || selectedFoodTraffic === 'RED' || addFoodGrams <= 0 || isNaN(addFoodGrams)}
                 onClick={() => {
-                  if (selectedFoodIdToAdd) {
+                  if (selectedFoodIdToAdd && selectedFoodTraffic !== 'RED' && addFoodGrams > 0) {
                     addDayMealItem(activeDayNumber, selectedMealForAdd, selectedFoodIdToAdd, addFoodGrams);
                     setSelectedMealForAdd(null);
                     setSelectedFoodIdToAdd('');
+                    setFoodSearchQuery('');
                   }
                 }}
                 className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition"

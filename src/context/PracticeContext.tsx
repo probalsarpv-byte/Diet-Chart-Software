@@ -52,7 +52,8 @@ import {
   copyDayInWeeklyPlan, 
   calculateMealTotals,
   invalidateWeeklyPlanApproval,
-  evaluateWeeklyPlanClinicalSafety
+  evaluateWeeklyPlanClinicalSafety,
+  recalculateDayPlan
 } from '@/engine/weeklyPlanner';
 import { advanceToNextPhase, recordFollowUpVisit, TransitionOptions } from '@/engine/phaseProgression';
 import { runP2Analysis } from '@/engine/p2';
@@ -1268,41 +1269,15 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [patient, trafficLight, weeklyDietPlan, persistWeeklyPlan]);
 
-  const recalculateDayPlanSummary = useCallback((day: DayPlan, patientProfile: PatientProfile): DayPlan => {
-    const total_calories = day.meals.reduce((sum, m) => sum + m.meal_calories, 0);
-    const total_protein_g = Math.round(day.meals.reduce((sum, m) => sum + m.meal_protein_g, 0) * 10) / 10;
-    const total_carbs_g = Math.round(day.meals.reduce((sum, m) => sum + m.meal_carbs_g, 0) * 10) / 10;
-    const total_fat_g = Math.round(day.meals.reduce((sum, m) => sum + m.meal_fat_g, 0) * 10) / 10;
-
-    const target_calories = patientProfile.calculated.target_calories || 0;
-    const target_protein_g = patientProfile.calculated.target_protein_g || 0;
-    const target_carbs_g = patientProfile.calculated.target_carbs_g || 0;
-    const target_fat_g = patientProfile.calculated.target_fat_g || 0;
-
-    const calorie_variance_pct = target_calories > 0 
-      ? Math.round(((total_calories - target_calories) / target_calories) * 1000) / 10 
-      : 0;
-
-    const summary: DayPlanSummary = {
-      calories: total_calories,
-      protein_g: total_protein_g,
-      carbs_g: total_carbs_g,
-      fat_g: total_fat_g,
-      fiber_g: Math.round(day.meals.reduce((sum, m) => sum + m.items.reduce((isum, item) => isum + item.fiber_g, 0), 0) * 10) / 10,
-      gl: Math.round(day.meals.reduce((sum, m) => sum + m.meal_gl, 0)),
-      gl_is_estimated: true,
-      pral: Math.round(day.meals.reduce((sum, m) => sum + m.meal_pral, 0) * 10) / 10,
-      calorie_variance: total_calories - target_calories,
-      protein_variance: Math.round((total_protein_g - target_protein_g) * 10) / 10,
-      carbs_variance: Math.round((total_carbs_g - target_carbs_g) * 10) / 10,
-      fat_variance: Math.round((total_fat_g - target_fat_g) * 10) / 10
+  const recalculateDayPlanSummary = useCallback((day: DayPlan, patientProfile: PatientProfile, targetMacros?: { calories: number; protein_g: number; carbs_g: number; fat_g: number }): DayPlan => {
+    const macros = targetMacros || weeklyDietPlan?.target_macros || {
+      calories: patientProfile.calculated.target_calories || 0,
+      protein_g: patientProfile.calculated.target_protein_g || 0,
+      carbs_g: patientProfile.calculated.target_carbs_g || 0,
+      fat_g: patientProfile.calculated.target_fat_g || 0
     };
-
-    return {
-      ...day,
-      summary
-    };
-  }, []);
+    return recalculateDayPlan(day, macros, patientProfile, allFoods, p2AnalysisResult?.p3PlanningContext);
+  }, [weeklyDietPlan?.target_macros, allFoods, p2AnalysisResult?.p3PlanningContext]);
 
   const generateWeeklyPlan = useCallback((forceRegenerate: boolean = false): WeeklyDietPlan | null => {
     if (!patient?.id) return null;
@@ -1319,7 +1294,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       trafficLight,
       p2AnalysisResult?.p3PlanningContext,
       forceRegenerate ? (weeklyDietPlan || null) : null,
-      { preserveLocks: forceRegenerate }
+      { preserveLocks: true, forceRegenerate }
     );
 
     setWeeklyDietPlan(plan);
@@ -1350,8 +1325,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [weeklyDietPlan, patient, p2AnalysisResult?.p3PlanningContext, trafficLight, allFoods, persistWeeklyPlan]);
 
   const updateDayMealItemRawGrams = useCallback((dayNumber: number, mealId: string, itemId: string, rawGrams: number) => {
+    if (typeof rawGrams !== 'number' || isNaN(rawGrams) || rawGrams <= 0) return;
+
     setWeeklyDietPlan(prev => {
       if (!prev) return prev;
+      const greenIds = new Set(trafficLight.green.map(g => g.id));
+      const redIds = new Set(trafficLight.red.map(r => r.id));
+      const yellowIds = new Set(trafficLight.yellow.map(y => y.id));
+
       const updatedDays = prev.days.map(day => {
         if (day.day_number !== dayNumber) return day;
         const updatedMeals = day.meals.map(meal => {
@@ -1380,18 +1361,19 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               protein_g: Math.round((per100.protein_g ?? 0) * mult * 10) / 10,
               carbs_g: Math.round((per100.carbs_g ?? 0) * mult * 10) / 10,
               fat_g: Math.round((per100.fat_g ?? 0) * mult * 10) / 10,
-              fiber_g: Math.round((per100.fiber_g ?? 0) * mult * 10) / 10
+              fiber_g: Math.round((per100.fiber_g ?? 0) * mult * 10) / 10,
+              alternatives: food ? generateExchangesForFood(food, rawGrams, allFoods, greenIds, redIds, yellowIds) : item.alternatives
             };
           });
 
           return {
             ...meal,
             items: updatedItems,
-            ...calculateMealTotals(updatedItems)
+            ...calculateMealTotals(updatedItems, allFoods)
           };
         });
 
-        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient);
+        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, prev.target_macros);
       });
 
       const updatedPlan: WeeklyDietPlan = {
@@ -1399,6 +1381,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         days: updatedDays,
         updated_at: new Date().toISOString()
       };
+
+      const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updatedPlan, allFoods, p2AnalysisResult?.p3PlanningContext);
+      updatedPlan.overall_safety_status = safetyEval.overall_decision;
+      updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
 
       const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food quantity modified');
       if (dayNumber === 1 && updatedDays[0]) {
@@ -1413,7 +1399,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       is_diet_plan_dirty: true,
       manual_edits_preserved: true
     }));
-  }, [foodMap, patient, recalculateDayPlanSummary, persistWeeklyPlan]);
+  }, [foodMap, patient, trafficLight, allFoods, recalculateDayPlanSummary, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
   const swapDayMealItemAlternative = useCallback((dayNumber: number, mealId: string, itemId: string, alt: FoodExchangeItem) => {
     const food = foodMap.get(alt.food_id);
@@ -1464,11 +1450,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return {
             ...meal,
             items: updatedItems,
-            ...calculateMealTotals(updatedItems)
+            ...calculateMealTotals(updatedItems, allFoods)
           };
         });
 
-        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient);
+        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, prev.target_macros);
       });
 
       const updatedPlan: WeeklyDietPlan = {
@@ -1476,6 +1462,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         days: updatedDays,
         updated_at: new Date().toISOString()
       };
+
+      const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updatedPlan, allFoods, p2AnalysisResult?.p3PlanningContext);
+      updatedPlan.overall_safety_status = safetyEval.overall_decision;
+      updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
 
       const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item swapped with alternative');
       if (dayNumber === 1 && updatedDays[0]) {
@@ -1490,7 +1480,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       is_diet_plan_dirty: true,
       manual_edits_preserved: true
     }));
-  }, [foodMap, allFoods, trafficLight, patient, recalculateDayPlanSummary, persistWeeklyPlan]);
+  }, [foodMap, allFoods, trafficLight, patient, recalculateDayPlanSummary, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
   const removeDayMealItem = useCallback((dayNumber: number, mealId: string, itemId: string) => {
     setWeeklyDietPlan(prev => {
@@ -1503,11 +1493,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return {
             ...meal,
             items: updatedItems,
-            ...calculateMealTotals(updatedItems)
+            ...calculateMealTotals(updatedItems, allFoods)
           };
         });
 
-        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient);
+        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, prev.target_macros);
       });
 
       const updatedPlan: WeeklyDietPlan = {
@@ -1515,6 +1505,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         days: updatedDays,
         updated_at: new Date().toISOString()
       };
+
+      const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updatedPlan, allFoods, p2AnalysisResult?.p3PlanningContext);
+      updatedPlan.overall_safety_status = safetyEval.overall_decision;
+      updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
 
       const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item removed');
       if (dayNumber === 1 && updatedDays[0]) {
@@ -1529,9 +1523,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       is_diet_plan_dirty: true,
       manual_edits_preserved: true
     }));
-  }, [patient, recalculateDayPlanSummary, persistWeeklyPlan]);
+  }, [allFoods, patient, recalculateDayPlanSummary, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
   const addDayMealItem = useCallback((dayNumber: number, mealId: string, foodId: string, rawGrams: number = 100) => {
+    if (typeof rawGrams !== 'number' || isNaN(rawGrams) || rawGrams <= 0) return;
+
     const food = foodMap.get(foodId);
     if (!food) return;
 
@@ -1586,11 +1582,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return {
             ...meal,
             items: updatedItems,
-            ...calculateMealTotals(updatedItems)
+            ...calculateMealTotals(updatedItems, allFoods)
           };
         });
 
-        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient);
+        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, prev.target_macros);
       });
 
       const updatedPlan: WeeklyDietPlan = {
@@ -1598,6 +1594,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         days: updatedDays,
         updated_at: new Date().toISOString()
       };
+
+      const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updatedPlan, allFoods, p2AnalysisResult?.p3PlanningContext);
+      updatedPlan.overall_safety_status = safetyEval.overall_decision;
+      updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
 
       const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item added');
       if (dayNumber === 1 && updatedDays[0]) {
@@ -1612,7 +1612,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       is_diet_plan_dirty: true,
       manual_edits_preserved: true
     }));
-  }, [foodMap, trafficLight, language, allFoods, patient, recalculateDayPlanSummary, persistWeeklyPlan]);
+  }, [foodMap, trafficLight, language, allFoods, patient, recalculateDayPlanSummary, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
   const toggleDayLock = useCallback((dayNumber: number) => {
     setWeeklyDietPlan(prev => {

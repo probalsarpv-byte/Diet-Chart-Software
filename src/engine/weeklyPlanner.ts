@@ -32,6 +32,10 @@ import {
 } from './mealScaler';
 import { P3NutritionPlanningContext } from './p2/types';
 import { validateInterventionPlan } from '../clinical-safety/interventionValidation';
+import { evaluateFastingEligibility } from '../clinical-safety/fastingSafetyEngine';
+import foodsData from '../data/foods.json';
+
+const defaultFoods = foodsData as FoodItem[];
 
 export const DAY_NAMES: { bn: string; en: string }[] = [
   { bn: '১ম দিন (শনিবার / শুরু)', en: 'Day 1 (Saturday / Kickoff)' },
@@ -163,17 +167,19 @@ export function calculateMealTotals(
   const meal_carbs_g = Math.round(items.reduce((sum, i) => sum + i.carbs_g, 0) * 10) / 10;
   const meal_fat_g = Math.round(items.reduce((sum, i) => sum + i.fat_g, 0) * 10) / 10;
 
+  const resolvedFoods = (allFoods && allFoods.length > 0) ? allFoods : defaultFoods;
+
   // Approximate Glycemic Load (GL) with is_estimated flag
-  const meal_gl = allFoods ? Math.round(items.reduce((sum, i) => {
-    const food = allFoods.find(f => f.id === i.food_id);
+  const meal_gl = Math.round(items.reduce((sum, i) => {
+    const food = resolvedFoods.find(f => f.id === i.food_id);
     const estGi = food?.glycemic_load === 'low' ? 35 : food?.glycemic_load === 'medium' ? 55 : 75;
     return sum + ((i.carbs_g * estGi) / 100);
-  }, 0)) : 0;
+  }, 0));
 
-  const meal_pral = allFoods ? Math.round(items.reduce((sum, i) => {
-    const food = allFoods.find(f => f.id === i.food_id);
+  const meal_pral = Math.round(items.reduce((sum, i) => {
+    const food = resolvedFoods.find(f => f.id === i.food_id);
     return sum + ((food?.pral_score || 0) * (i.raw_weight_g / 100));
-  }, 0) * 10) / 10 : 0;
+  }, 0) * 10) / 10;
 
   return {
     meal_calories,
@@ -563,6 +569,53 @@ export function generateMealsForDay(
     }
   );
 
+  // Evaluate Fasting Eligibility
+  const fastingCheck = evaluateFastingEligibility(patient);
+  const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
+
+  // Determine Meal Structure
+  let structure: '3_meals' | '3_meals_1_snack' | '5_meals_traditional' | 'intermittent_fasting_16_8' = '5_meals_traditional';
+
+  if (existingDayMeals && existingDayMeals.length > 0) {
+    const hasMorning = existingDayMeals.some(m => m.meal_type === 'morning_protocol');
+    const hasBreakfast = existingDayMeals.some(m => m.meal_type === 'breakfast');
+    const hasSnack = existingDayMeals.some(m => m.meal_type === 'evening_snack' || m.meal_type === 'mid_morning');
+    if (!hasBreakfast && existingDayMeals.some(m => m.meal_type === 'lunch')) {
+      structure = 'intermittent_fasting_16_8';
+    } else if (hasMorning) {
+      structure = '5_meals_traditional';
+    } else if (hasSnack) {
+      structure = '3_meals_1_snack';
+    } else {
+      structure = '3_meals';
+    }
+  } else {
+    const pref = patient.dietary_preferences?.meal_structure;
+    if (pref === 'intermittent_fasting_16_8') {
+      if (isFastingContraindicated) {
+        structure = '3_meals_1_snack'; // Override to safe regular schedule
+      } else {
+        structure = 'intermittent_fasting_16_8';
+      }
+    } else if (pref === '3_meals') {
+      structure = '3_meals';
+    } else if (pref === '3_meals_1_snack') {
+      structure = '3_meals_1_snack';
+    } else if (patient.dietary_preferences?.include_morning_protocol === false) {
+      structure = '3_meals_1_snack';
+    } else {
+      structure = '5_meals_traditional';
+    }
+  }
+
+  if (structure === 'intermittent_fasting_16_8') {
+    return [lunchMeal, eveningMeal, dinnerMeal];
+  } else if (structure === '3_meals') {
+    return [breakfastMeal, lunchMeal, dinnerMeal];
+  } else if (structure === '3_meals_1_snack') {
+    return [breakfastMeal, lunchMeal, eveningMeal, dinnerMeal];
+  }
+
   return [morningMeal, breakfastMeal, lunchMeal, eveningMeal, dinnerMeal];
 }
 
@@ -699,6 +752,13 @@ export function buildDayPlan(
     safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
   }
 
+  const fastingCheck = evaluateFastingEligibility(patient);
+  const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
+  if (patient.dietary_preferences?.meal_structure === 'intermittent_fasting_16_8' && isFastingContraindicated) {
+    safetyNotes.push('Intermittent fasting is clinically contraindicated for this patient. Enforced safe regular non-fasting meal schedule.');
+    safetyNotesBn.push('রোগীর শারীরিক অবস্থা বা ঔষধের কারণে উপবাস ঝুঁকিপূর্ণ হওয়ায় নিরাপদ নিয়মিত খাবারের সময়সূচি নির্ধারণ করা হয়েছে।');
+  }
+
   return {
     day_number: dayNumber,
     day_name_bn: dayName.bn,
@@ -709,6 +769,83 @@ export function buildDayPlan(
     locked_meals: lockedMeals,
     summary,
     slot_errors: slotErrors.length > 0 ? slotErrors : undefined,
+    safety_decision: safetyDecision,
+    safety_notes: safetyNotes.length > 0 ? safetyNotes : undefined,
+    safety_notes_bn: safetyNotesBn.length > 0 ? safetyNotesBn : undefined
+  };
+}
+
+/**
+ * Recalculates nutritional totals, variances against authoritative targets, and clinical safety for an edited DayPlan.
+ */
+export function recalculateDayPlan(
+  day: DayPlan,
+  targetMacros: { calories: number; protein_g: number; carbs_g: number; fat_g: number },
+  patient: PatientProfile,
+  allFoods: FoodItem[],
+  p3Context?: P3NutritionPlanningContext | null
+): DayPlan {
+  const totalCalories = day.meals.reduce((sum, m) => sum + m.meal_calories, 0);
+  const totalProtein = Math.round(day.meals.reduce((sum, m) => sum + m.meal_protein_g, 0) * 10) / 10;
+  const totalCarbs = Math.round(day.meals.reduce((sum, m) => sum + m.meal_carbs_g, 0) * 10) / 10;
+  const totalFat = Math.round(day.meals.reduce((sum, m) => sum + m.meal_fat_g, 0) * 10) / 10;
+  const totalFiber = Math.round(day.meals.reduce((sum, m) => sum + m.items.reduce((iSum, i) => iSum + (i.fiber_g || 0), 0), 0) * 10) / 10;
+  const totalGl = Math.round(day.meals.reduce((sum, m) => sum + m.meal_gl, 0));
+  const totalPral = Math.round(day.meals.reduce((sum, m) => sum + m.meal_pral, 0) * 10) / 10;
+
+  const summary: DayPlanSummary = {
+    calories: totalCalories,
+    protein_g: totalProtein,
+    carbs_g: totalCarbs,
+    fat_g: totalFat,
+    fiber_g: totalFiber,
+    gl: totalGl,
+    gl_is_estimated: true,
+    pral: totalPral,
+    calorie_variance: totalCalories - targetMacros.calories,
+    protein_variance: Math.round((totalProtein - targetMacros.protein_g) * 10) / 10,
+    carbs_variance: Math.round((totalCarbs - targetMacros.carbs_g) * 10) / 10,
+    fat_variance: Math.round((totalFat - targetMacros.fat_g) * 10) / 10
+  };
+
+  const safetyEval = validateInterventionPlan(patient, day.meals, allFoods);
+  const slotErrors = day.meals.flatMap(m => m.slot_errors || []);
+
+  const safetyNotes: string[] = [];
+  const safetyNotesBn: string[] = [];
+
+  for (const stop of safetyEval.hardStops) {
+    safetyNotes.push(stop.title_en + ': ' + stop.clinical_explanation_en);
+    safetyNotesBn.push(stop.title_bn + ': ' + stop.clinical_explanation_bn);
+  }
+  for (const warn of safetyEval.clinicalReviewsRequired) {
+    safetyNotes.push(warn.title_en + ': ' + warn.clinical_explanation_en);
+    safetyNotesBn.push(warn.title_bn + ': ' + warn.clinical_explanation_bn);
+  }
+
+  const isFeedingRouteContraindicated = 
+    p3Context?.feedingRoute?.oral_intake_permitted === false ||
+    patient.feeding_status?.oral_intake_permitted === false;
+
+  if (isFeedingRouteContraindicated) {
+    safetyNotes.unshift('Non-oral feeding route / NPO status prohibits standard solid food weekly diet plan.');
+    safetyNotesBn.unshift('নন-ওরাল ফিডিং রুট / এনপিও স্ট্যাটাসের কারণে স্বাভাবিক কঠিন খাবারের পরিকল্পনা নিষিদ্ধ।');
+  }
+
+  let safetyDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = 'SAFE';
+  if (isFeedingRouteContraindicated || safetyEval.overallDecision === 'HARD_STOP') {
+    safetyDecision = 'HARD_STOP';
+  } else if (safetyEval.overallDecision === 'CLINICAL_REVIEW_REQUIRED' || safetyEval.overallDecision === 'ADVISORY') {
+    safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
+  }
+
+  if (slotErrors.length > 0 && safetyDecision === 'SAFE') {
+    safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
+  }
+
+  return {
+    ...day,
+    summary,
     safety_decision: safetyDecision,
     safety_notes: safetyNotes.length > 0 ? safetyNotes : undefined,
     safety_notes_bn: safetyNotesBn.length > 0 ? safetyNotesBn : undefined
@@ -814,17 +951,17 @@ export function generateWeeklyDietPlan(
     plan_id: planId,
     patient_id: patient.id,
     visit_id: visitId,
-    version: existingPlan ? existingPlan.version + 1 : 1,
+    version: existingPlan ? existingPlan.version : 1,
     schema_version: 2,
     created_at: existingPlan?.created_at || timestamp,
     updated_at: timestamp,
-    status: existingPlan?.status === 'approved' && !options?.forceRegenerate ? 'approved' : 'draft',
-    is_approved: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.is_approved : false,
-    approved_by: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approved_by : undefined,
-    approval_date: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approval_date : undefined,
-    approved_at: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approved_at : undefined,
-    approval_notes: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approval_notes : undefined,
-    approval_metadata: existingPlan?.status === 'approved' && !options?.forceRegenerate ? existingPlan.approval_metadata : undefined,
+    status: existingPlan?.status || 'draft',
+    is_approved: existingPlan?.is_approved || false,
+    approved_by: existingPlan?.approved_by,
+    approval_date: existingPlan?.approval_date,
+    approved_at: existingPlan?.approved_at,
+    approval_notes: existingPlan?.approval_notes,
+    approval_metadata: existingPlan?.approval_metadata,
     previous_approval: existingPlan?.previous_approval,
     historical_approvals: existingPlan?.historical_approvals,
     target_macros: targetMacros,
@@ -836,6 +973,15 @@ export function generateWeeklyDietPlan(
 
   if (existingPlan && (existingPlan.status === 'approved' || existingPlan.is_approved) && options?.forceRegenerate) {
     return invalidateWeeklyPlanApproval(rawPlan, 'Regenerated full 7-day plan');
+  }
+
+  if (existingPlan && options?.forceRegenerate) {
+    return {
+      ...rawPlan,
+      status: existingPlan.status === 'requires_review' ? 'requires_review' : 'draft',
+      version: existingPlan.version + 1,
+      is_approved: false
+    };
   }
 
   return rawPlan;

@@ -399,6 +399,7 @@ export interface PatientProfile {
     avoid_mutton?: boolean;
     preferred_oil?: 'mustard_oil' | 'desi_ghee' | 'coconut_oil';
     meal_structure?: '3_meals' | '3_meals_1_snack' | 'intermittent_fasting_16_8';
+    include_morning_protocol?: boolean;
   };
   custom_clinical_notes?: string;
   is_diet_plan_dirty?: boolean;

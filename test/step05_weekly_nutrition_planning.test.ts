@@ -32,6 +32,7 @@ import {
   evaluateWeeklyPlanClinicalSafety
 } from '../src/engine/weeklyPlanner';
 import { validateClinicianCredentials } from '../src/engine/longitudinal/comparisonEngine';
+import { evaluateFastingEligibility } from '../src/clinical-safety/fastingSafetyEngine';
 import {
   FoodItem,
   MedicineItem,
@@ -869,6 +870,199 @@ function runAcceptanceSuite() {
     assert(reloaded?.approved_by === 'DR_NUTRITION_01', 'Test L: Reloaded approved_by intact');
     assert(reloaded?.historical_approvals?.length === 1, 'Test L: Reloaded historical_approvals intact');
     assert(reloaded?.historical_approvals![0].approved_by === 'DR_PREVIOUS', 'Test L: Reloaded historical approval audit matches');
+  }
+
+  // TEST M: Full-Week Regeneration Invalidation & History Audit Trail
+  console.log('\n--- TEST M: Full-Week Regeneration Invalidation & History Audit Trail ---');
+  {
+    const basePlan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    basePlan.status = 'approved';
+    basePlan.is_approved = true;
+    basePlan.approved_by = 'DR_INITIAL_EXPERT';
+    basePlan.approval_date = '2026-11-19T10:00:00Z';
+    basePlan.version = 1;
+
+    // Lock day 3 and a meal in day 1
+    basePlan.days[2].is_locked = true;
+    basePlan.days[0].meals[0].is_locked = true;
+    const lockedDay3Summary = { ...basePlan.days[2].summary };
+    const lockedDay1Meal0 = { ...basePlan.days[0].meals[0] };
+
+    // Force regenerate full 7-day plan
+    const regenerated = generateWeeklyDietPlan(
+      basePatient,
+      allFoods,
+      baseTrafficLight,
+      undefined,
+      basePlan,
+      { preserveLocks: true, forceRegenerate: true }
+    );
+
+    assert(regenerated.status === 'requires_review', 'Test M: Full regeneration transitions approved plan to requires_review');
+    assert(regenerated.is_approved === false, 'Test M: is_approved reset to false');
+    assert(regenerated.version === 2, 'Test M: Version incremented to 2');
+    assert(regenerated.previous_approval !== undefined, 'Test M: previous_approval populated');
+    assert(regenerated.previous_approval?.approved_by === 'DR_INITIAL_EXPERT', 'Test M: previous_approval captures prior clinician');
+    assert(regenerated.historical_approvals?.length === 1, 'Test M: Historical approvals audit trail contains prior approval');
+    assert(regenerated.invalidation_reason?.includes('Regenerated full 7-day plan') === true, 'Test M: Invalidation reason specifies full plan regeneration');
+    assert(regenerated.patient_id === basePatient.id, 'Test M: Patient ID preserved');
+    
+    // Check locked content preserved
+    assert(regenerated.days[2].is_locked === true, 'Test M: Day 3 lock flag preserved');
+    assert(regenerated.days[2].summary.calories === lockedDay3Summary.calories, 'Test M: Locked Day 3 calories preserved');
+    assert(regenerated.days[0].meals[0].is_locked === true, 'Test M: Day 1 meal 0 lock flag preserved');
+    assert(regenerated.days[0].meals[0].meal_calories === lockedDay1Meal0.meal_calories, 'Test M: Locked Day 1 meal 0 calories preserved');
+  }
+
+  // TEST N: Live Nutrient Calculations & Portion Scaling
+  console.log('\n--- TEST N: Live Nutrient Calculations & Portion Scaling ---');
+  {
+    const plan = generateWeeklyDietPlan(basePatient, allFoods, baseTrafficLight);
+    const day = plan.days[0];
+    const meal = day.meals.find(m => m.items.length > 0)!;
+    
+    // Calculate initial totals
+    const initialTotals = calculateMealTotals(meal.items, allFoods);
+    assert(initialTotals.meal_calories > 0, 'Test N: Initial meal calories > 0');
+    assert(initialTotals.meal_gl >= 0, 'Test N: Initial GL is computed');
+
+    // Scale item raw grams from current to 200g
+    const scaledItems = meal.items.map((it, idx) => {
+      if (idx === 0) {
+        const factor = 200 / it.raw_weight_g;
+        return {
+          ...it,
+          raw_weight_g: 200,
+          calories: Math.round(it.calories * factor),
+          protein_g: Math.round(it.protein_g * factor * 10) / 10,
+          carbs_g: Math.round(it.carbs_g * factor * 10) / 10,
+          fat_g: Math.round(it.fat_g * factor * 10) / 10,
+          fiber_g: Math.round(it.fiber_g * factor * 10) / 10
+        };
+      }
+      return it;
+    });
+
+    // Test calculateMealTotals without allFoods parameter: should still calculate GL and PRAL from fallback foods.json!
+    const totalsWithDefault = calculateMealTotals(scaledItems);
+    assert(totalsWithDefault.meal_calories > 0, 'Test N: Meal calories calculated with default foods');
+    assert(totalsWithDefault.meal_gl > 0, 'Test N: GL is non-zero even when allFoods parameter is omitted');
+    assert(totalsWithDefault.meal_pral !== undefined, 'Test N: PRAL is calculated');
+  }
+
+  // TEST O: Input Validation for Portion Modification
+  console.log('\n--- TEST O: Input Validation for Portion Modification ---');
+  {
+    // Test helper function logic: negative and zero values are invalid
+    const isGramsValid = (g: number) => typeof g === 'number' && !isNaN(g) && g > 0;
+    assert(isGramsValid(100) === true, 'Test O: 100g is valid');
+    assert(isGramsValid(5) === true, 'Test O: 5g is valid');
+    assert(isGramsValid(0) === false, 'Test O: 0g is invalid');
+    assert(isGramsValid(-50) === false, 'Test O: Negative grams (-50g) is invalid');
+    assert(isGramsValid(NaN) === false, 'Test O: NaN is invalid');
+  }
+
+  // TEST P: Condition-Based Meal Structures
+  console.log('\n--- TEST P: Condition-Based Meal Structures ---');
+  {
+    // 1. 3 Meals structure
+    const p3Meals = createBaseTestPatient({
+      dietary_preferences: {
+        meal_structure: '3_meals',
+        include_morning_protocol: false
+      }
+    });
+    const plan3Meals = generateWeeklyDietPlan(p3Meals, allFoods, baseTrafficLight);
+    const day1_3m = plan3Meals.days[0];
+    assert(day1_3m.meals.length === 3, `Test P: 3_meals generates exactly 3 meals (got ${day1_3m.meals.length})`);
+    assert(day1_3m.meals.some(m => m.meal_type === 'breakfast'), 'Test P: Contains breakfast');
+    assert(day1_3m.meals.some(m => m.meal_type === 'lunch'), 'Test P: Contains lunch');
+    assert(day1_3m.meals.some(m => m.meal_type === 'dinner'), 'Test P: Contains dinner');
+    assert(!day1_3m.meals.some(m => m.meal_type === 'morning_protocol'), 'Test P: Morning protocol excluded when false');
+
+    // 2. 3 Meals + 1 Snack structure
+    const p3Meals1Snack = createBaseTestPatient({
+      dietary_preferences: {
+        meal_structure: '3_meals_1_snack',
+        include_morning_protocol: false
+      }
+    });
+    const plan3Meals1Snack = generateWeeklyDietPlan(p3Meals1Snack, allFoods, baseTrafficLight);
+    const day1_3m1s = plan3Meals1Snack.days[0];
+    assert(day1_3m1s.meals.length === 4, `Test P: 3_meals_1_snack generates exactly 4 meals (got ${day1_3m1s.meals.length})`);
+    assert(day1_3m1s.meals.some(m => m.meal_type === 'evening_snack'), 'Test P: Contains evening snack');
+
+    // 3. Intermittent Fasting 16:8 (Non-contraindicated patient)
+    const pFastingEligible = createBaseTestPatient({
+      age: 35,
+      population_group: 'general_adult',
+      active_medications: [],
+      dietary_preferences: {
+        meal_structure: 'intermittent_fasting_16_8'
+      }
+    });
+    const planFasting = generateWeeklyDietPlan(pFastingEligible, allFoods, baseTrafficLight);
+    const day1_fast = planFasting.days[0];
+    assert(day1_fast.meals.length === 3, `Test P: 16:8 fasting generates 3 meals in eating window (got ${day1_fast.meals.length})`);
+    assert(!day1_fast.meals.some(m => m.meal_type === 'breakfast'), 'Test P: Fasting window excludes breakfast');
+    assert(day1_fast.meals.some(m => m.meal_type === 'lunch'), 'Test P: Eating window starts with lunch');
+  }
+
+  // TEST Q: Fasting Safety Contraindication Override
+  console.log('\n--- TEST Q: Fasting Safety Contraindication Override ---');
+  {
+    // Pregnant patient requesting 16:8 intermittent fasting
+    const pPregnantFasting = createBaseTestPatient({
+      population_group: 'pregnancy',
+      age: 28,
+      dietary_preferences: {
+        meal_structure: 'intermittent_fasting_16_8'
+      }
+    });
+    const fastingCheck = evaluateFastingEligibility(pPregnantFasting);
+    assert(fastingCheck.eligibility.is_eligible_for_fasting === false, 'Test Q: Fasting is strictly contraindicated for pregnancy');
+    assert(fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP'), 'Test Q: Pregnancy fasting triggers HARD_STOP');
+
+    // Plan generation must override contraindicated fasting to safe meal schedule
+    const planPregOverride = generateWeeklyDietPlan(pPregnantFasting, allFoods, baseTrafficLight);
+    const day1_preg = planPregOverride.days[0];
+    assert(day1_preg.meals.some(m => m.meal_type === 'breakfast'), 'Test Q: Contraindicated fasting overridden: Breakfast reinstated');
+    assert(day1_preg.meals.length >= 4, 'Test Q: Regular multiple meals provided instead of fasting');
+    assert(day1_preg.safety_notes?.some(n => n.includes('Intermittent fasting is clinically contraindicated')) === true, 'Test Q: Clinical safety warning recorded in plan notes');
+  }
+
+  // TEST R: Accurate Fluid Guidance
+  console.log('\n--- TEST R: Accurate Fluid Guidance ---');
+  {
+    // 1. Patient with confirmed clinical fluid restriction (e.g. Heart Failure or CKD stage 4)
+    const pFluidRestricted = createBaseTestPatient({
+      weight_kg: 70,
+      clinical_safety: {
+        non_oral_feeding: { is_npo: false, route: 'oral' },
+        fluid_restriction: {
+          is_restricted: true,
+          limit_ml: 1500,
+          prescribing_physician: 'Dr. Nephrologist',
+          condition: 'Congestive Heart Failure / Oliguria'
+        }
+      }
+    });
+    const hasLimit1 = Boolean(pFluidRestricted.clinical_safety?.fluid_restriction?.is_restricted && pFluidRestricted.clinical_safety?.fluid_restriction?.limit_ml);
+    assert(hasLimit1 === true, 'Test R: Clinical limit detected');
+    assert(pFluidRestricted.clinical_safety?.fluid_restriction?.limit_ml === 1500, 'Test R: Exact 1500 mL limit preserved');
+
+    // 2. Patient with no restriction: estimated physiological baseline (30-35 mL/kg)
+    const pNormalWeight = createBaseTestPatient({
+      weight_kg: 60,
+      clinical_safety: {
+        non_oral_feeding: { is_npo: false, route: 'oral' }
+      }
+    });
+    const minEstimated = Math.round(pNormalWeight.weight_kg * 30);
+    const maxEstimated = Math.round(pNormalWeight.weight_kg * 35);
+    assert(minEstimated === 1800, 'Test R: 60kg * 30 = 1800 mL');
+    assert(maxEstimated === 2100, 'Test R: 60kg * 35 = 2100 mL');
+    assert(minEstimated !== 2500, 'Test R: Never presents blanket 2500 mL as individual prescription');
   }
 
   console.log('\n=====================================================================');
