@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-11-19T20:38:42.659364",
+  "qa_suite_version": "1.0.0",
+  "tested_plan_id": "plan_qa_test_001",
+  "total_food_database_items": 381,
+  "total_gates_evaluated": 12,
+  "gates_passed": 12,
+  "gates_failed": 0,
+  "status": "APPROVED_REFERENTIAL_INTEGRITY",
+  "gate_results": {
+    "gate_12_schema_validation": "PASS",
+    "gate_01_food_id_resolution": "PASS",
+    "gate_02_no_duplicate_items_in_meal": "PASS",
+    "gate_03_physiological_ranges": "PASS",
+    "gate_04_atwater_macro_energy_bounds": "PASS",
+    "gate_05_meal_totals_sum_of_items": "PASS",
+    "gate_06_day_totals_sum_of_meals": "PASS",
+    "gate_08_time_window_arithmetic": "PASS",
+    "gate_09_eating_window_duration": "PASS",
+    "gate_10_fasting_duration_balance": "PASS",
+    "gate_07_weekly_averages_exact_quotient": "PASS (1395 kcal, 84.2g protein)",
+    "gate_11_invalidation_audit_log_chronological": "PASS"
+  },
+  "negative_tests_passed": [
+    "unresolved_food_id_rejection",
+    "duplicate_meal_item_rejection",
+    "calorie_sum_mismatch_rejection"
+  ]
+}

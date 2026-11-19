@@ -568,11 +568,17 @@ export interface FastingScheduleInfo {
   proposed_fasting_hours: number;
   actual_fasting_hours: number;
   planned_fasting_hours?: number;
+  scheduled_intake_window_hours?: number; // e.g. 7.0 hours from 12:30 PM to 07:30 PM
+  overnight_fasting_hours?: number;       // e.g. 17.0 hours from 07:30 PM to 12:30 PM next day
+  first_meal_time?: string;               // e.g. "12:30 PM"
+  last_meal_time?: string;                // e.g. "07:30 PM"
+  is_intake_within_window?: boolean;
+  timing_discrepancies?: string[];
   eating_window_start?: string; // e.g. "12:00 PM"
   eating_window_end?: string;   // e.g. "08:00 PM"
   eating_window_hours?: number; // e.g. 8
   eligibility_status: 'eligible' | 'contraindicated' | 'high_risk_supervised' | 'not_indicated';
-  decision_status: 'no_fasting_prescribed' | 'fasting_contraindicated' | 'fasting_requires_review' | 'fasting_approved';
+  decision_status: 'no_fasting_prescribed' | 'fasting_contraindicated' | 'fasting_requires_review' | 'fasting_proposed_draft' | 'fasting_approved';
   rationale_en: string;
   rationale_bn: string;
   reasons_en?: string[];
@@ -586,8 +592,37 @@ export interface NutritionalAdequacyEvaluation {
   protein_achievement_pct: number;
   deficits: string[];
   deficits_bn: string[];
-  status_label_en: 'Nutritional Adequacy Achieved' | 'Nutritional Targets Not Achieved' | 'Clinical Review Recommended';
+  status_label_en: string;
   status_label_bn: string;
+  overall_status?: 'adequate_for_evaluated_parameters' | 'targets_not_achieved' | 'insufficient_data' | 'clinical_review_required';
+  energy_assessment?: {
+    target_kcal: number;
+    planned_kcal: number;
+    achievement_pct: number;
+    status: 'adequate' | 'deficit' | 'excess' | 'bmr_floor_breach';
+  };
+  protein_assessment?: {
+    target_g: number;
+    planned_g: number;
+    achievement_pct: number;
+    status: 'adequate' | 'deficit' | 'excess';
+  };
+  macronutrient_balance?: {
+    carbs_pct: number;
+    protein_pct: number;
+    fat_pct: number;
+    is_balanced: boolean;
+  };
+  micronutrient_assessment?: {
+    evaluated_nutrients: string[];
+    missing_nutrients: string[];
+    has_incomplete_data: boolean;
+  };
+  data_completeness?: {
+    status: 'complete' | 'partial' | 'sparse';
+    note_en: string;
+    note_bn: string;
+  };
 }
 
 export interface WeeklyDietPlanApprovalRecord {

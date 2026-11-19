@@ -35,6 +35,7 @@ import {
 import { P3NutritionPlanningContext } from './p2/types';
 import { validateInterventionPlan } from '../clinical-safety/interventionValidation';
 import { evaluateFastingEligibility } from '../clinical-safety/fastingSafetyEngine';
+import { evaluateMealScheduleTiming } from '../clinical-safety/mealTimingEngine';
 import foodsData from '../data/foods.json';
 
 const defaultFoods = foodsData as FoodItem[];
@@ -234,8 +235,49 @@ export function createPlanMealItem(
 }
 
 /**
+ * Portion Input Validation Guard
+ * Guards against extreme, non-numeric, or corrupting portion inputs.
+ */
+export function validatePortionInput(rawGrams: number): { 
+  is_valid: boolean; 
+  error_en?: string; 
+  error_bn?: string; 
+  sanitized_grams: number 
+} {
+  if (typeof rawGrams !== 'number' || isNaN(rawGrams) || !isFinite(rawGrams)) {
+    return {
+      is_valid: false,
+      error_en: 'Portion size must be a valid numeric value.',
+      error_bn: 'পরিমাণের মান অবশ্যই একটি বৈধ সংখ্যা হতে হবে।',
+      sanitized_grams: 100
+    };
+  }
+  if (rawGrams <= 0) {
+    return {
+      is_valid: false,
+      error_en: 'Portion size must be greater than 0 grams.',
+      error_bn: 'পরিমাণ ০ গ্রামের চেয়ে বেশি হতে হবে।',
+      sanitized_grams: 50
+    };
+  }
+  if (rawGrams > 1500) {
+    return {
+      is_valid: false,
+      error_en: 'Portion size cannot exceed 1,500 grams per single ingredient.',
+      error_bn: 'একটি উপাদানের পরিমাণ ১,৫০০ গ্রামের বেশি হতে পারে না।',
+      sanitized_grams: 1500
+    };
+  }
+  return {
+    is_valid: true,
+    sanitized_grams: Math.round(rawGrams * 10) / 10
+  };
+}
+
+/**
  * Evaluates whether a planned day meets authoritative nutritional targets.
  * Flags significant caloric deficit (>15%), protein deficit (>15%), or adult BMR floor violations.
+ * Provides transparent parameter-level adequacy evaluation without false unqualified claims.
  */
 export function evaluateNutritionalAdequacy(
   plannedDaySummary: DayPlanSummary,
@@ -249,25 +291,49 @@ export function evaluateNutritionalAdequacy(
   const deficits_bn: string[] = [];
 
   // Calorie deficit check: >15% deficit (i.e. <85% of target) is clinically significant
+  let energyStatus: 'adequate' | 'deficit' | 'excess' | 'bmr_floor_breach' = 'adequate';
   if (calPct < 85) {
+    energyStatus = 'deficit';
     const missingKcal = targetMacros.calories - plannedDaySummary.calories;
     deficits.push(`Calorie intake is ${calPct}% of target (Deficit: -${missingKcal} kcal).`);
     deficits_bn.push(`দৈনিক ক্যালোরি লক্ষ্যমাত্রার ${calPct}% (ঘাটতি: -${missingKcal} কিলোক্যালোরি)।`);
+  } else if (calPct > 120) {
+    energyStatus = 'excess';
+    const excessKcal = plannedDaySummary.calories - targetMacros.calories;
+    deficits.push(`Calorie intake is ${calPct}% of target (Excess: +${excessKcal} kcal).`);
+    deficits_bn.push(`দৈনিক ক্যালোরি লক্ষ্যমাত্রার চেয়ে বেশি (${calPct}%, অতিরিক্ত: +${excessKcal} কিলোক্যালোরি)।`);
   }
 
   // Protein deficit check: >15% deficit
+  let proteinStatus: 'adequate' | 'deficit' | 'excess' = 'adequate';
   if (protPct < 85) {
+    proteinStatus = 'deficit';
     const missingProt = Math.round((targetMacros.protein_g - plannedDaySummary.protein_g) * 10) / 10;
     deficits.push(`Protein intake is ${protPct}% of target (Deficit: -${missingProt}g).`);
     deficits_bn.push(`আমিষ গ্রহণ লক্ষ্যমাত্রার ${protPct}% (ঘাটতি: -${missingProt} গ্রাম)।`);
+  } else if (protPct > 150) {
+    proteinStatus = 'excess';
   }
 
   // Check adult BMR floor
   const bmr = patient.calculated?.bmr;
   if (bmr && plannedDaySummary.calories < bmr && patient.population_group !== 'pediatric' && patient.population_group !== 'adolescent') {
+    energyStatus = 'bmr_floor_breach';
     deficits.push(`Planned calories (${plannedDaySummary.calories} kcal) fall below somatic BMR floor (${bmr} kcal).`);
     deficits_bn.push(`পরিকল্পিত ক্যালোরি (${plannedDaySummary.calories} kcal) রোগীর বিএমআর (${bmr} kcal) এর চেয়ে কম।`);
   }
+
+  // Macronutrient balance (Atwater-derived proportions of planned intake)
+  const totalMacroKcal = (plannedDaySummary.carbs_g * 4) + (plannedDaySummary.protein_g * 4) + (plannedDaySummary.fat_g * 9);
+  let carbsPct = 0;
+  let proteinPct = 0;
+  let fatPct = 0;
+  if (totalMacroKcal > 0) {
+    carbsPct = Math.round(((plannedDaySummary.carbs_g * 4) / totalMacroKcal) * 100);
+    proteinPct = Math.round(((plannedDaySummary.protein_g * 4) / totalMacroKcal) * 100);
+    fatPct = Math.round(((plannedDaySummary.fat_g * 9) / totalMacroKcal) * 100);
+  }
+  const isBalanced = carbsPct >= 40 && carbsPct <= 70 && proteinPct >= 10 && proteinPct <= 35 && fatPct >= 15 && fatPct <= 40;
 
   const isAdequate = deficits.length === 0;
 
@@ -277,8 +343,37 @@ export function evaluateNutritionalAdequacy(
     protein_achievement_pct: protPct,
     deficits,
     deficits_bn,
-    status_label_en: isAdequate ? 'Nutritional Adequacy Achieved' : 'Nutritional Targets Not Achieved',
-    status_label_bn: isAdequate ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি'
+    overall_status: isAdequate ? 'adequate_for_evaluated_parameters' : 'targets_not_achieved',
+    status_label_en: isAdequate ? 'Nutritional Targets Achieved (Evaluated Parameters)' : 'Nutritional Targets Not Achieved',
+    status_label_bn: isAdequate ? 'মূল্যায়িত প্যারামিটারে পুষ্টির লক্ষ্যমাত্রা অর্জিত' : 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি',
+    energy_assessment: {
+      target_kcal: targetMacros.calories,
+      planned_kcal: plannedDaySummary.calories,
+      achievement_pct: calPct,
+      status: energyStatus
+    },
+    protein_assessment: {
+      target_g: targetMacros.protein_g,
+      planned_g: plannedDaySummary.protein_g,
+      achievement_pct: protPct,
+      status: proteinStatus
+    },
+    macronutrient_balance: {
+      carbs_pct: carbsPct,
+      protein_pct: proteinPct,
+      fat_pct: fatPct,
+      is_balanced: isBalanced
+    },
+    micronutrient_assessment: {
+      evaluated_nutrients: ['Fiber', 'PRAL', 'Glycemic Load'],
+      missing_nutrients: ['Vitamins A, C, D, B12', 'Folate', 'Iron (bioavailable)', 'Zinc', 'Calcium'],
+      has_incomplete_data: true
+    },
+    data_completeness: {
+      status: 'partial',
+      note_en: 'Macronutrients, Fiber, and Glycemic metrics evaluated. Detailed micronutrient adequacy requires laboratory biomarker correlation or comprehensive FCTB profiling.',
+      note_bn: 'ম্যাক্রোনিউট্রিয়েন্ট, ফাইবার এবং গ্লাইসেমিক মান মূল্যায়িত হয়েছে। মাইক্রোনিউট্রিয়েন্টের সম্পূর্ণ পর্যালোচনার জন্য ল্যাব টেস্ট বা পূর্ণাঙ্গ ডাটাবেস প্রয়োজন।'
+    }
   };
 }
 
@@ -880,6 +975,40 @@ export function buildDayPlan(
 
   // Fasting Schedule Metadata
   const isFastingDay = dayStructure === 'intermittent_fasting_16_8';
+
+  // Circadian & Meal Timing Evaluation
+  const timingEval = evaluateMealScheduleTiming(meals, {
+    eatingWindowStart: isFastingDay ? '12:00 PM' : undefined,
+    eatingWindowEnd: isFastingDay ? '08:00 PM' : undefined,
+    plannedFastingHours
+  });
+
+  let decisionStatus: 'no_fasting_prescribed' | 'fasting_contraindicated' | 'fasting_requires_review' | 'fasting_proposed_draft' | 'fasting_approved' = 'no_fasting_prescribed';
+
+  if (isFastingContraindicated) {
+    decisionStatus = 'fasting_contraindicated';
+  } else if (isFastingDay) {
+    if (existingDayPlan?.fasting_schedule?.decision_status === 'fasting_approved') {
+      decisionStatus = 'fasting_approved';
+    } else if (!timingEval.is_valid || !timingEval.is_intake_within_permitted_window) {
+      decisionStatus = 'fasting_requires_review';
+    } else {
+      decisionStatus = 'fasting_proposed_draft';
+    }
+  }
+
+  if (isFastingDay && !timingEval.is_intake_within_permitted_window) {
+    for (const d of timingEval.timing_discrepancies) {
+      safetyNotes.push(`Meal Timing: ${d}`);
+    }
+    for (const dbn of timingEval.timing_discrepancies_bn) {
+      safetyNotesBn.push(`খাবারের সময়সূচি: ${dbn}`);
+    }
+    if (safetyDecision === 'SAFE') {
+      safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
+    }
+  }
+
   const fastingSchedule: FastingScheduleInfo = {
     is_fasting: isFastingDay,
     is_fasting_active: isFastingDay,
@@ -887,11 +1016,17 @@ export function buildDayPlan(
     proposed_fasting_hours: plannedFastingHours,
     actual_fasting_hours: plannedFastingHours,
     planned_fasting_hours: plannedFastingHours,
+    scheduled_intake_window_hours: timingEval.scheduled_intake_window_hours,
+    overnight_fasting_hours: timingEval.scheduled_overnight_fast_hours,
+    first_meal_time: timingEval.first_meal_time,
+    last_meal_time: timingEval.last_meal_time,
+    is_intake_within_window: timingEval.is_intake_within_permitted_window,
+    timing_discrepancies: timingEval.timing_discrepancies.length > 0 ? timingEval.timing_discrepancies : undefined,
     eating_window_start: isFastingDay ? '12:00 PM' : undefined,
     eating_window_end: isFastingDay ? '08:00 PM' : undefined,
-    eating_window_hours: isFastingDay ? 8 : undefined,
+    eating_window_hours: isFastingDay ? (timingEval.permitted_eating_window_hours || 8) : undefined,
     eligibility_status: fastingCheck.eligibility.risk_level === 'contraindicated' ? 'contraindicated' : (fastingCheck.eligibility.is_eligible_for_fasting ? 'eligible' : 'not_indicated'),
-    decision_status: isFastingContraindicated ? 'fasting_contraindicated' : (isFastingDay ? 'fasting_approved' : 'no_fasting_prescribed'),
+    decision_status: decisionStatus,
     rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? '16:8 Intermittent Fasting Schedule (12:00 PM - 08:00 PM)' : 'Standard regular meal schedule'),
     rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? '১৬:৮ উপবাস সময়সূচি (দুপুর ১২:০০ - রাত ০৮:০০)' : 'নিয়মিত খাবারের সময়সূচি'),
     reasons_en: fastingCheck.eligibility.contraindication_reasons_en,
@@ -1018,6 +1153,39 @@ export function recalculateDayPlan(
   const fastingCheck = evaluateFastingEligibility(patient, plannedFastingHours);
   const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
   const isFastingDay = dayStructure === 'intermittent_fasting_16_8';
+
+  const timingEval = evaluateMealScheduleTiming(day.meals, {
+    eatingWindowStart: isFastingDay ? '12:00 PM' : undefined,
+    eatingWindowEnd: isFastingDay ? '08:00 PM' : undefined,
+    plannedFastingHours
+  });
+
+  let decisionStatus: 'no_fasting_prescribed' | 'fasting_contraindicated' | 'fasting_requires_review' | 'fasting_proposed_draft' | 'fasting_approved' = 'no_fasting_prescribed';
+
+  if (isFastingContraindicated) {
+    decisionStatus = 'fasting_contraindicated';
+  } else if (isFastingDay) {
+    if (!timingEval.is_valid || !timingEval.is_intake_within_permitted_window) {
+      decisionStatus = 'fasting_requires_review';
+    } else if (day.fasting_schedule?.decision_status === 'fasting_approved') {
+      decisionStatus = 'fasting_requires_review';
+    } else {
+      decisionStatus = day.fasting_schedule?.decision_status || 'fasting_proposed_draft';
+    }
+  }
+
+  if (isFastingDay && !timingEval.is_intake_within_permitted_window) {
+    for (const d of timingEval.timing_discrepancies) {
+      safetyNotes.push(`Meal Timing: ${d}`);
+    }
+    for (const dbn of timingEval.timing_discrepancies_bn) {
+      safetyNotesBn.push(`খাবারের সময়সূচি: ${dbn}`);
+    }
+    if (safetyDecision === 'SAFE') {
+      safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
+    }
+  }
+
   const fastingSchedule: FastingScheduleInfo = {
     is_fasting: isFastingDay,
     is_fasting_active: isFastingDay,
@@ -1025,11 +1193,17 @@ export function recalculateDayPlan(
     proposed_fasting_hours: plannedFastingHours,
     actual_fasting_hours: plannedFastingHours,
     planned_fasting_hours: plannedFastingHours,
+    scheduled_intake_window_hours: timingEval.scheduled_intake_window_hours,
+    overnight_fasting_hours: timingEval.scheduled_overnight_fast_hours,
+    first_meal_time: timingEval.first_meal_time,
+    last_meal_time: timingEval.last_meal_time,
+    is_intake_within_window: timingEval.is_intake_within_permitted_window,
+    timing_discrepancies: timingEval.timing_discrepancies.length > 0 ? timingEval.timing_discrepancies : undefined,
     eating_window_start: isFastingDay ? '12:00 PM' : undefined,
     eating_window_end: isFastingDay ? '08:00 PM' : undefined,
-    eating_window_hours: isFastingDay ? 8 : undefined,
+    eating_window_hours: isFastingDay ? (timingEval.permitted_eating_window_hours || 8) : undefined,
     eligibility_status: fastingCheck.eligibility.risk_level === 'contraindicated' ? 'contraindicated' : (fastingCheck.eligibility.is_eligible_for_fasting ? 'eligible' : 'not_indicated'),
-    decision_status: isFastingContraindicated ? 'fasting_contraindicated' : (isFastingDay ? 'fasting_approved' : 'no_fasting_prescribed'),
+    decision_status: decisionStatus,
     rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? '16:8 Intermittent Fasting Schedule (12:00 PM - 08:00 PM)' : 'Standard regular meal schedule'),
     rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? '১৬:৮ উপবাস সময়সূচি (দুপুর ১২:০০ - রাত ০৮:০০)' : 'নিয়মিত খাবারের সময়সূচি'),
     reasons_en: fastingCheck.eligibility.contraindication_reasons_en,
@@ -1233,16 +1407,36 @@ export function generateWeeklyDietPlan(
 /**
  * Centralized Approval Invalidation Engine
  * Transitions approved weekly plan to 'requires_review', increments version,
+ * transitions fasting decision status to 'fasting_requires_review',
  * and maintains immutable historical approval records with timestamp and reason.
  */
 export function invalidateWeeklyPlanApproval(plan: WeeklyDietPlan, reason: string): WeeklyDietPlan {
   const isCurrentlyApproved = Boolean(plan.status === 'approved' || plan.is_approved === true);
   const timestamp = new Date().toISOString();
 
+  const updatedDays = plan.days ? plan.days.map(d => {
+    if (d.fasting_schedule?.decision_status === 'fasting_approved') {
+      return {
+        ...d,
+        fasting_schedule: {
+          ...d.fasting_schedule,
+          decision_status: 'fasting_requires_review' as const
+        }
+      };
+    }
+    return d;
+  }) : plan.days;
+
+  const updatedFastingSchedule = plan.fasting_schedule?.decision_status === 'fasting_approved'
+    ? { ...plan.fasting_schedule, decision_status: 'fasting_requires_review' as const }
+    : plan.fasting_schedule;
+
   if (!isCurrentlyApproved) {
     // If not approved, preserve current status without fabricating previous_approval
     return {
       ...plan,
+      days: updatedDays,
+      fasting_schedule: updatedFastingSchedule,
       status: plan.status === 'requires_review' ? 'requires_review' : 'draft',
       is_approved: false,
       approved_by: undefined,
@@ -1265,6 +1459,8 @@ export function invalidateWeeklyPlanApproval(plan: WeeklyDietPlan, reason: strin
 
   return {
     ...plan,
+    days: updatedDays,
+    fasting_schedule: updatedFastingSchedule,
     version: plan.version + 1,
     status: 'requires_review',
     is_approved: false,
@@ -1277,6 +1473,60 @@ export function invalidateWeeklyPlanApproval(plan: WeeklyDietPlan, reason: strin
     invalidated_at: timestamp,
     previous_approval: previousRecord,
     historical_approvals: [...(plan.historical_approvals || []), previousRecord],
+    updated_at: timestamp
+  };
+}
+
+/**
+ * Pure helper to transition a weekly diet plan to approved status with clinician metadata.
+ * Synchronizes plan-level and day-level fasting_schedule status to 'fasting_approved'.
+ */
+export function approveWeeklyDietPlan(
+  plan: WeeklyDietPlan,
+  clinicianId: string,
+  notes?: string
+): WeeklyDietPlan {
+  const trimmed = clinicianId.trim();
+  const timestamp = new Date().toISOString();
+
+  const updatedDays = (plan.days || []).map(day => {
+    if (day.fasting_schedule && day.fasting_schedule.is_fasting_active) {
+      return {
+        ...day,
+        fasting_schedule: {
+          ...day.fasting_schedule,
+          decision_status: 'fasting_approved' as const
+        }
+      };
+    }
+    return day;
+  });
+
+  const updatedFastingSchedule = plan.fasting_schedule && plan.fasting_schedule.is_fasting_active
+    ? { ...plan.fasting_schedule, decision_status: 'fasting_approved' as const }
+    : plan.fasting_schedule;
+
+  return {
+    ...plan,
+    days: updatedDays,
+    fasting_schedule: updatedFastingSchedule,
+    version: plan.status === 'approved' ? plan.version : plan.version + 1,
+    status: 'approved',
+    is_approved: true,
+    approved_by: trimmed,
+    approval_date: timestamp,
+    approved_at: timestamp,
+    approval_notes: notes?.trim() || undefined,
+    clinician_notes: notes?.trim() || plan.clinician_notes,
+    invalidation_reason: undefined,
+    invalidated_at: undefined,
+    approval_metadata: {
+      clinician_id: trimmed,
+      clinician_name: trimmed,
+      approval_timestamp: timestamp,
+      license_number: trimmed,
+      notes: notes?.trim() || undefined
+    },
     updated_at: timestamp
   };
 }
@@ -1380,7 +1630,11 @@ export function evaluateWeeklyPlanClinicalSafety(
         for (const d of adequacy.deficits) {
           const msg = `Day ${day.day_number} Nutritional Deficit: ${d}`;
           dayNotes.push(msg);
-          if (!unresolvedHardStops.includes(msg)) {
+          // Severe starvation (<70% calories), BMR floor breach, or severe protein starvation (<50%) constitutes HARD_STOP
+          const isSevereDeficit = adequacy.energy_assessment?.status === 'bmr_floor_breach' || 
+                                  (adequacy.calorie_achievement_pct < 70) ||
+                                  (adequacy.protein_achievement_pct < 50);
+          if (isSevereDeficit && !unresolvedHardStops.includes(msg)) {
             unresolvedHardStops.push(msg);
           }
         }

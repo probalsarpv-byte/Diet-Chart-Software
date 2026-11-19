@@ -248,7 +248,9 @@ export const DietChartTab: React.FC = () => {
 
   const isWeeklyPlanApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
   const isRequiresReview = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'requires_review');
-  const hasHardStop = weeklyDietPlan?.overall_safety_status === 'HARD_STOP' || clinicalSafetyEvaluation.overallDecision === 'HARD_STOP';
+  const hasHardStop = weeklyDietPlan 
+    ? weeklyDietPlan.overall_safety_status === 'HARD_STOP'
+    : clinicalSafetyEvaluation.overallDecision === 'HARD_STOP';
 
   return (
     <div className="space-y-6 pb-12" data-testid="diet-chart-workspace">
@@ -517,14 +519,22 @@ export const DietChartTab: React.FC = () => {
             className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
               currentFasting?.decision_status === 'fasting_contraindicated' || (currentFasting?.reasons_en && currentFasting.reasons_en.length > 0 && !currentFasting.is_fasting)
                 ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8'
+                : currentFasting?.decision_status === 'fasting_approved'
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : currentFasting?.decision_status === 'fasting_requires_review'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft'
                 ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
                 : 'border-slate-500/20 bg-secondary/30 text-muted-foreground'
             }`}
           >
             {currentFasting?.decision_status === 'fasting_contraindicated' ? (
               <AlertOctagon className="h-4 w-4 text-rose-500 shrink-0" />
-            ) : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' ? (
+            ) : currentFasting?.decision_status === 'fasting_approved' ? (
+              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+            ) : currentFasting?.decision_status === 'fasting_requires_review' ? (
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            ) : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft' ? (
               <Clock className="h-4 w-4 text-purple-500 shrink-0" />
             ) : (
               <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
@@ -536,6 +546,12 @@ export const DietChartTab: React.FC = () => {
               <span className="font-bold">
                 {currentFasting?.decision_status === 'fasting_contraindicated'
                   ? (bn ? `উপবাস নিষিদ্ধ: ${currentFasting.reasons_bn?.[0] || 'ঝুঁকিপূর্ণ'}` : `Fasting Contraindicated: ${currentFasting.reasons_en?.[0] || 'High Risk'}`)
+                  : currentFasting?.decision_status === 'fasting_approved'
+                  ? (bn ? '১৬:৮ উপবাস অনুমোদিত: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : '16:8 Fasting Approved: 12:00 PM – 08:00 PM (16h Fast)')
+                  : currentFasting?.decision_status === 'fasting_requires_review'
+                  ? (bn ? 'উপবাস চিকিৎসকের রিভিউ প্রয়োজন' : 'Fasting Requires Clinician Review')
+                  : currentFasting?.decision_status === 'fasting_proposed_draft'
+                  ? (bn ? '১৬:৮ উপবাস প্রস্তাবিত (খসড়া - চিকিৎসকের অনুমোদন বাকি)' : '16:8 Fasting Proposed (Draft - Clinician Sign-Off Required)')
                   : (currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8')
                   ? (bn ? 'উপবাস সক্রিয়: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : 'Active 16:8 Window: 12:00 PM – 08:00 PM (16h Fast)')
                   : (bn ? 'নিয়মিত আহার (উপবাস পরিহার্য)' : 'Regular Schedule (No Fasting)')}
@@ -565,9 +581,11 @@ export const DietChartTab: React.FC = () => {
                 {bn ? 'পুষ্টি পর্যাপ্ততা' : 'Nutritional Adequacy'}
               </span>
               <span>
-                {currentAdequacy?.is_adequate !== false
-                  ? (bn ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'Nutritional Adequacy Achieved')
-                  : (bn ? `পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি (${currentAdequacy?.deficits_bn?.[0] || 'ঘাটতি'})` : `Nutritional Targets Not Achieved: ${currentAdequacy?.deficits?.[0] || 'Deficit'}`)}
+                {currentAdequacy?.status_label_en
+                  ? (bn ? (currentAdequacy.status_label_bn || currentAdequacy.status_label_en) : currentAdequacy.status_label_en)
+                  : (currentAdequacy?.is_adequate !== false
+                    ? (bn ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'Nutritional Targets Achieved (Evaluated Parameters)')
+                    : (bn ? `পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি (${currentAdequacy?.deficits_bn?.[0] || 'ঘাটতি'})` : `Nutritional Targets Not Achieved: ${currentAdequacy?.deficits?.[0] || 'Deficit'}`))}
               </span>
             </div>
           </div>
