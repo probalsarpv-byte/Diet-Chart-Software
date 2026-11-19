@@ -22,7 +22,9 @@ import {
   DayPlanSummary,
   WeeklyDietPlan,
   WeeklyDietPlanApprovalRecord,
-  FoodCategory
+  FoodCategory,
+  FastingScheduleInfo,
+  NutritionalAdequacyEvaluation
 } from '../types';
 import { 
   getCookedDisplay, 
@@ -232,6 +234,55 @@ export function createPlanMealItem(
 }
 
 /**
+ * Evaluates whether a planned day meets authoritative nutritional targets.
+ * Flags significant caloric deficit (>15%), protein deficit (>15%), or adult BMR floor violations.
+ */
+export function evaluateNutritionalAdequacy(
+  plannedDaySummary: DayPlanSummary,
+  targetMacros: { calories: number; protein_g: number; carbs_g: number; fat_g: number },
+  patient: PatientProfile
+): NutritionalAdequacyEvaluation {
+  const calPct = Math.round((plannedDaySummary.calories / Math.max(1, targetMacros.calories)) * 100);
+  const protPct = Math.round((plannedDaySummary.protein_g / Math.max(1, targetMacros.protein_g)) * 100);
+
+  const deficits: string[] = [];
+  const deficits_bn: string[] = [];
+
+  // Calorie deficit check: >15% deficit (i.e. <85% of target) is clinically significant
+  if (calPct < 85) {
+    const missingKcal = targetMacros.calories - plannedDaySummary.calories;
+    deficits.push(`Calorie intake is ${calPct}% of target (Deficit: -${missingKcal} kcal).`);
+    deficits_bn.push(`দৈনিক ক্যালোরি লক্ষ্যমাত্রার ${calPct}% (ঘাটতি: -${missingKcal} কিলোক্যালোরি)।`);
+  }
+
+  // Protein deficit check: >15% deficit
+  if (protPct < 85) {
+    const missingProt = Math.round((targetMacros.protein_g - plannedDaySummary.protein_g) * 10) / 10;
+    deficits.push(`Protein intake is ${protPct}% of target (Deficit: -${missingProt}g).`);
+    deficits_bn.push(`আমিষ গ্রহণ লক্ষ্যমাত্রার ${protPct}% (ঘাটতি: -${missingProt} গ্রাম)।`);
+  }
+
+  // Check adult BMR floor
+  const bmr = patient.calculated?.bmr;
+  if (bmr && plannedDaySummary.calories < bmr && patient.population_group !== 'pediatric' && patient.population_group !== 'adolescent') {
+    deficits.push(`Planned calories (${plannedDaySummary.calories} kcal) fall below somatic BMR floor (${bmr} kcal).`);
+    deficits_bn.push(`পরিকল্পিত ক্যালোরি (${plannedDaySummary.calories} kcal) রোগীর বিএমআর (${bmr} kcal) এর চেয়ে কম।`);
+  }
+
+  const isAdequate = deficits.length === 0;
+
+  return {
+    is_adequate: isAdequate,
+    calorie_achievement_pct: calPct,
+    protein_achievement_pct: protPct,
+    deficits,
+    deficits_bn,
+    status_label_en: isAdequate ? 'Nutritional Adequacy Achieved' : 'Nutritional Targets Not Achieved',
+    status_label_bn: isAdequate ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি'
+  };
+}
+
+/**
  * Generates meals for one day adhering strictly to deterministic clinical rotation templates and locks.
  */
 export function generateMealsForDay(
@@ -252,9 +303,81 @@ export function generateMealsForDay(
   const yellowIds = new Set(yellowFoods.map(f => f.id));
   const redIds = new Set(redFoods.map(f => f.id));
 
+  // 1. Evaluate Fasting Eligibility with proposed duration
+  const pref = patient.dietary_preferences?.meal_structure;
+  const proposedFastingHours = (pref === 'intermittent_fasting_16_8') ? 16 : 0;
+  const fastingCheck = evaluateFastingEligibility(patient, proposedFastingHours);
+  const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || 
+    fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
+
+  // 2. Determine Meal Structure
+  let structure: '3_meals' | '3_meals_1_snack' | '5_meals_traditional' | 'intermittent_fasting_16_8' = '3_meals_1_snack';
+
+  if (existingDayMeals && existingDayMeals.length > 0) {
+    const hasMorning = existingDayMeals.some(m => m.meal_type === 'morning_protocol');
+    const hasBreakfast = existingDayMeals.some(m => m.meal_type === 'breakfast');
+    const hasSnack = existingDayMeals.some(m => m.meal_type === 'evening_snack' || m.meal_type === 'mid_morning');
+    if (!hasBreakfast && existingDayMeals.some(m => m.meal_type === 'lunch')) {
+      structure = 'intermittent_fasting_16_8';
+    } else if (hasMorning) {
+      structure = '5_meals_traditional';
+    } else if (hasSnack) {
+      structure = '3_meals_1_snack';
+    } else {
+      structure = '3_meals';
+    }
+  } else {
+    if (pref === 'intermittent_fasting_16_8') {
+      if (isFastingContraindicated) {
+        structure = '3_meals_1_snack'; // Override to safe regular schedule
+      } else {
+        structure = 'intermittent_fasting_16_8';
+      }
+    } else if (pref === '3_meals') {
+      structure = '3_meals';
+    } else if (pref === '3_meals_1_snack') {
+      structure = '3_meals_1_snack';
+    } else if (patient.dietary_preferences?.include_morning_protocol === true) {
+      structure = '5_meals_traditional';
+    } else if (patient.population_group === 'pediatric' || (patient.age && patient.age < 18)) {
+      structure = '5_meals_traditional';
+    } else {
+      structure = '3_meals_1_snack';
+    }
+  }
+
+  // 3. Structure-aware macro allocations (sum of remaining meals = 100% of targetMacros)
   const { protein_g: targetProtein, carbs_g: targetCarbs, fat_g: targetFat } = targetMacros;
-  const breakfastCarbG = Math.max(20, Math.round(targetCarbs * 0.25));
-  const lunchCarbG = Math.max(30, Math.round(targetCarbs * 0.45));
+  let breakfastShare = { protein: 0.25, carbs: 0.25, fat: 0.20 };
+  let lunchShare = { protein: 0.40, carbs: 0.45, fat: 0.45 };
+  let snackShare = { protein: 0.10, carbs: 0.10, fat: 0.10 };
+  let dinnerShare = { protein: 0.25, carbs: 0.20, fat: 0.25 };
+
+  if (structure === 'intermittent_fasting_16_8') {
+    breakfastShare = { protein: 0, carbs: 0, fat: 0 };
+    lunchShare = { protein: 0.45, carbs: 0.50, fat: 0.45 };
+    snackShare = { protein: 0.10, carbs: 0.15, fat: 0.20 };
+    dinnerShare = { protein: 0.45, carbs: 0.35, fat: 0.35 };
+  } else if (structure === '3_meals') {
+    breakfastShare = { protein: 0.30, carbs: 0.30, fat: 0.25 };
+    lunchShare = { protein: 0.40, carbs: 0.45, fat: 0.45 };
+    snackShare = { protein: 0, carbs: 0, fat: 0 };
+    dinnerShare = { protein: 0.30, carbs: 0.25, fat: 0.30 };
+  } else if (structure === '3_meals_1_snack') {
+    breakfastShare = { protein: 0.25, carbs: 0.25, fat: 0.20 };
+    lunchShare = { protein: 0.40, carbs: 0.45, fat: 0.45 };
+    snackShare = { protein: 0.10, carbs: 0.10, fat: 0.10 };
+    dinnerShare = { protein: 0.25, carbs: 0.20, fat: 0.25 };
+  } else {
+    breakfastShare = { protein: 0.25, carbs: 0.25, fat: 0.20 };
+    lunchShare = { protein: 0.40, carbs: 0.40, fat: 0.45 };
+    snackShare = { protein: 0.10, carbs: 0.10, fat: 0.10 };
+    dinnerShare = { protein: 0.25, carbs: 0.20, fat: 0.25 };
+  }
+
+  const breakfastCarbG = Math.max(20, Math.round(targetCarbs * breakfastShare.carbs));
+  const lunchCarbG = Math.max(30, Math.round(targetCarbs * lunchShare.carbs));
+  const dinnerCarbG = Math.max(20, Math.round(targetCarbs * dinnerShare.carbs));
 
   const existingMealMap = new Map<string, DietChartMeal>();
   if (existingDayMeals) {
@@ -296,6 +419,7 @@ export function generateMealsForDay(
           title_bn: titleBn,
           title_en: titleEn,
           target_time: targetTime,
+          scheduled_time: targetTime,
           items: combinedItems,
           ...scored
         };
@@ -310,6 +434,7 @@ export function generateMealsForDay(
       title_bn: titleBn,
       title_en: titleEn,
       target_time: targetTime,
+      scheduled_time: targetTime,
       items: fresh.items,
       ...scored
     };
@@ -357,8 +482,11 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (proteinCand.food) {
-        const eggCount = targetProtein > 80 ? 2 : 1;
-        const proteinGrams = proteinCand.food.name_en.toLowerCase().includes('egg') ? eggCount * 50 : 60;
+        const proteinTargetG = targetProtein * breakfastShare.protein;
+        const eggCount = proteinTargetG > 20 ? 2 : 1;
+        const proteinGrams = proteinCand.food.name_en.toLowerCase().includes('egg') 
+          ? eggCount * 50 
+          : Math.max(40, Math.min(100, Math.round(proteinTargetG / Math.max(0.18, (proteinCand.food.per_100g.protein_g ?? 0) / 100))));
         items.push(createPlanMealItem(proteinCand.food, proteinGrams, allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
       } else if (proteinCand.error) {
         errors.push(proteinCand.error);
@@ -373,7 +501,7 @@ export function generateMealsForDay(
       );
       if (grainCand.food) {
         const rutiRawG = Math.round((breakfastCarbG / Math.max(0.60, (grainCand.food.per_100g.carbs_g ?? 0) / 100)));
-        items.push(createPlanMealItem(grainCand.food, Math.max(35, Math.min(80, rutiRawG)), allFoods, greenIds, redIds, yellowIds, grainCand.trafficStatus || 'GREEN'));
+        items.push(createPlanMealItem(grainCand.food, Math.max(35, Math.min(100, rutiRawG)), allFoods, greenIds, redIds, yellowIds, grainCand.trafficStatus || 'GREEN'));
       } else if (grainCand.error) {
         errors.push(grainCand.error);
       }
@@ -420,11 +548,15 @@ export function generateMealsForDay(
   );
 
   // 3. Lunch (Main Feast)
+  const lunchTitleBn = structure === 'intermittent_fasting_16_8' ? 'দুপুরের প্রধান আহার (১২:৩০ ঘটিকা)' : 'দুপুরের প্রধান আহার (০১:৩০ ঘটিকা)';
+  const lunchTitleEn = structure === 'intermittent_fasting_16_8' ? 'Therapeutic Lunch (Eating Window 12:30 PM)' : 'Therapeutic Lunch (01:30 PM)';
+  const lunchTime = structure === 'intermittent_fasting_16_8' ? '12:30 PM' : '01:30 PM';
+
   const lunchMeal = buildSlot(
     'lunch',
-    'দুপুরের প্রধান আহার (০১:৩০ ঘটিকা)',
-    'Therapeutic Lunch (01:30 PM)',
-    '01:30 PM',
+    lunchTitleBn,
+    lunchTitleEn,
+    lunchTime,
     () => {
       const errors: MealSlotConstraintError[] = [];
       const items: DietChartMealItem[] = [];
@@ -438,7 +570,7 @@ export function generateMealsForDay(
       );
       if (grainCand.food) {
         const lunchRiceRawG = Math.round((lunchCarbG / Math.max(0.65, (grainCand.food.per_100g.carbs_g ?? 0) / 100)));
-        items.push(createPlanMealItem(grainCand.food, Math.max(40, Math.min(100, lunchRiceRawG)), allFoods, greenIds, redIds, yellowIds, grainCand.trafficStatus || 'GREEN'));
+        items.push(createPlanMealItem(grainCand.food, Math.max(40, Math.min(140, lunchRiceRawG)), allFoods, greenIds, redIds, yellowIds, grainCand.trafficStatus || 'GREEN'));
       } else if (grainCand.error) {
         errors.push(grainCand.error);
       }
@@ -451,8 +583,8 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (proteinCand.food) {
-        const lunchFishRawG = Math.round(((targetProtein * 0.40) / Math.max(0.18, (proteinCand.food.per_100g.protein_g ?? 0) / 100)));
-        items.push(createPlanMealItem(proteinCand.food, Math.max(80, Math.min(160, lunchFishRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
+        const lunchFishRawG = Math.round(((targetProtein * lunchShare.protein) / Math.max(0.18, (proteinCand.food.per_100g.protein_g ?? 0) / 100)));
+        items.push(createPlanMealItem(proteinCand.food, Math.max(80, Math.min(220, lunchFishRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
       } else if (proteinCand.error) {
         errors.push(proteinCand.error);
       }
@@ -478,7 +610,7 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (oilCand.food) {
-        const lunchOilG = Math.max(10, Math.round((targetFat * 0.45) / 1.5));
+        const lunchOilG = Math.max(10, Math.round((targetFat * lunchShare.fat) / 1.5));
         items.push(createPlanMealItem(oilCand.food, lunchOilG, allFoods, greenIds, redIds, yellowIds, oilCand.trafficStatus || 'GREEN'));
       } else if (oilCand.error) {
         errors.push(oilCand.error);
@@ -489,11 +621,15 @@ export function generateMealsForDay(
   );
 
   // 4. Evening Snack
+  const snackTitleBn = structure === 'intermittent_fasting_16_8' ? 'বিকেলের পুষ্টিকর বিরতি (০৪:৩০ ঘটিকা)' : 'বিকেলের ভেষজ বিরতি (০৫:০০ ঘটিকা)';
+  const snackTitleEn = structure === 'intermittent_fasting_16_8' ? 'Mid-Window Nutrient Break (04:30 PM)' : 'Evening Cellular Recovery (05:00 PM)';
+  const snackTime = structure === 'intermittent_fasting_16_8' ? '04:30 PM' : '05:00 PM';
+
   const eveningMeal = buildSlot(
     'evening_snack',
-    'বিকেলের ভেষজ বিরতি (০৫:০০ ঘটিকা)',
-    'Evening Cellular Recovery (05:00 PM)',
-    '05:00 PM',
+    snackTitleBn,
+    snackTitleEn,
+    snackTime,
     () => {
       const errors: MealSlotConstraintError[] = [];
       const items: DietChartMealItem[] = [];
@@ -505,7 +641,8 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (seedCand.food) {
-        items.push(createPlanMealItem(seedCand.food, 15, allFoods, greenIds, redIds, yellowIds, seedCand.trafficStatus || 'GREEN'));
+        const seedGrams = structure === 'intermittent_fasting_16_8' ? 25 : 15;
+        items.push(createPlanMealItem(seedCand.food, seedGrams, allFoods, greenIds, redIds, yellowIds, seedCand.trafficStatus || 'GREEN'));
       } else if (seedCand.error) {
         errors.push(seedCand.error);
       }
@@ -515,11 +652,15 @@ export function generateMealsForDay(
   );
 
   // 5. Dinner
+  const dinnerTitleBn = structure === 'intermittent_fasting_16_8' ? 'রাতের আহার (০৭:৩০ ঘটিকা)' : 'রাতের সহজপাচ্য নৈশভোজ (০৮:০০ ঘটিকা)';
+  const dinnerTitleEn = structure === 'intermittent_fasting_16_8' ? 'Eating Window Dinner (07:30 PM)' : 'Early Anti-Inflammatory Dinner (08:00 PM)';
+  const dinnerTime = structure === 'intermittent_fasting_16_8' ? '07:30 PM' : '08:00 PM';
+
   const dinnerMeal = buildSlot(
     'dinner',
-    'রাতের সহজপাচ্য নৈশভোজ (০৮:০০ ঘটিকা)',
-    'Early Anti-Inflammatory Dinner (08:00 PM)',
-    '08:00 PM',
+    dinnerTitleBn,
+    dinnerTitleEn,
+    dinnerTime,
     () => {
       const errors: MealSlotConstraintError[] = [];
       const items: DietChartMealItem[] = [];
@@ -532,8 +673,8 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (proteinCand.food) {
-        const dinnerChickenRawG = Math.round(((targetProtein * 0.30) / Math.max(0.20, (proteinCand.food.per_100g.protein_g ?? 0) / 100)));
-        items.push(createPlanMealItem(proteinCand.food, Math.max(70, Math.min(140, dinnerChickenRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
+        const dinnerChickenRawG = Math.round(((targetProtein * dinnerShare.protein) / Math.max(0.20, (proteinCand.food.per_100g.protein_g ?? 0) / 100)));
+        items.push(createPlanMealItem(proteinCand.food, Math.max(70, Math.min(200, dinnerChickenRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
       } else if (proteinCand.error) {
         errors.push(proteinCand.error);
       }
@@ -551,7 +692,7 @@ export function generateMealsForDay(
         errors.push(vegCand.error);
       }
 
-      // Oil
+      // Cooking Fat
       const oilCand = selectSafeMealCandidate(
         'Dinner Cooking Fat',
         'fat_oil',
@@ -559,7 +700,7 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (oilCand.food) {
-        const dinnerOilG = Math.max(8, Math.round((targetFat * 0.35) / 1.5));
+        const dinnerOilG = Math.max(8, Math.round((targetFat * dinnerShare.fat) / 1.5));
         items.push(createPlanMealItem(oilCand.food, dinnerOilG, allFoods, greenIds, redIds, yellowIds, oilCand.trafficStatus || 'GREEN'));
       } else if (oilCand.error) {
         errors.push(oilCand.error);
@@ -568,45 +709,6 @@ export function generateMealsForDay(
       return { items, errors };
     }
   );
-
-  // Evaluate Fasting Eligibility
-  const fastingCheck = evaluateFastingEligibility(patient);
-  const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
-
-  // Determine Meal Structure
-  let structure: '3_meals' | '3_meals_1_snack' | '5_meals_traditional' | 'intermittent_fasting_16_8' = '5_meals_traditional';
-
-  if (existingDayMeals && existingDayMeals.length > 0) {
-    const hasMorning = existingDayMeals.some(m => m.meal_type === 'morning_protocol');
-    const hasBreakfast = existingDayMeals.some(m => m.meal_type === 'breakfast');
-    const hasSnack = existingDayMeals.some(m => m.meal_type === 'evening_snack' || m.meal_type === 'mid_morning');
-    if (!hasBreakfast && existingDayMeals.some(m => m.meal_type === 'lunch')) {
-      structure = 'intermittent_fasting_16_8';
-    } else if (hasMorning) {
-      structure = '5_meals_traditional';
-    } else if (hasSnack) {
-      structure = '3_meals_1_snack';
-    } else {
-      structure = '3_meals';
-    }
-  } else {
-    const pref = patient.dietary_preferences?.meal_structure;
-    if (pref === 'intermittent_fasting_16_8') {
-      if (isFastingContraindicated) {
-        structure = '3_meals_1_snack'; // Override to safe regular schedule
-      } else {
-        structure = 'intermittent_fasting_16_8';
-      }
-    } else if (pref === '3_meals') {
-      structure = '3_meals';
-    } else if (pref === '3_meals_1_snack') {
-      structure = '3_meals_1_snack';
-    } else if (patient.dietary_preferences?.include_morning_protocol === false) {
-      structure = '3_meals_1_snack';
-    } else {
-      structure = '5_meals_traditional';
-    }
-  }
 
   if (structure === 'intermittent_fasting_16_8') {
     return [lunchMeal, eveningMeal, dinnerMeal];
@@ -685,8 +787,25 @@ export function buildDayPlan(
     fat_variance: Math.round((totalFat - targetMacros.fat_g) * 10) / 10
   };
 
+  // Determine day meal structure
+  const hasMorning = meals.some(m => m.meal_type === 'morning_protocol');
+  const hasBreakfast = meals.some(m => m.meal_type === 'breakfast');
+  const hasSnack = meals.some(m => m.meal_type === 'evening_snack' || m.meal_type === 'mid_morning');
+  let dayStructure: '3_meals' | '3_meals_1_snack' | '5_meals_traditional' | 'intermittent_fasting_16_8' = '3_meals_1_snack';
+  if (!hasBreakfast && meals.some(m => m.meal_type === 'lunch')) {
+    dayStructure = 'intermittent_fasting_16_8';
+  } else if (hasMorning) {
+    dayStructure = '5_meals_traditional';
+  } else if (hasSnack) {
+    dayStructure = '3_meals_1_snack';
+  } else {
+    dayStructure = '3_meals';
+  }
+
+  const plannedFastingHours = (dayStructure === 'intermittent_fasting_16_8') ? 16 : 0;
+
   // Evaluate clinical safety for this day's meals
-  const safetyEval = validateInterventionPlan(patient, meals, allFoods);
+  const safetyEval = validateInterventionPlan(patient, meals, allFoods, { plannedFastingHours });
   const slotErrors = meals.flatMap(m => m.slot_errors || []);
 
   const safetyNotes: string[] = [];
@@ -752,17 +871,54 @@ export function buildDayPlan(
     safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
   }
 
-  const fastingCheck = evaluateFastingEligibility(patient);
+  const fastingCheck = evaluateFastingEligibility(patient, plannedFastingHours);
   const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
   if (patient.dietary_preferences?.meal_structure === 'intermittent_fasting_16_8' && isFastingContraindicated) {
     safetyNotes.push('Intermittent fasting is clinically contraindicated for this patient. Enforced safe regular non-fasting meal schedule.');
     safetyNotesBn.push('রোগীর শারীরিক অবস্থা বা ঔষধের কারণে উপবাস ঝুঁকিপূর্ণ হওয়ায় নিরাপদ নিয়মিত খাবারের সময়সূচি নির্ধারণ করা হয়েছে।');
   }
 
+  // Fasting Schedule Metadata
+  const isFastingDay = dayStructure === 'intermittent_fasting_16_8';
+  const fastingSchedule: FastingScheduleInfo = {
+    is_fasting: isFastingDay,
+    is_fasting_active: isFastingDay,
+    fasting_type: isFastingDay ? 'intermittent_fasting_16_8' : 'none',
+    proposed_fasting_hours: plannedFastingHours,
+    actual_fasting_hours: plannedFastingHours,
+    planned_fasting_hours: plannedFastingHours,
+    eating_window_start: isFastingDay ? '12:00 PM' : undefined,
+    eating_window_end: isFastingDay ? '08:00 PM' : undefined,
+    eating_window_hours: isFastingDay ? 8 : undefined,
+    eligibility_status: fastingCheck.eligibility.risk_level === 'contraindicated' ? 'contraindicated' : (fastingCheck.eligibility.is_eligible_for_fasting ? 'eligible' : 'not_indicated'),
+    decision_status: isFastingContraindicated ? 'fasting_contraindicated' : (isFastingDay ? 'fasting_approved' : 'no_fasting_prescribed'),
+    rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? '16:8 Intermittent Fasting Schedule (12:00 PM - 08:00 PM)' : 'Standard regular meal schedule'),
+    rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? '১৬:৮ উপবাস সময়সূচি (দুপুর ১২:০০ - রাত ০৮:০০)' : 'নিয়মিত খাবারের সময়সূচি'),
+    reasons_en: fastingCheck.eligibility.contraindication_reasons_en,
+    reasons_bn: fastingCheck.eligibility.contraindication_reasons_bn
+  };
+
+  // Evaluate Nutritional Adequacy
+  const nutritionalAdequacy = evaluateNutritionalAdequacy(summary, targetMacros, patient);
+  if (!nutritionalAdequacy.is_adequate) {
+    for (const d of nutritionalAdequacy.deficits) {
+      safetyNotes.push(`Nutritional Adequacy: ${d}`);
+    }
+    for (const dbn of nutritionalAdequacy.deficits_bn) {
+      safetyNotesBn.push(`পুষ্টির পর্যাপ্ততা: ${dbn}`);
+    }
+    if (safetyDecision === 'SAFE') {
+      safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
+    }
+  }
+
   return {
     day_number: dayNumber,
     day_name_bn: dayName.bn,
     day_name_en: dayName.en,
+    meal_structure: dayStructure,
+    fasting_schedule: fastingSchedule,
+    nutritional_adequacy: nutritionalAdequacy,
     meals,
     is_locked: existingDayPlan?.is_locked || false,
     locked_items: lockedItems,
@@ -808,7 +964,23 @@ export function recalculateDayPlan(
     fat_variance: Math.round((totalFat - targetMacros.fat_g) * 10) / 10
   };
 
-  const safetyEval = validateInterventionPlan(patient, day.meals, allFoods);
+  // Determine day meal structure
+  const hasMorning = day.meals.some(m => m.meal_type === 'morning_protocol');
+  const hasBreakfast = day.meals.some(m => m.meal_type === 'breakfast');
+  const hasSnack = day.meals.some(m => m.meal_type === 'evening_snack' || m.meal_type === 'mid_morning');
+  let dayStructure: '3_meals' | '3_meals_1_snack' | '5_meals_traditional' | 'intermittent_fasting_16_8' = day.meal_structure || '3_meals_1_snack';
+  if (!hasBreakfast && day.meals.some(m => m.meal_type === 'lunch')) {
+    dayStructure = 'intermittent_fasting_16_8';
+  } else if (hasMorning) {
+    dayStructure = '5_meals_traditional';
+  } else if (hasSnack) {
+    dayStructure = '3_meals_1_snack';
+  } else {
+    dayStructure = '3_meals';
+  }
+
+  const plannedFastingHours = (dayStructure === 'intermittent_fasting_16_8') ? 16 : 0;
+  const safetyEval = validateInterventionPlan(patient, day.meals, allFoods, { plannedFastingHours });
   const slotErrors = day.meals.flatMap(m => m.slot_errors || []);
 
   const safetyNotes: string[] = [];
@@ -843,8 +1015,46 @@ export function recalculateDayPlan(
     safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
   }
 
+  const fastingCheck = evaluateFastingEligibility(patient, plannedFastingHours);
+  const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
+  const isFastingDay = dayStructure === 'intermittent_fasting_16_8';
+  const fastingSchedule: FastingScheduleInfo = {
+    is_fasting: isFastingDay,
+    is_fasting_active: isFastingDay,
+    fasting_type: isFastingDay ? 'intermittent_fasting_16_8' : 'none',
+    proposed_fasting_hours: plannedFastingHours,
+    actual_fasting_hours: plannedFastingHours,
+    planned_fasting_hours: plannedFastingHours,
+    eating_window_start: isFastingDay ? '12:00 PM' : undefined,
+    eating_window_end: isFastingDay ? '08:00 PM' : undefined,
+    eating_window_hours: isFastingDay ? 8 : undefined,
+    eligibility_status: fastingCheck.eligibility.risk_level === 'contraindicated' ? 'contraindicated' : (fastingCheck.eligibility.is_eligible_for_fasting ? 'eligible' : 'not_indicated'),
+    decision_status: isFastingContraindicated ? 'fasting_contraindicated' : (isFastingDay ? 'fasting_approved' : 'no_fasting_prescribed'),
+    rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? '16:8 Intermittent Fasting Schedule (12:00 PM - 08:00 PM)' : 'Standard regular meal schedule'),
+    rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? '১৬:৮ উপবাস সময়সূচি (দুপুর ১২:০০ - রাত ০৮:০০)' : 'নিয়মিত খাবারের সময়সূচি'),
+    reasons_en: fastingCheck.eligibility.contraindication_reasons_en,
+    reasons_bn: fastingCheck.eligibility.contraindication_reasons_bn
+  };
+
+  // Evaluate Nutritional Adequacy
+  const nutritionalAdequacy = evaluateNutritionalAdequacy(summary, targetMacros, patient);
+  if (!nutritionalAdequacy.is_adequate) {
+    for (const d of nutritionalAdequacy.deficits) {
+      safetyNotes.push(`Nutritional Adequacy: ${d}`);
+    }
+    for (const dbn of nutritionalAdequacy.deficits_bn) {
+      safetyNotesBn.push(`পুষ্টির পর্যাপ্ততা: ${dbn}`);
+    }
+    if (safetyDecision === 'SAFE') {
+      safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
+    }
+  }
+
   return {
     ...day,
+    meal_structure: dayStructure,
+    fasting_schedule: fastingSchedule,
+    nutritional_adequacy: nutritionalAdequacy,
     summary,
     safety_decision: safetyDecision,
     safety_notes: safetyNotes.length > 0 ? safetyNotes : undefined,
@@ -937,6 +1147,36 @@ export function generateWeeklyDietPlan(
     }
   }
 
+  // Aggregate weekly nutritional adequacy across all 7 days
+  const weeklyAvgCalories = Math.round(days.reduce((sum, d) => sum + d.summary.calories, 0) / Math.max(1, days.length));
+  const weeklyAvgProtein = Math.round((days.reduce((sum, d) => sum + d.summary.protein_g, 0) / Math.max(1, days.length)) * 10) / 10;
+  const weeklyAvgCarbs = Math.round((days.reduce((sum, d) => sum + d.summary.carbs_g, 0) / Math.max(1, days.length)) * 10) / 10;
+  const weeklyAvgFat = Math.round((days.reduce((sum, d) => sum + d.summary.fat_g, 0) / Math.max(1, days.length)) * 10) / 10;
+  const weeklyAvgSummary: DayPlanSummary = {
+    calories: weeklyAvgCalories,
+    protein_g: weeklyAvgProtein,
+    carbs_g: weeklyAvgCarbs,
+    fat_g: weeklyAvgFat,
+    fiber_g: 0,
+    gl: 0,
+    gl_is_estimated: true,
+    pral: 0,
+    calorie_variance: weeklyAvgCalories - targetMacros.calories,
+    protein_variance: Math.round((weeklyAvgProtein - targetMacros.protein_g) * 10) / 10,
+    carbs_variance: Math.round((weeklyAvgCarbs - targetMacros.carbs_g) * 10) / 10,
+    fat_variance: Math.round((weeklyAvgFat - targetMacros.fat_g) * 10) / 10
+  };
+
+  const weeklyNutritionalAdequacy = evaluateNutritionalAdequacy(weeklyAvgSummary, targetMacros, patient);
+  const anyDayInadequate = days.some(d => d.nutritional_adequacy?.is_adequate === false);
+  if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
+    const reasonMsg = 'Nutritional Adequacy Not Achieved: Planned meals fall short of authoritative clinical targets (>15% deficit or below BMR floor).';
+    if (!unresolvedHardStops.includes(reasonMsg)) {
+      unresolvedHardStops.push(reasonMsg);
+    }
+    overallSafety = 'HARD_STOP';
+  }
+
   const p2HandoffSummary = p3Context ? {
     clinicalAssessmentApproved: Boolean(p3Context.clinicalAssessmentApproved),
     confirmedAllergies: p3Context.confirmedAllergies || [],
@@ -964,6 +1204,9 @@ export function generateWeeklyDietPlan(
     approval_metadata: existingPlan?.approval_metadata,
     previous_approval: existingPlan?.previous_approval,
     historical_approvals: existingPlan?.historical_approvals,
+    meal_structure: days[0]?.meal_structure || '3_meals_1_snack',
+    fasting_schedule: days[0]?.fasting_schedule,
+    nutritional_adequacy: weeklyNutritionalAdequacy,
     target_macros: targetMacros,
     days,
     overall_safety_status: overallSafety,
@@ -1093,9 +1336,25 @@ export function evaluateWeeklyPlanClinicalSafety(
     ]))
   };
 
+  // 3. Fasting Safety Screening for entire weekly plan
+  const proposedFastingHours = (weeklyPlan.meal_structure === 'intermittent_fasting_16_8' || weeklyPlan.days?.some(d => d.fasting_schedule?.is_fasting_active || d.meal_structure === 'intermittent_fasting_16_8')) ? 16 : 0;
+  if (proposedFastingHours > 0) {
+    const fastingCheck = evaluateFastingEligibility(mergedPatient, proposedFastingHours);
+    if (!fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP')) {
+      overallDecision = 'HARD_STOP';
+      for (const stop of fastingCheck.safetyResults.filter(r => r.decision === 'HARD_STOP')) {
+        const msg = `Fasting Safety Contraindication: ${stop.title_en} - ${stop.clinical_explanation_en}`;
+        if (!unresolvedHardStops.includes(msg)) {
+          unresolvedHardStops.push(msg);
+        }
+      }
+    }
+  }
+
   for (const day of (weeklyPlan.days || [])) {
     const dayNotes: string[] = [];
-    const dayEval = validateInterventionPlan(mergedPatient, day.meals, allFoods);
+    const dayFastingHours = (day.fasting_schedule?.is_fasting_active || day.meal_structure === 'intermittent_fasting_16_8') ? (day.fasting_schedule?.planned_fasting_hours || 16) : 0;
+    const dayEval = validateInterventionPlan(mergedPatient, day.meals, allFoods, { plannedFastingHours: dayFastingHours });
 
     if (dayEval.hardStops.length > 0) {
       for (const hs of dayEval.hardStops) {
@@ -1111,6 +1370,20 @@ export function evaluateWeeklyPlanClinicalSafety(
       for (const cr of dayEval.clinicalReviewsRequired) {
         const msg = `Day ${day.day_number}: ${cr.title_en} - ${cr.clinical_explanation_en}`;
         dayNotes.push(msg);
+      }
+    }
+
+    // Nutritional Adequacy evaluation for the day
+    if (weeklyPlan.target_macros) {
+      const adequacy = evaluateNutritionalAdequacy(day.summary, weeklyPlan.target_macros, mergedPatient);
+      if (!adequacy.is_adequate) {
+        for (const d of adequacy.deficits) {
+          const msg = `Day ${day.day_number} Nutritional Deficit: ${d}`;
+          dayNotes.push(msg);
+          if (!unresolvedHardStops.includes(msg)) {
+            unresolvedHardStops.push(msg);
+          }
+        }
       }
     }
 
@@ -1188,12 +1461,41 @@ export function regenerateDayInWeeklyPlan(
     }
   }
 
+  const weeklyAvgCalories = Math.round(updatedDays.reduce((sum, d) => sum + d.summary.calories, 0) / Math.max(1, updatedDays.length));
+  const weeklyAvgProtein = Math.round((updatedDays.reduce((sum, d) => sum + d.summary.protein_g, 0) / Math.max(1, updatedDays.length)) * 10) / 10;
+  const weeklyAvgCarbs = Math.round((updatedDays.reduce((sum, d) => sum + d.summary.carbs_g, 0) / Math.max(1, updatedDays.length)) * 10) / 10;
+  const weeklyAvgFat = Math.round((updatedDays.reduce((sum, d) => sum + d.summary.fat_g, 0) / Math.max(1, updatedDays.length)) * 10) / 10;
+  const weeklyAvgSummary: DayPlanSummary = {
+    calories: weeklyAvgCalories,
+    protein_g: weeklyAvgProtein,
+    carbs_g: weeklyAvgCarbs,
+    fat_g: weeklyAvgFat,
+    fiber_g: 0,
+    gl: 0,
+    gl_is_estimated: true,
+    pral: 0,
+    calorie_variance: weeklyAvgCalories - currentPlan.target_macros.calories,
+    protein_variance: Math.round((weeklyAvgProtein - currentPlan.target_macros.protein_g) * 10) / 10,
+    carbs_variance: Math.round((weeklyAvgCarbs - currentPlan.target_macros.carbs_g) * 10) / 10,
+    fat_variance: Math.round((weeklyAvgFat - currentPlan.target_macros.fat_g) * 10) / 10
+  };
+  const weeklyNutritionalAdequacy = evaluateNutritionalAdequacy(weeklyAvgSummary, currentPlan.target_macros, patient);
+  const anyDayInadequate = updatedDays.some(d => d.nutritional_adequacy?.is_adequate === false);
+  if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
+    const reasonMsg = 'Nutritional Adequacy Not Achieved: Planned meals fall short of authoritative clinical targets (>15% deficit or below BMR floor).';
+    if (!unresolvedHardStops.includes(reasonMsg)) {
+      unresolvedHardStops.push(reasonMsg);
+    }
+    overallSafety = 'HARD_STOP';
+  }
+
   const updatedPlan: WeeklyDietPlan = {
     ...currentPlan,
     days: updatedDays,
     updated_at: new Date().toISOString(),
     overall_safety_status: overallSafety,
-    unresolved_hard_stops: unresolvedHardStops.length > 0 ? unresolvedHardStops : undefined
+    unresolved_hard_stops: unresolvedHardStops.length > 0 ? unresolvedHardStops : undefined,
+    nutritional_adequacy: weeklyNutritionalAdequacy
   };
 
   return invalidateWeeklyPlanApproval(updatedPlan, `Regenerated Day ${dayNumber}`);
@@ -1226,7 +1528,7 @@ export function copyDayInWeeklyPlan(
   }));
 
   // Re-calculate totals and validate safety for the copied day
-  const targetDayPlan: DayPlan = {
+  let targetDayPlan: DayPlan = {
     ...sourceDay,
     day_number: targetDayNumber,
     day_name_bn: targetDayName.bn,
@@ -1237,6 +1539,8 @@ export function copyDayInWeeklyPlan(
     locked_meals: {}
   };
 
+  targetDayPlan = recalculateDayPlan(targetDayPlan, currentPlan.target_macros, patient, allFoods);
+
   const updatedDays = currentPlan.days.map(d => {
     if (d.day_number === targetDayNumber) {
       return targetDayPlan;
@@ -1244,10 +1548,58 @@ export function copyDayInWeeklyPlan(
     return d;
   });
 
+  // Recheck overall safety
+  let overallSafety: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = 'SAFE';
+  const unresolvedHardStops: string[] = [];
+
+  for (const day of updatedDays) {
+    if (day.safety_decision === 'HARD_STOP') {
+      overallSafety = 'HARD_STOP';
+      if (day.safety_notes) {
+        for (const n of day.safety_notes) {
+          if (!unresolvedHardStops.includes(n)) unresolvedHardStops.push(n);
+        }
+      }
+    } else if (day.safety_decision === 'CLINICAL_REVIEW_REQUIRED' && overallSafety !== 'HARD_STOP') {
+      overallSafety = 'CLINICAL_REVIEW_REQUIRED';
+    }
+  }
+
+  const weeklyAvgCalories = Math.round(updatedDays.reduce((sum, d) => sum + d.summary.calories, 0) / Math.max(1, updatedDays.length));
+  const weeklyAvgProtein = Math.round((updatedDays.reduce((sum, d) => sum + d.summary.protein_g, 0) / Math.max(1, updatedDays.length)) * 10) / 10;
+  const weeklyAvgCarbs = Math.round((updatedDays.reduce((sum, d) => sum + d.summary.carbs_g, 0) / Math.max(1, updatedDays.length)) * 10) / 10;
+  const weeklyAvgFat = Math.round((updatedDays.reduce((sum, d) => sum + d.summary.fat_g, 0) / Math.max(1, updatedDays.length)) * 10) / 10;
+  const weeklyAvgSummary: DayPlanSummary = {
+    calories: weeklyAvgCalories,
+    protein_g: weeklyAvgProtein,
+    carbs_g: weeklyAvgCarbs,
+    fat_g: weeklyAvgFat,
+    fiber_g: 0,
+    gl: 0,
+    gl_is_estimated: true,
+    pral: 0,
+    calorie_variance: weeklyAvgCalories - currentPlan.target_macros.calories,
+    protein_variance: Math.round((weeklyAvgProtein - currentPlan.target_macros.protein_g) * 10) / 10,
+    carbs_variance: Math.round((weeklyAvgCarbs - currentPlan.target_macros.carbs_g) * 10) / 10,
+    fat_variance: Math.round((weeklyAvgFat - currentPlan.target_macros.fat_g) * 10) / 10
+  };
+  const weeklyNutritionalAdequacy = evaluateNutritionalAdequacy(weeklyAvgSummary, currentPlan.target_macros, patient);
+  const anyDayInadequate = updatedDays.some(d => d.nutritional_adequacy?.is_adequate === false);
+  if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
+    const reasonMsg = 'Nutritional Adequacy Not Achieved: Planned meals fall short of authoritative clinical targets (>15% deficit or below BMR floor).';
+    if (!unresolvedHardStops.includes(reasonMsg)) {
+      unresolvedHardStops.push(reasonMsg);
+    }
+    overallSafety = 'HARD_STOP';
+  }
+
   const updatedPlan: WeeklyDietPlan = {
     ...currentPlan,
     days: updatedDays,
-    updated_at: new Date().toISOString()
+    updated_at: new Date().toISOString(),
+    overall_safety_status: overallSafety,
+    unresolved_hard_stops: unresolvedHardStops.length > 0 ? unresolvedHardStops : undefined,
+    nutritional_adequacy: weeklyNutritionalAdequacy
   };
 
   return invalidateWeeklyPlanApproval(updatedPlan, `Copied Day ${sourceDayNumber} to Day ${targetDayNumber}`);

@@ -513,6 +513,7 @@ export interface DietChartMeal {
   title_bn: string;
   title_en: string;
   target_time: string;
+  scheduled_time?: string;
   items: DietChartMealItem[];
   meal_calories: number;
   meal_protein_g: number;
@@ -555,6 +556,38 @@ export interface DayPlan {
   safety_decision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP';
   safety_notes?: string[];
   safety_notes_bn?: string[];
+  meal_structure?: '3_meals' | '3_meals_1_snack' | '5_meals_traditional' | 'intermittent_fasting_16_8';
+  fasting_schedule?: FastingScheduleInfo;
+  nutritional_adequacy?: NutritionalAdequacyEvaluation;
+}
+
+export interface FastingScheduleInfo {
+  is_fasting: boolean;
+  is_fasting_active?: boolean;
+  fasting_type?: 'intermittent_fasting_16_8' | 'circadian_12_12' | 'none';
+  proposed_fasting_hours: number;
+  actual_fasting_hours: number;
+  planned_fasting_hours?: number;
+  eating_window_start?: string; // e.g. "12:00 PM"
+  eating_window_end?: string;   // e.g. "08:00 PM"
+  eating_window_hours?: number; // e.g. 8
+  eligibility_status: 'eligible' | 'contraindicated' | 'high_risk_supervised' | 'not_indicated';
+  decision_status: 'no_fasting_prescribed' | 'fasting_contraindicated' | 'fasting_requires_review' | 'fasting_approved';
+  rationale_en: string;
+  rationale_bn: string;
+  reasons_en?: string[];
+  reasons_bn?: string[];
+  safety_warnings?: string[];
+}
+
+export interface NutritionalAdequacyEvaluation {
+  is_adequate: boolean;
+  calorie_achievement_pct: number;
+  protein_achievement_pct: number;
+  deficits: string[];
+  deficits_bn: string[];
+  status_label_en: 'Nutritional Adequacy Achieved' | 'Nutritional Targets Not Achieved' | 'Clinical Review Recommended';
+  status_label_bn: string;
 }
 
 export interface WeeklyDietPlanApprovalRecord {
@@ -605,6 +638,9 @@ export interface WeeklyDietPlan {
   days: DayPlan[];
   overall_safety_status: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP';
   unresolved_hard_stops?: string[];
+  meal_structure?: '3_meals' | '3_meals_1_snack' | '5_meals_traditional' | 'intermittent_fasting_16_8';
+  fasting_schedule?: FastingScheduleInfo;
+  nutritional_adequacy?: NutritionalAdequacyEvaluation;
   p2_handoff_summary?: {
     clinicalAssessmentApproved: boolean;
     confirmedAllergies: string[];

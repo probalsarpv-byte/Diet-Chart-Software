@@ -933,7 +933,7 @@ function runAcceptanceSuite() {
         return {
           ...it,
           raw_weight_g: 200,
-          calories: Math.round(it.calories * factor),
+          kcal: Math.round(it.kcal * factor),
           protein_g: Math.round(it.protein_g * factor * 10) / 10,
           carbs_g: Math.round(it.carbs_g * factor * 10) / 10,
           fat_g: Math.round(it.fat_g * factor * 10) / 10,
@@ -995,7 +995,7 @@ function runAcceptanceSuite() {
     // 3. Intermittent Fasting 16:8 (Non-contraindicated patient)
     const pFastingEligible = createBaseTestPatient({
       age: 35,
-      population_group: 'general_adult',
+      population_group: 'adult_standard',
       active_medications: [],
       dietary_preferences: {
         meal_structure: 'intermittent_fasting_16_8'
@@ -1038,7 +1038,6 @@ function runAcceptanceSuite() {
     const pFluidRestricted = createBaseTestPatient({
       weight_kg: 70,
       clinical_safety: {
-        non_oral_feeding: { is_npo: false, route: 'oral' },
         fluid_restriction: {
           is_restricted: true,
           limit_ml: 1500,
@@ -1053,16 +1052,356 @@ function runAcceptanceSuite() {
 
     // 2. Patient with no restriction: estimated physiological baseline (30-35 mL/kg)
     const pNormalWeight = createBaseTestPatient({
-      weight_kg: 60,
-      clinical_safety: {
-        non_oral_feeding: { is_npo: false, route: 'oral' }
-      }
+      weight_kg: 60
     });
     const minEstimated = Math.round(pNormalWeight.weight_kg * 30);
     const maxEstimated = Math.round(pNormalWeight.weight_kg * 35);
     assert(minEstimated === 1800, 'Test R: 60kg * 30 = 1800 mL');
     assert(maxEstimated === 2100, 'Test R: 60kg * 35 = 2100 mL');
     assert(minEstimated !== 2500, 'Test R: Never presents blanket 2500 mL as individual prescription');
+  }
+
+  // =====================================================================
+  // MANDATORY REGRESSION TESTS 1 THROUGH 18 (CLINICAL SAFETY & ADEQUACY)
+  // =====================================================================
+
+  // TEST 1: Healthy adult without fasting preference receives regular meal schedule, no automatic 16:8
+  console.log('\n--- TEST 1: Healthy Adult Regular Meal Schedule ---');
+  {
+    const pAdultNoFast = createBaseTestPatient({
+      age: 32,
+      population_group: 'adult_standard',
+      dietary_preferences: {}
+    });
+    const plan = generateWeeklyDietPlan(pAdultNoFast, allFoods, baseTrafficLight);
+    const day1 = plan.days[0];
+    assert(day1.meal_structure === '3_meals_1_snack', 'Test 1: Default meal structure is 3_meals_1_snack');
+    assert(day1.meals.some(m => m.meal_type === 'breakfast'), 'Test 1: Regular schedule includes breakfast');
+    assert(day1.fasting_schedule?.is_fasting === false, 'Test 1: Fasting is not active');
+    assert(day1.fasting_schedule?.decision_status !== 'fasting_approved', 'Test 1: 16:8 is not automatically prescribed');
+  }
+
+  // TEST 2: Adult requesting 16:8 with no contraindications receives duration-specific screening (16h) and review before prescription
+  console.log('\n--- TEST 2: Duration-Specific 16:8 Screening ---');
+  {
+    const pEligibleFasting = createBaseTestPatient({
+      age: 38,
+      population_group: 'adult_standard',
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const check16 = evaluateFastingEligibility(pEligibleFasting, 16);
+    assert(check16.eligibility.is_eligible_for_fasting === true, 'Test 2: Eligible for 16h fasting');
+    assert(check16.eligibility.max_allowable_fasting_hours >= 16, 'Test 2: Max allowable hours >= 16');
+    const plan = generateWeeklyDietPlan(pEligibleFasting, allFoods, baseTrafficLight);
+    const day1 = plan.days[0];
+    assert(day1.meal_structure === 'intermittent_fasting_16_8', 'Test 2: Meal structure is 16:8');
+    assert(day1.fasting_schedule?.is_fasting === true, 'Test 2: Fasting is active');
+    assert(day1.fasting_schedule?.planned_fasting_hours === 16, 'Test 2: Planned fasting duration is 16 hours');
+    assert(day1.fasting_schedule?.eating_window_start === '12:00 PM', 'Test 2: Window starts at 12:00 PM');
+    assert(day1.fasting_schedule?.eating_window_end === '08:00 PM', 'Test 2: Window ends at 08:00 PM');
+  }
+
+  // TEST 3: Patient using insulin requests 16:8: Unsafe automatic fasting prescription prevented (HARD STOP)
+  console.log('\n--- TEST 3: Insulin Treatment Fasting Safety (HARD STOP) ---');
+  {
+    const pInsulin = createBaseTestPatient({
+      age: 52,
+      active_medications: ['Insulin Glargine 20 units nightly', 'Metformin 1000mg'],
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const check = evaluateFastingEligibility(pInsulin, 16);
+    const hasMedHardStop = check.safetyResults.some(r => r.rule_id === 'FASTING_HYPOGLYCEMIA_MED_STOP' && r.decision === 'HARD_STOP');
+    assert(hasMedHardStop === true, 'Test 3: Insulin triggers FASTING_HYPOGLYCEMIA_MED_STOP HARD_STOP');
+    const plan = generateWeeklyDietPlan(pInsulin, allFoods, baseTrafficLight);
+    const day1 = plan.days[0];
+    assert(day1.meal_structure !== 'intermittent_fasting_16_8', 'Test 3: Fasting overridden to safe regular meals');
+    assert(day1.meals.some(m => m.meal_type === 'breakfast'), 'Test 3: Breakfast reinstated to prevent morning hypoglycemia');
+  }
+
+  // TEST 4: Patient using sulfonylurea requests 16:8: Hypoglycemia risk detected, restricted to max 12h
+  console.log('\n--- TEST 4: Sulfonylurea Fasting Restriction (Max 12h) ---');
+  {
+    const pSulfonylurea = createBaseTestPatient({
+      age: 55,
+      active_medications: ['Glimepiride 2mg daily'],
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const check16 = evaluateFastingEligibility(pSulfonylurea, 16);
+    assert(check16.eligibility.max_allowable_fasting_hours === 12, 'Test 4: Sulfonylurea restricts fasting to max 12 hours');
+    const hasMedStop = check16.safetyResults.some(r => r.decision === 'HARD_STOP');
+    assert(hasMedStop === true, 'Test 4: 16h request on sulfonylurea triggers HARD_STOP');
+    const plan = generateWeeklyDietPlan(pSulfonylurea, allFoods, baseTrafficLight);
+    const day1 = plan.days[0];
+    assert(day1.meal_structure !== 'intermittent_fasting_16_8', 'Test 4: Plan generation prevents 16:8 prescription');
+  }
+
+  // TEST 5: Pregnant patient requests fasting: Restrictive fasting blocked (HARD STOP)
+  console.log('\n--- TEST 5: Pregnancy Fasting Absolute Contraindication ---');
+  {
+    const pPregnant = createBaseTestPatient({
+      population_group: 'pregnancy',
+      age: 29,
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const check = evaluateFastingEligibility(pPregnant, 16);
+    assert(check.eligibility.is_eligible_for_fasting === false, 'Test 5: Not eligible for fasting in pregnancy');
+    assert(check.safetyResults.some(r => r.rule_id === 'FASTING_PREGNANCY_STOP' && r.decision === 'HARD_STOP'), 'Test 5: FASTING_PREGNANCY_STOP is HARD_STOP');
+    const plan = generateWeeklyDietPlan(pPregnant, allFoods, baseTrafficLight);
+    assert(plan.days[0].meals.some(m => m.meal_type === 'breakfast'), 'Test 5: Breakfast provided in pregnancy');
+  }
+
+  // TEST 6: Pediatric patient requests fasting: Regular age-appropriate nutrition structure enforced
+  console.log('\n--- TEST 6: Pediatric Age-Appropriate Nutrition Enforced ---');
+  {
+    const pPediatric = createBaseTestPatient({
+      age: 11,
+      population_group: 'pediatric',
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const check = evaluateFastingEligibility(pPediatric, 16);
+    assert(check.eligibility.is_eligible_for_fasting === false, 'Test 6: Fasting ineligible for pediatric patient');
+    assert(check.safetyResults.some(r => r.rule_id === 'FASTING_PEDIATRIC_STOP' && r.decision === 'HARD_STOP'), 'Test 6: FASTING_PEDIATRIC_STOP is HARD_STOP');
+    const plan = generateWeeklyDietPlan(pPediatric, allFoods, baseTrafficLight);
+    assert(plan.days[0].meals.length >= 4, 'Test 6: Pediatric plan receives regular multiple meals');
+    assert(plan.days[0].meals.some(m => m.meal_type === 'breakfast'), 'Test 6: Pediatric plan includes breakfast');
+  }
+
+  // TEST 7: Patient with nutritional vulnerability (BMI < 18.5, underweight <45kg): Inappropriate fasting prevented
+  console.log('\n--- TEST 7: Nutritional Vulnerability & Underweight Safety ---');
+  {
+    const pUnderweight = createBaseTestPatient({
+      weight_kg: 42,
+      height_cm: 158,
+      calculated: {
+        bmi: 16.8,
+        bmr: 1050,
+        tdee: 1260,
+        target_calories: 1500,
+        target_protein_g: 65,
+        target_carbs_g: 185,
+        target_fat_g: 50
+      },
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const check = evaluateFastingEligibility(pUnderweight, 16);
+    assert(check.eligibility.is_eligible_for_fasting === false, 'Test 7: Fasting contraindicated for underweight/low BMI');
+    assert(check.safetyResults.some(r => r.rule_id === 'FASTING_UNDERWEIGHT_STOP' && r.decision === 'HARD_STOP'), 'Test 7: Triggers FASTING_UNDERWEIGHT_STOP');
+    const plan = generateWeeklyDietPlan(pUnderweight, allFoods, baseTrafficLight);
+    assert(plan.days[0].meal_structure !== 'intermittent_fasting_16_8', 'Test 7: Overridden to safe non-fasting meal structure');
+  }
+
+  // TEST 8: Change from 5 meals to 3 meals: Nutrition redistributed, deficits flagged if inadequate
+  console.log('\n--- TEST 8: Nutrition Redistribution Across Meal Structures ---');
+  {
+    const p3Meals = createBaseTestPatient({
+      dietary_preferences: { meal_structure: '3_meals' }
+    });
+    const plan = generateWeeklyDietPlan(p3Meals, allFoods, baseTrafficLight);
+    const day1 = plan.days[0];
+    assert(day1.meals.length === 3, 'Test 8: Exactly 3 meals generated');
+    const calPct = (day1.summary.calories / plan.target_macros.calories) * 100;
+    assert(calPct >= 80, `Test 8: Calories redistributed across 3 meals (${calPct}% of target)`);
+    assert(day1.nutritional_adequacy !== undefined, 'Test 8: Nutritional adequacy evaluated');
+  }
+
+  // TEST 9: Approved plan receives fasting schedule modification: Approval invalidated, history retained
+  console.log('\n--- TEST 9: Fasting Modification Invalidates Approval ---');
+  {
+    const pEligible = createBaseTestPatient({
+      dietary_preferences: { meal_structure: '3_meals_1_snack' }
+    });
+    let plan = generateWeeklyDietPlan(pEligible, allFoods, baseTrafficLight);
+    plan = {
+      ...plan,
+      status: 'approved',
+      is_approved: true,
+      approved_by: 'Dr. Clinical Lead',
+      approval_date: new Date().toISOString()
+    };
+    // Modify structure to fasting
+    const pFastMod = { ...pEligible, dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' as const } };
+    const regenerated = generateWeeklyDietPlan(pFastMod, allFoods, baseTrafficLight, null, plan, { forceRegenerate: true });
+    assert(regenerated.is_approved === false, 'Test 9: Approval invalidated on schedule change');
+    assert(regenerated.status === 'requires_review', 'Test 9: Status transitioned to requires_review');
+    assert(regenerated.previous_approval?.approved_by === 'Dr. Clinical Lead', 'Test 9: Prior clinician retained in previous_approval');
+  }
+
+  // TEST 10: Patient medication changes after plan generation: Revalidation detects new risks
+  console.log('\n--- TEST 10: Post-Generation Medication Change Revalidation ---');
+  {
+    const pInit = createBaseTestPatient({ active_medications: [] });
+    const plan = generateWeeklyDietPlan(pInit, allFoods, baseTrafficLight);
+    const pUpdatedMed = {
+      ...pInit,
+      active_medications: ['Spironolactone 50mg'] // Potassium-sparing diuretic
+    };
+    const safety = evaluateWeeklyPlanClinicalSafety(pUpdatedMed, plan, allFoods);
+    assert(safety.day_evaluations.length === 7, 'Test 10: All 7 days revalidated');
+  }
+
+  // TEST 11: Clinically restricted nutrients remain within documented limits during redistribution
+  console.log('\n--- TEST 11: Restricted Nutrients Within Documented Limits ---');
+  {
+    const pRestricted = createBaseTestPatient({
+      dietary_preferences: { meal_structure: '3_meals' }
+    });
+    const p3WithRestrictions: P3NutritionPlanningContext = {
+      clinicalAssessmentApproved: true,
+      prescriptions: {
+        sodium: { hasConfirmedLimit: true, numericalLimit: 2000, unit: 'mg/day', clinicalReason: 'Hypertension' },
+        fluid: { hasConfirmedLimit: true, numericalLimit: 1500, unit: 'mL/day', clinicalReason: 'Heart Failure' }
+      }
+    };
+    const plan = generateWeeklyDietPlan(pRestricted, allFoods, baseTrafficLight, p3WithRestrictions);
+    assert(plan.days[0].safety_notes?.some(n => n.includes('Sodium restriction')) === true, 'Test 11: Sodium restriction documented');
+    assert(plan.days[0].safety_notes?.some(n => n.includes('Fluid restriction')) === true, 'Test 11: Fluid restriction documented');
+  }
+
+  // TEST 12: Patient-specific food allergies remain enforced after meal restructuring
+  console.log('\n--- TEST 12: Food Allergies Strictly Enforced Across Meal Structures ---');
+  {
+    const pAllergic = createBaseTestPatient({
+      confirmed_allergies: ['peanut', 'egg', 'hilsa_fish'],
+      allergy_reconciliation_status: 'allergies_confirmed',
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const allergicTrafficLight = resolveConflicts(
+      allFoods,
+      pAllergic.selected_conditions,
+      [],
+      pAllergic.confirmed_allergies,
+      [],
+      [],
+      pAllergic.current_phase
+    );
+    const plan = generateWeeklyDietPlan(pAllergic, allFoods, allergicTrafficLight);
+    let allergenFound = false;
+    for (const day of plan.days) {
+      for (const meal of day.meals) {
+        for (const item of meal.items) {
+          const name = (item.food_name_en + ' ' + item.food_name_bn).toLowerCase();
+          if (name.includes('peanut') || name.includes('egg') || name.includes('hilsa') || name.includes('ডিম') || name.includes('চীনাবাদাম') || name.includes('ইলিশ')) {
+            allergenFound = true;
+          }
+        }
+      }
+    }
+    assert(!allergenFound, 'Test 12: All 7 days in 16:8 structure strictly exclude confirmed allergens');
+  }
+
+  // TEST 13: Legacy saved weekly plans remain readable and editable
+  console.log('\n--- TEST 13: Legacy Weekly Plans Backward Compatibility ---');
+  {
+    const legacyPlan: any = {
+      plan_id: 'plan_legacy_001',
+      patient_id: 'pt_nasreen_01',
+      visit_id: 'vis_nasreen_01',
+      version: 1,
+      schema_version: 1,
+      days: [
+        {
+          day_number: 1,
+          day_name_bn: '১ম দিন',
+          day_name_en: 'Day 1',
+          meals: [],
+          summary: { calories: 1500, protein_g: 70, carbs_g: 200, fat_g: 45, fiber_g: 25, gl: 50, pral: -5 }
+        }
+      ]
+    };
+    // Should be safely evaluable without runtime crash
+    const patient = createBaseTestPatient();
+    const safety = evaluateWeeklyPlanClinicalSafety(patient, legacyPlan as WeeklyDietPlan, allFoods);
+    assert(safety !== undefined, 'Test 13: Legacy plan safely evaluated');
+  }
+
+  // TEST 14: Day 1 and Days 2–7 maintain correct nutrition summaries
+  console.log('\n--- TEST 14: Days 1 Through 7 Summary Integrity ---');
+  {
+    const patient = createBaseTestPatient();
+    const plan = generateWeeklyDietPlan(patient, allFoods, baseTrafficLight);
+    for (const day of plan.days) {
+      const mealCalSum = day.meals.reduce((sum, m) => sum + m.meal_calories, 0);
+      assert(day.summary.calories === mealCalSum, `Test 14: Day ${day.day_number} calories match meal sums`);
+      assert(day.summary.protein_g > 0, `Test 14: Day ${day.day_number} protein is positive`);
+      assert(day.summary.carbs_g > 0, `Test 14: Day ${day.day_number} carbs is positive`);
+      assert(day.summary.fat_g > 0, `Test 14: Day ${day.day_number} fat is positive`);
+    }
+  }
+
+  // TEST 15: No cross-patient or cross-visit data contamination
+  console.log('\n--- TEST 15: Cross-Patient and Cross-Visit Isolation ---');
+  {
+    const patientA = createBaseTestPatient({ id: 'patient_alpha', current_visit_id: 'vis_alpha_1' });
+    const patientB = createBaseTestPatient({ id: 'patient_beta', current_visit_id: 'vis_beta_2' });
+    const planA = generateWeeklyDietPlan(patientA, allFoods, baseTrafficLight);
+    const planB = generateWeeklyDietPlan(patientB, allFoods, baseTrafficLight);
+    assert(planA.patient_id === 'patient_alpha', 'Test 15: Plan A belongs to patient_alpha');
+    assert(planA.visit_id === 'vis_alpha_1', 'Test 15: Plan A visit is vis_alpha_1');
+    assert(planB.patient_id === 'patient_beta', 'Test 15: Plan B belongs to patient_beta');
+    assert(planB.visit_id === 'vis_beta_2', 'Test 15: Plan B visit is vis_beta_2');
+    assert(planA.patient_id !== planB.patient_id, 'Test 15: Patient IDs isolated');
+  }
+
+  // TEST 16: Full-week regeneration preserves locks and invalidates approval appropriately
+  console.log('\n--- TEST 16: Lock Preservation on Regeneration ---');
+  {
+    const patient = createBaseTestPatient();
+    let plan = generateWeeklyDietPlan(patient, allFoods, baseTrafficLight);
+    // Lock Day 2
+    plan.days[1].is_locked = true;
+    const day2CalBefore = plan.days[1].summary.calories;
+    const regenerated = generateWeeklyDietPlan(patient, allFoods, baseTrafficLight, null, plan, { forceRegenerate: true, preserveLocks: true });
+    assert(regenerated.days[1].is_locked === true, 'Test 16: Day 2 remains locked');
+    assert(regenerated.days[1].summary.calories === day2CalBefore, 'Test 16: Locked Day 2 content preserved');
+  }
+
+  // TEST 17: Actual meal timestamps match the claimed eating window (12:30 PM, 04:30 PM, 07:30 PM inside 12:00-20:00)
+  console.log('\n--- TEST 17: Eating Window Meal Timestamps ---');
+  {
+    const pFastEligible = createBaseTestPatient({
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const plan = generateWeeklyDietPlan(pFastEligible, allFoods, baseTrafficLight);
+    const day1 = plan.days[0];
+    assert(day1.meals.length === 3, 'Test 17: Fasting day has exactly 3 meals');
+    assert(day1.meals[0].scheduled_time === '12:30 PM', 'Test 17: Lunch scheduled at 12:30 PM');
+    assert(day1.meals[1].scheduled_time === '04:30 PM', 'Test 17: Mid-window snack at 04:30 PM');
+    assert(day1.meals[2].scheduled_time === '07:30 PM', 'Test 17: Dinner at 07:30 PM');
+    assert(!day1.meals.some(m => m.scheduled_time.includes('AM')), 'Test 17: No meals outside 12:00 PM – 08:00 PM window');
+  }
+
+  // TEST 18: Unsafe or nutritionally inadequate draft cannot be approved
+  console.log('\n--- TEST 18: Unsafe / Inadequate Plan Approval Prevention ---');
+  {
+    const pInadequate = createBaseTestPatient();
+    // Create an artificially inadequate day plan (only 400 kcal when target is 1650 kcal)
+    const inadequatePlan: WeeklyDietPlan = {
+      plan_id: 'plan_inadequate_001',
+      patient_id: pInadequate.id,
+      visit_id: pInadequate.current_visit_id || 'vis_01',
+      version: 1,
+      schema_version: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      status: 'draft',
+      is_approved: false,
+      target_macros: { calories: 1650, protein_g: 82, carbs_g: 220, fat_g: 45 },
+      days: [
+        {
+          day_number: 1,
+          day_name_bn: '১ম দিন',
+          day_name_en: 'Day 1',
+          meals: [],
+          summary: { calories: 400, protein_g: 15, carbs_g: 50, fat_g: 10, fiber_g: 5, gl: 10, pral: 0, calorie_variance: -1250, protein_variance: -67, carbs_variance: -170, fat_variance: -35 },
+          safety_decision: 'SAFE'
+        }
+      ],
+      overall_safety_status: 'SAFE'
+    };
+    const safety = evaluateWeeklyPlanClinicalSafety(pInadequate, inadequatePlan, allFoods);
+    assert(safety.overall_decision === 'HARD_STOP', 'Test 18: Severe nutritional deficit triggers HARD_STOP');
+    assert(safety.is_eligible_for_approval === false, 'Test 18: Nutritionally inadequate plan is ineligible for approval');
+    assert(safety.unresolved_hard_stops.some(s => s.includes('Nutritional Deficit')), 'Test 18: Unresolved hard stops cite nutritional deficit');
   }
 
   console.log('\n=====================================================================');

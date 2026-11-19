@@ -27,7 +27,8 @@ import {
   FileText,
   Sliders,
   CheckSquare,
-  Eye
+  Eye,
+  Clock
 } from 'lucide-react';
 import { FoodExchangeItem, FoodItem } from '@/types';
 
@@ -120,6 +121,18 @@ export const DietChartTab: React.FC = () => {
   const targetProtein = weeklyDietPlan?.target_macros?.protein_g ?? patient.calculated.target_protein_g;
   const targetCarbs = weeklyDietPlan?.target_macros?.carbs_g ?? patient.calculated.target_carbs_g;
   const targetFat = weeklyDietPlan?.target_macros?.fat_g ?? patient.calculated.target_fat_g;
+
+  // Step 05 Phase 6: Meal Structure, Fasting Schedule & Nutritional Adequacy
+  const currentStructure = currentDayPlan?.meal_structure || weeklyDietPlan?.meal_structure || '3_meals_1_snack';
+  const currentFasting = currentDayPlan?.fasting_schedule || weeklyDietPlan?.fasting_schedule;
+  const currentAdequacy = currentDayPlan?.nutritional_adequacy || weeklyDietPlan?.nutritional_adequacy;
+
+  const structureLabels: Record<string, { en: string; bn: string }> = {
+    '3_meals': { en: '3 Regular Meals', bn: '৩টি নিয়মিত প্রধান আহার' },
+    '3_meals_1_snack': { en: '3 Meals + 1 Snack', bn: '৩টি আহার + ১টি নাস্তা' },
+    '5_meals_traditional': { en: '5 Meals (Ayurvedic/Morning Protocol)', bn: '৫টি আহার (ভোরের প্রোটোকলসহ)' },
+    'intermittent_fasting_16_8': { en: '16:8 Intermittent Fasting (8h Window)', bn: '১৬:৮ ইন্টারমিটেন্ট ফাস্টিং (৮ ঘণ্টার উইন্ডো)' }
+  };
 
   const greenIds = useMemo(() => new Set(trafficLight.green.map(g => g.id)), [trafficLight.green]);
   const yellowIds = useMemo(() => new Set(trafficLight.yellow.map(y => y.id)), [trafficLight.yellow]);
@@ -477,6 +490,89 @@ export const DietChartTab: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Clinical Meal Architecture, Fasting Schedule & Nutritional Adequacy ── */}
+      <div className="p-4 rounded-2xl bg-card border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Left: Meal Structure & Fasting Window */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Meal Structure */}
+          <div 
+            data-testid="meal-structure-badge"
+            className="px-3 py-1.5 rounded-xl border bg-secondary/40 text-xs font-semibold flex items-center gap-2"
+          >
+            <Utensils className="h-4 w-4 text-primary shrink-0" />
+            <div>
+              <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
+                {bn ? 'খাবারের কাঠামো' : 'Meal Structure'}
+              </span>
+              <span className="text-foreground font-bold">
+                {bn ? (structureLabels[currentStructure]?.bn || currentStructure) : (structureLabels[currentStructure]?.en || currentStructure)}
+              </span>
+            </div>
+          </div>
+
+          {/* Fasting Schedule & Safety Panel */}
+          <div
+            data-testid="fasting-status-badge"
+            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+              currentFasting?.decision_status === 'fasting_contraindicated' || (currentFasting?.reasons_en && currentFasting.reasons_en.length > 0 && !currentFasting.is_fasting)
+                ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8'
+                ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
+                : 'border-slate-500/20 bg-secondary/30 text-muted-foreground'
+            }`}
+          >
+            {currentFasting?.decision_status === 'fasting_contraindicated' ? (
+              <AlertOctagon className="h-4 w-4 text-rose-500 shrink-0" />
+            ) : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' ? (
+              <Clock className="h-4 w-4 text-purple-500 shrink-0" />
+            ) : (
+              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+            )}
+            <div>
+              <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
+                {bn ? 'উপবাস মূল্যায়ন ও সময়সূচি' : 'Fasting Status & Window'}
+              </span>
+              <span className="font-bold">
+                {currentFasting?.decision_status === 'fasting_contraindicated'
+                  ? (bn ? `উপবাস নিষিদ্ধ: ${currentFasting.reasons_bn?.[0] || 'ঝুঁকিপূর্ণ'}` : `Fasting Contraindicated: ${currentFasting.reasons_en?.[0] || 'High Risk'}`)
+                  : (currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8')
+                  ? (bn ? 'উপবাস সক্রিয়: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : 'Active 16:8 Window: 12:00 PM – 08:00 PM (16h Fast)')
+                  : (bn ? 'নিয়মিত আহার (উপবাস পরিহার্য)' : 'Regular Schedule (No Fasting)')}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Nutritional Adequacy Status Badge */}
+        <div className="flex items-center gap-2">
+          <div
+            data-testid="nutritional-adequacy-badge"
+            className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 shadow-sm ${
+              currentAdequacy?.is_adequate !== false
+                ? 'border-emerald-500/30 bg-emerald-600/15 text-emerald-700 dark:text-emerald-300'
+                : 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+            }`}
+            title={currentAdequacy?.deficits && currentAdequacy.deficits.length > 0 ? currentAdequacy.deficits.join('\n') : undefined}
+          >
+            {currentAdequacy?.is_adequate !== false ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            )}
+            <div>
+              <span className="text-[10px] opacity-80 block uppercase tracking-wider font-semibold">
+                {bn ? 'পুষ্টি পর্যাপ্ততা' : 'Nutritional Adequacy'}
+              </span>
+              <span>
+                {currentAdequacy?.is_adequate !== false
+                  ? (bn ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'Nutritional Adequacy Achieved')
+                  : (bn ? `পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি (${currentAdequacy?.deficits_bn?.[0] || 'ঘাটতি'})` : `Nutritional Targets Not Achieved: ${currentAdequacy?.deficits?.[0] || 'Deficit'}`)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* ── 7-Day Navigation Tabs ────────────────────────────────────────────────── */}
       <div className="bg-card border rounded-2xl p-2 shadow-sm">

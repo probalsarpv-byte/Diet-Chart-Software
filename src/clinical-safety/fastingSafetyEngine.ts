@@ -82,12 +82,13 @@ export function evaluateFastingEligibility(
   }
 
   // 3. Underweight & Malnutrition Risk
-  if (weight && weight < 45) {
+  const isUnderweight = (weight && weight < 45) || (patient.calculated?.bmi && patient.calculated.bmi < 18.5);
+  if (isUnderweight) {
     isEligible = false;
     maxHours = 0;
     riskLevel = 'contraindicated';
-    reasons_en.push('Underweight status (<45 kg) contraindicates fasting due to inadequate glycogen stores and catabolic risk.');
-    reasons_bn.push('কম ওজনের (<৪৫ কেজি) রোগীদের জন্য উপবাস নিষিদ্ধ।');
+    reasons_en.push('Underweight status (<45 kg or BMI <18.5) contraindicates fasting due to inadequate glycogen stores and catabolic risk.');
+    reasons_bn.push('কম ওজন (<৪৫ কেজি বা বিএমআই <১৮.৫) রোগীদের জন্য উপবাস নিষিদ্ধ।');
     safetyResults.push({
       rule_id: 'FASTING_UNDERWEIGHT_STOP',
       rule_version: '1.0.0',
@@ -100,7 +101,7 @@ export function evaluateFastingEligibility(
       clinical_explanation_bn: 'শরীরে সঞ্চিত শক্তির ঘাটতি থাকায় উপবাস করলে মাংসপেশি ভেঙে মারাত্মক ক্ষতি হবে।',
       required_action_en: 'Initiate hypercaloric refeeding protocol. Fasting is blocked.',
       required_action_bn: 'পুষ্টিকর খাবারের মাধ্যমে ওজন বৃদ্ধির পরিকল্পনা করুন।',
-      triggering_observations: [`weight_kg:${weight}`],
+      triggering_observations: [`weight_kg:${weight}`, `bmi:${patient.calculated?.bmi}`],
       clinician_review_required: true,
       provenance_reference: 'ESPEN Malnutrition Protocol',
       timestamp: new Date().toISOString()
@@ -139,6 +140,53 @@ export function evaluateFastingEligibility(
         timestamp: new Date().toISOString()
       });
     }
+  }
+
+  // 5. Proposed Duration Validation against max allowable
+  if (proposedFastingHours && proposedFastingHours > maxHours && isEligible && !safetyResults.some(r => r.rule_id === 'FASTING_HYPOGLYCEMIA_MED_STOP' && r.decision === 'HARD_STOP')) {
+    safetyResults.push({
+      rule_id: 'FASTING_DURATION_EXCEEDS_MAX_ALLOWABLE',
+      rule_version: '1.0.0',
+      patient_id: patient.id,
+      decision: 'HARD_STOP',
+      severity: 'critical',
+      title_en: 'Proposed Fasting Duration Exceeds Allowable Limit',
+      title_bn: 'প্রস্তাবিত উপবাসের সময়সীমা নিরাপদ সীমার চেয়ে বেশি',
+      clinical_explanation_en: `Proposed fasting duration (${proposedFastingHours} hours) exceeds the patient's maximum allowable safe duration (${maxHours} hours).`,
+      clinical_explanation_bn: `প্রস্তাবিত ${proposedFastingHours} ঘণ্টার উপবাস রোগীর জন্য অনুমোদিত সর্বোচ্চ ${maxHours} ঘণ্টার চেয়ে বেশি।`,
+      required_action_en: `Cap fasting at maximum ${maxHours} hours or switch to a safe non-fasting meal schedule.`,
+      required_action_bn: `উপবাসের সময় সর্বোচ্চ ${maxHours} ঘণ্টায় সীমিত রাখুন বা নিয়মিত খাবার সময়সূচি নির্ধারণ করুন।`,
+      triggering_observations: [`proposed_hours:${proposedFastingHours}`, `max_allowable:${maxHours}`],
+      clinician_review_required: true,
+      provenance_reference: 'Clinical Fasting Duration Safety Standards',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // 6. Insufficient Data Check
+  if ((!patient.age && patient.age !== 0) || !patient.weight_kg) {
+    isEligible = false;
+    maxHours = 12;
+    riskLevel = 'moderate_risk';
+    reasons_en.push('Incomplete demographic or anthropometric data. Conservative non-fasting default enforced.');
+    reasons_bn.push('রোগীর বয়স বা ওজনের তথ্য অসম্পূর্ণ থাকায় সতর্কতামূলক হিসেবে উপবাস পরিহার করা হয়েছে।');
+    safetyResults.push({
+      rule_id: 'FASTING_INSUFFICIENT_DATA_REVIEW',
+      rule_version: '1.0.0',
+      patient_id: patient.id,
+      decision: 'CLINICAL_REVIEW_REQUIRED',
+      severity: 'medium',
+      title_en: 'Fasting Data Incomplete: Conservative Schedule Default',
+      title_bn: 'উপবাস মূল্যায়নের জন্য তথ্য অসম্পূর্ণ',
+      clinical_explanation_en: 'Missing baseline weight or age requires clinician evaluation before assigning restrictive fasting windows.',
+      clinical_explanation_bn: 'প্রয়োজনীয় তথ্যের অনুপস্থিতিতে উপবাস শুরু করার পূর্বে চিকিৎসকের পরামর্শ কাম্য।',
+      required_action_en: 'Obtain verified weight and age before prescribing intermittent fasting.',
+      required_action_bn: 'উপবাসের পূর্বে রোগীর ওজন ও বয়স নিশ্চিত করুন।',
+      triggering_observations: ['incomplete_vitals'],
+      clinician_review_required: true,
+      provenance_reference: 'Safe Clinical Fasting Screening Standards',
+      timestamp: new Date().toISOString()
+    });
   }
 
   const eligibility: FastingSafetyEligibility = {
