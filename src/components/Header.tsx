@@ -33,20 +33,21 @@ export const Header: React.FC = () => {
   const phaseInfo = CLINICAL_PHASES[patient.current_phase];
 
   return (
-    <header className="border-b bg-card/80 backdrop-blur sticky top-0 z-40 px-4 lg:px-8 py-3 transition-colors no-print">
+    <header className="border-b border-border/80 bg-card/85 backdrop-blur-xl sticky top-0 z-40 px-4 lg:px-8 py-3 transition-all shadow-[0_1px_3px_0_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.06)] no-print">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
         
         {/* Brand & Clinic Title */}
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-emerald-600/15 text-emerald-500 border border-emerald-500/30 flex items-center justify-center font-bold shadow-sm">
-            <Activity className="h-6 w-6 text-emerald-500" />
+          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/20 via-emerald-600/10 to-teal-500/5 text-emerald-500 border border-emerald-500/30 flex items-center justify-center font-bold shadow-sm shadow-emerald-500/10 transition-transform hover:scale-105">
+            <Activity className="h-5 w-5 text-emerald-500" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="font-bold text-lg leading-tight tracking-tight text-foreground">
                 {language === 'bn' ? 'শুদ্ধ ক্লিনিক্যাল ফাংশনাল নিউট্রিশন' : 'Shuddho Functional Nutrition'}
               </h1>
-              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+              <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 100% Deterministic Engine
               </span>
             </div>
@@ -60,12 +61,12 @@ export const Header: React.FC = () => {
 
         {/* Active Patient Indicator & Phase Badge */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center gap-2 bg-secondary/70 border px-3 py-1.5 rounded-lg text-xs">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-semibold">{patient.name}</span>
-            <span className="text-muted-foreground">({patient.age}y, {patient.gender === 'female' ? (language === 'bn' ? 'মহিলা' : 'F') : (language === 'bn' ? 'পুরুষ' : 'M')})</span>
-            <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 text-[11px] font-medium flex items-center gap-1">
-              <Flame className="h-3 w-3" />
+          <div className="flex items-center gap-2 bg-secondary/70 border border-border/80 px-3 py-1.5 rounded-xl text-xs shadow-sm hover:border-emerald-500/30 transition-colors">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse ring-2 ring-emerald-500/20" />
+            <span className="font-semibold text-foreground tracking-tight">{patient.name}</span>
+            <span className="text-muted-foreground tabular-numbers">({patient.age}y, {patient.gender === 'female' ? (language === 'bn' ? 'মহিলা' : 'F') : (language === 'bn' ? 'পুরুষ' : 'M')})</span>
+            <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 text-[11px] font-medium flex items-center gap-1 shadow-xs">
+              <Flame className="h-3 w-3 text-amber-500" />
               {language === 'bn' ? `পর্যায় ${patient.current_phase}` : `Phase ${patient.current_phase}`}
             </span>
           </div>
@@ -75,7 +76,7 @@ export const Header: React.FC = () => {
             <button
               onClick={saveCurrentPatient}
               title={language === 'bn' ? 'রোগীর প্রোফাইল সংরক্ষণ করুন' : 'Save Patient Profile'}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
               <Save className="h-3.5 w-3.5" />
               <span>{language === 'bn' ? 'সংরক্ষণ' : 'Save'}</span>
@@ -84,33 +85,33 @@ export const Header: React.FC = () => {
             <button
               onClick={createNewPatient}
               title={language === 'bn' ? 'নতুন রোগী যুক্ত করুন' : 'Create New Patient'}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border bg-card hover:bg-accent transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-border/80 bg-card hover:bg-accent/80 transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
-              <UserPlus className="h-3.5 w-3.5" />
+              <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
               <span>{language === 'bn' ? 'নতুন রোগী' : 'New'}</span>
             </button>
 
             {savedPatients.length > 0 && (
               <div className="relative group">
                 <button
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border bg-card hover:bg-accent transition"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border border-border/80 bg-card hover:bg-accent/80 transition-all"
                   title="Load Saved Patient"
                 >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  <span>({savedPatients.length})</span>
+                  <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="tabular-numbers">({savedPatients.length})</span>
                 </button>
-                <div className="absolute right-0 top-full mt-1 w-56 bg-card border rounded-lg shadow-xl p-1 hidden group-hover:block z-50">
-                  <div className="text-[11px] font-semibold text-muted-foreground px-2 py-1 border-b">
+                <div className="absolute right-0 top-full mt-1.5 w-60 bg-card/95 backdrop-blur-xl border border-border/80 rounded-xl shadow-xl p-1.5 hidden group-hover:block z-50">
+                  <div className="text-[11px] font-semibold text-muted-foreground px-2 py-1 border-b border-border/60">
                     {language === 'bn' ? 'সংরক্ষিত রোগী তালিকা' : 'Saved Patients'}
                   </div>
                   {savedPatients.map(p => (
                     <button
                       key={p.patient.id}
                       onClick={() => loadPatient(p.patient.id)}
-                      className="w-full text-left px-2.5 py-1.5 rounded hover:bg-accent text-xs flex justify-between items-center transition"
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-accent text-xs flex justify-between items-center transition"
                     >
-                      <span className="truncate">{p.patient.name}</span>
-                      <span className="text-[10px] text-muted-foreground">{p.patient.visit_date}</span>
+                      <span className="truncate font-medium">{p.patient.name}</span>
+                      <span className="text-[10px] text-muted-foreground tabular-numbers">{p.patient.visit_date}</span>
                     </button>
                   ))}
                 </div>
@@ -123,17 +124,17 @@ export const Header: React.FC = () => {
           {/* Language Toggle */}
           <button
             onClick={() => setLanguage(language === 'bn' ? 'en' : 'bn')}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border bg-card hover:bg-accent transition"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border border-border/80 bg-card hover:bg-accent/80 transition-all hover:scale-[1.02]"
             title="Toggle Language"
           >
-            <Globe className="h-3.5 w-3.5 text-blue-500" />
+            <Globe className="h-3.5 w-3.5 text-sky-500" />
             <span className="font-semibold">{language === 'bn' ? 'বাংলা' : 'EN'}</span>
           </button>
 
           {/* Theme Toggle */}
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="p-1.5 rounded-lg text-xs font-medium border bg-card hover:bg-accent transition text-muted-foreground"
+            className="p-1.5 rounded-xl text-xs font-medium border border-border/80 bg-card hover:bg-accent/80 transition-all text-muted-foreground hover:scale-[1.05]"
             title="Toggle Dark/Light Mode"
           >
             {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-slate-700" />}
@@ -145,7 +146,7 @@ export const Header: React.FC = () => {
               setActiveTab('report');
               setTimeout(() => window.print(), 350);
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-90 shadow-sm transition"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 hover:opacity-95 shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
             title="Print A4 Clinical Report"
           >
             <Printer className="h-3.5 w-3.5" />

@@ -124,11 +124,11 @@ export const NavigationTabs: React.FC = () => {
   const isSecondaryActive = ['intake', 'conditions', 'dni'].includes(activeTab);
 
   return (
-    <div className="border-b bg-card px-4 lg:px-8 overflow-x-auto no-scrollbar no-print shadow-sm">
+    <div className="border-b border-border/80 bg-card/90 backdrop-blur-xl px-4 lg:px-8 overflow-x-auto no-scrollbar no-print shadow-[0_1px_2px_0_rgba(0,0,0,0.03)]">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-1 sm:gap-2">
         
         {/* 7 Primary Navigation Tabs */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 sm:gap-1.5">
           {primaryTabs.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -137,18 +137,21 @@ export const NavigationTabs: React.FC = () => {
                 key={tab.id}
                 data-testid={`nav-tab-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-3 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition-all ${
+                className={`relative flex items-center gap-2 px-3 py-3 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition-all rounded-t-lg ${
                   isActive 
-                    ? 'border-primary text-primary font-bold' 
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                    ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/[0.05]' 
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/40 hover:border-border/80'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
-                <span>{language === 'bn' ? tab.label_bn : tab.label_en}</span>
+                <Icon className={`h-4 w-4 transition-colors ${isActive ? 'text-emerald-500' : 'text-muted-foreground'}`} />
+                <span className="tracking-tight">{language === 'bn' ? tab.label_bn : tab.label_en}</span>
                 {tab.badge && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-medium ${tab.badgeColor}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border border-current/20 shadow-2xs tabular-numbers ${tab.badgeColor}`}>
                     {tab.badge}
                   </span>
+                )}
+                {isActive && (
+                  <span className="absolute bottom-[-2px] left-1/2 -translate-x-1/2 w-6 h-[2px] bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
                 )}
               </button>
             );
@@ -156,30 +159,30 @@ export const NavigationTabs: React.FC = () => {
         </div>
 
         {/* Secondary Safety Tools Dropdown / Quick Switcher */}
-        <div className="relative">
+        <div className="relative py-2">
           <button
             data-testid="nav-tools-menu"
             onClick={() => setShowSecondaryMenu(!showSecondaryMenu)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all hover:scale-[1.02] shadow-2xs ${
               isSecondaryActive 
-                ? 'bg-primary/10 border-primary/40 text-primary' 
-                : 'bg-secondary/40 hover:bg-secondary text-muted-foreground hover:text-foreground border-border'
+                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 font-bold' 
+                : 'bg-secondary/60 hover:bg-secondary text-muted-foreground hover:text-foreground border-border/80'
             }`}
           >
             <span>{language === 'bn' ? 'অতিরিক্ত টুলস' : 'Advanced Tools'}</span>
-            <ChevronDown className="h-3.5 w-3.5" />
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showSecondaryMenu ? 'rotate-180' : ''}`} />
           </button>
 
           {showSecondaryMenu && (
             <div 
               onMouseLeave={() => setShowSecondaryMenu(false)}
-              className="absolute right-0 top-full mt-1.5 w-64 bg-card border rounded-xl shadow-xl p-1.5 z-50 space-y-1 divide-y divide-border"
+              className="absolute right-0 top-full mt-1.5 w-68 bg-card/95 backdrop-blur-2xl border border-border/80 rounded-2xl shadow-2xl p-2 z-50 space-y-1.5 divide-y divide-border/60 animate-in fade-in zoom-in-95 duration-150"
             >
-              <div className="text-[10px] font-bold text-muted-foreground uppercase px-2.5 py-1">
+              <div className="text-[10px] font-bold text-muted-foreground uppercase px-2.5 py-1 tracking-wider">
                 {language === 'bn' ? 'সাপোর্টিং ক্লিনিক্যাল মডিউল' : 'Supporting Clinical Modules'}
               </div>
 
-              <div className="pt-1 space-y-1">
+              <div className="pt-1.5 space-y-1">
                 {secondaryTabs.map(tab => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
@@ -191,16 +194,16 @@ export const NavigationTabs: React.FC = () => {
                         setActiveTab(tab.id);
                         setShowSecondaryMenu(false);
                       }}
-                      className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs transition ${
-                        isActive ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-accent text-foreground'
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
+                        isActive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold' : 'hover:bg-accent text-foreground'
                       }`}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
                         <Icon className="h-4 w-4 text-muted-foreground" />
-                        <span>{language === 'bn' ? tab.label_bn : tab.label_en}</span>
+                        <span className="font-medium">{language === 'bn' ? tab.label_bn : tab.label_en}</span>
                       </div>
                       {tab.badge && (
-                        <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${tab.badgeColor}`}>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border border-current/20 tabular-numbers ${tab.badgeColor}`}>
                           {tab.badge}
                         </span>
                       )}
