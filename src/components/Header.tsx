@@ -100,7 +100,7 @@ export const Header: React.FC = () => {
                   <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="tabular-numbers">({savedPatients.length})</span>
                 </button>
-                <div className="absolute right-0 top-full mt-1.5 w-60 bg-card/95 backdrop-blur-xl border border-border/80 rounded-xl shadow-xl p-1.5 hidden group-hover:block z-50">
+                <div className="absolute right-0 top-full mt-1.5 w-60 bg-card/95 backdrop-blur-xl border border-border/80 rounded-2xl shadow-xl p-1.5 hidden group-hover:block z-50">
                   <div className="text-[11px] font-semibold text-muted-foreground px-2 py-1 border-b border-border/60">
                     {language === 'bn' ? 'সংরক্ষিত রোগী তালিকা' : 'Saved Patients'}
                   </div>

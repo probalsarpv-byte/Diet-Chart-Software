@@ -28,7 +28,10 @@ import {
   Sliders,
   CheckSquare,
   Eye,
-  Clock
+  Clock,
+  Sun,
+  Moon,
+  Flame
 } from 'lucide-react';
 import { FoodExchangeItem, FoodItem } from '@/types';
 
@@ -494,106 +497,164 @@ export const DietChartTab: React.FC = () => {
       )}
 
       {/* ── Clinical Meal Architecture, Fasting Schedule & Nutritional Adequacy ── */}
-      <div className="p-4 rounded-2xl bg-card border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Left: Meal Structure & Fasting Window */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Meal Structure */}
-          <div 
-            data-testid="meal-structure-badge"
-            className="px-3 py-1.5 rounded-xl border bg-secondary/40 text-xs font-semibold flex items-center gap-2"
-          >
-            <Utensils className="h-4 w-4 text-primary shrink-0" />
-            <div>
-              <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
-                {bn ? 'খাবারের কাঠামো' : 'Meal Structure'}
-              </span>
-              <span className="text-foreground font-bold">
-                {bn ? (structureLabels[currentStructure]?.bn || currentStructure) : (structureLabels[currentStructure]?.en || currentStructure)}
-              </span>
+      <div className="p-5 rounded-2xl bg-card border border-border/80 shadow-sm space-y-4">
+        {/* Top Badges Row */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Left: Meal Structure & Fasting Window */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Meal Structure */}
+            <div 
+              data-testid="meal-structure-badge"
+              className="px-3.5 py-1.5 rounded-xl border border-border/80 bg-secondary/50 text-xs font-semibold flex items-center gap-2.5 shadow-2xs"
+            >
+              <Utensils className="h-4 w-4 text-emerald-500 shrink-0" />
+              <div>
+                <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
+                  {bn ? 'খাবারের কাঠামো' : 'Meal Structure'}
+                </span>
+                <span className="text-foreground font-bold">
+                  {bn ? (structureLabels[currentStructure]?.bn || currentStructure) : (structureLabels[currentStructure]?.en || currentStructure)}
+                </span>
+              </div>
+            </div>
+
+            {/* Fasting Schedule & Safety Panel */}
+            <div
+              data-testid="fasting-status-badge"
+              className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2.5 shadow-2xs transition-all ${
+                currentFasting?.decision_status === 'fasting_contraindicated' || (currentFasting?.reasons_en && currentFasting.reasons_en.length > 0 && !currentFasting.is_fasting)
+                  ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                  : currentFasting?.decision_status === 'fasting_approved'
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                  : currentFasting?.decision_status === 'fasting_requires_review'
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                  : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft'
+                  ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
+                  : 'border-slate-500/20 bg-secondary/30 text-muted-foreground'
+              }`}
+            >
+              {currentFasting?.decision_status === 'fasting_contraindicated' ? (
+                <AlertOctagon className="h-4 w-4 text-rose-500 shrink-0" />
+              ) : currentFasting?.decision_status === 'fasting_approved' ? (
+                <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+              ) : currentFasting?.decision_status === 'fasting_requires_review' ? (
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+              ) : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft' ? (
+                <Clock className="h-4 w-4 text-purple-500 shrink-0" />
+              ) : (
+                <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+              )}
+              <div>
+                <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
+                  {bn ? 'উপবাস মূল্যায়ন ও সময়সূচি' : 'Fasting Status & Window'}
+                </span>
+                <span className="font-bold">
+                  {currentFasting?.decision_status === 'fasting_contraindicated'
+                    ? (bn ? `উপবাস নিষিদ্ধ: ${currentFasting.reasons_bn?.[0] || 'ঝুঁকিপূর্ণ'}` : `Fasting Contraindicated: ${currentFasting.reasons_en?.[0] || 'High Risk'}`)
+                    : currentFasting?.decision_status === 'fasting_approved'
+                    ? (bn ? '১৬:৮ উপবাস অনুমোদিত: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : '16:8 Fasting Approved: 12:00 PM – 08:00 PM (16h Fast)')
+                    : currentFasting?.decision_status === 'fasting_requires_review'
+                    ? (bn ? 'উপবাস চিকিৎসকের রিভিউ প্রয়োজন' : 'Fasting Requires Clinician Review')
+                    : currentFasting?.decision_status === 'fasting_proposed_draft'
+                    ? (bn ? '১৬:৮ উপবাস প্রস্তাবিত (খসড়া - চিকিৎসকের অনুমোদন বাকি)' : '16:8 Fasting Proposed (Draft - Clinician Sign-Off Required)')
+                    : (currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8')
+                    ? (bn ? 'উপবাস সক্রিয়: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : 'Active 16:8 Window: 12:00 PM – 08:00 PM (16h Fast)')
+                    : (bn ? 'নিয়মিত আহার (উপবাস পরিহার্য)' : 'Regular Schedule (No Fasting)')}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Fasting Schedule & Safety Panel */}
-          <div
-            data-testid="fasting-status-badge"
-            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
-              currentFasting?.decision_status === 'fasting_contraindicated' || (currentFasting?.reasons_en && currentFasting.reasons_en.length > 0 && !currentFasting.is_fasting)
-                ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                : currentFasting?.decision_status === 'fasting_approved'
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                : currentFasting?.decision_status === 'fasting_requires_review'
-                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft'
-                ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
-                : 'border-slate-500/20 bg-secondary/30 text-muted-foreground'
-            }`}
-          >
-            {currentFasting?.decision_status === 'fasting_contraindicated' ? (
-              <AlertOctagon className="h-4 w-4 text-rose-500 shrink-0" />
-            ) : currentFasting?.decision_status === 'fasting_approved' ? (
-              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
-            ) : currentFasting?.decision_status === 'fasting_requires_review' ? (
-              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-            ) : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft' ? (
-              <Clock className="h-4 w-4 text-purple-500 shrink-0" />
-            ) : (
-              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
-            )}
-            <div>
-              <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
-                {bn ? 'উপবাস মূল্যায়ন ও সময়সূচি' : 'Fasting Status & Window'}
-              </span>
-              <span className="font-bold">
-                {currentFasting?.decision_status === 'fasting_contraindicated'
-                  ? (bn ? `উপবাস নিষিদ্ধ: ${currentFasting.reasons_bn?.[0] || 'ঝুঁকিপূর্ণ'}` : `Fasting Contraindicated: ${currentFasting.reasons_en?.[0] || 'High Risk'}`)
-                  : currentFasting?.decision_status === 'fasting_approved'
-                  ? (bn ? '১৬:৮ উপবাস অনুমোদিত: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : '16:8 Fasting Approved: 12:00 PM – 08:00 PM (16h Fast)')
-                  : currentFasting?.decision_status === 'fasting_requires_review'
-                  ? (bn ? 'উপবাস চিকিৎসকের রিভিউ প্রয়োজন' : 'Fasting Requires Clinician Review')
-                  : currentFasting?.decision_status === 'fasting_proposed_draft'
-                  ? (bn ? '১৬:৮ উপবাস প্রস্তাবিত (খসড়া - চিকিৎসকের অনুমোদন বাকি)' : '16:8 Fasting Proposed (Draft - Clinician Sign-Off Required)')
-                  : (currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8')
-                  ? (bn ? 'উপবাস সক্রিয়: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : 'Active 16:8 Window: 12:00 PM – 08:00 PM (16h Fast)')
-                  : (bn ? 'নিয়মিত আহার (উপবাস পরিহার্য)' : 'Regular Schedule (No Fasting)')}
-              </span>
+          {/* Right: Nutritional Adequacy Status Badge */}
+          <div className="flex items-center gap-2">
+            <div
+              data-testid="nutritional-adequacy-badge"
+              className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2.5 shadow-2xs ${
+                currentAdequacy?.is_adequate !== false
+                  ? 'border-emerald-500/30 bg-emerald-600/15 text-emerald-700 dark:text-emerald-300'
+                  : 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+              }`}
+              title={currentAdequacy?.deficits && currentAdequacy.deficits.length > 0 ? currentAdequacy.deficits.join('\n') : undefined}
+            >
+              {currentAdequacy?.is_adequate !== false ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+              )}
+              <div>
+                <span className="text-[10px] opacity-80 block uppercase tracking-wider font-semibold">
+                  {bn ? 'পুষ্টি পর্যাপ্ততা' : 'Nutritional Adequacy'}
+                </span>
+                <span>
+                  {currentAdequacy?.status_label_en
+                    ? (bn ? (currentAdequacy.status_label_bn || currentAdequacy.status_label_en) : currentAdequacy.status_label_en)
+                    : (currentAdequacy?.is_adequate !== false
+                      ? (bn ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'Nutritional Targets Achieved (Evaluated Parameters)')
+                      : (bn ? `পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি (${currentAdequacy?.deficits_bn?.[0] || 'ঘাটতি'})` : `Nutritional Targets Not Achieved: ${currentAdequacy?.deficits?.[0] || 'Deficit'}`))}
+                </span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Right: Nutritional Adequacy Status Badge */}
-        <div className="flex items-center gap-2">
-          <div
-            data-testid="nutritional-adequacy-badge"
-            className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 shadow-sm ${
-              currentAdequacy?.is_adequate !== false
-                ? 'border-emerald-500/30 bg-emerald-600/15 text-emerald-700 dark:text-emerald-300'
-                : 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
-            }`}
-            title={currentAdequacy?.deficits && currentAdequacy.deficits.length > 0 ? currentAdequacy.deficits.join('\n') : undefined}
-          >
-            {currentAdequacy?.is_adequate !== false ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-            ) : (
-              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-            )}
-            <div>
-              <span className="text-[10px] opacity-80 block uppercase tracking-wider font-semibold">
-                {bn ? 'পুষ্টি পর্যাপ্ততা' : 'Nutritional Adequacy'}
+        {/* Visual Circadian 24-Hour Timeline Bar */}
+        <div className="pt-2 border-t border-border/60 space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1.5 font-semibold text-foreground">
+              <Clock className="h-3.5 w-3.5 text-emerald-500" />
+              <span>{bn ? 'সার্কেডিয়ান রিদম ও খাদ্য গ্রহণ উইন্ডো (২৪ ঘণ্টা)' : 'Circadian Rhythm & Intake Timeline (24h)'}</span>
+            </span>
+            <div className="flex items-center gap-3 text-[10px]">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-amber-400" />
+                <span>{bn ? 'খাদ্য গ্রহণ উইন্ডো' : 'Eating Window'}</span>
               </span>
-              <span>
-                {currentAdequacy?.status_label_en
-                  ? (bn ? (currentAdequacy.status_label_bn || currentAdequacy.status_label_en) : currentAdequacy.status_label_en)
-                  : (currentAdequacy?.is_adequate !== false
-                    ? (bn ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'Nutritional Targets Achieved (Evaluated Parameters)')
-                    : (bn ? `পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি (${currentAdequacy?.deficits_bn?.[0] || 'ঘাটতি'})` : `Nutritional Targets Not Achieved: ${currentAdequacy?.deficits?.[0] || 'Deficit'}`))}
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-indigo-900 border border-indigo-700" />
+                <span>{bn ? 'উপবাস পর্ব' : 'Fasting Interval'}</span>
               </span>
             </div>
+          </div>
+
+          {/* 24-hour visual progress bar */}
+          <div className="relative h-6 bg-slate-900/90 dark:bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center p-0.5 shadow-inner">
+            {/* Hour marker background grid */}
+            <div className="absolute inset-0 flex justify-between px-2 text-[8px] font-mono text-slate-500 pointer-events-none select-none items-center">
+              <span>12 AM</span>
+              <span>6 AM</span>
+              <span>12 PM</span>
+              <span>6 PM</span>
+              <span>12 AM</span>
+            </div>
+
+            {/* Active Eating Window highlight */}
+            {currentStructure === 'intermittent_fasting_16_8' || currentFasting?.is_fasting ? (
+              <div 
+                className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-amber-400 via-emerald-500 to-teal-400 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[50%] w-[33.33%]"
+                title="12:00 PM – 08:00 PM (8h Active Eating Window)"
+              >
+                <div className="flex items-center gap-1 px-1 truncate">
+                  <Sun className="h-3 w-3 shrink-0 text-amber-950" />
+                  <span className="truncate">{bn ? 'খাবার উইন্ডো (৮ ঘণ্টা)' : 'Eating Window (8h)'}</span>
+                </div>
+              </div>
+            ) : (
+              <div 
+                className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-emerald-500/80 via-teal-400/80 to-emerald-500/80 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[29.16%] w-[58.33%]"
+                title="07:00 AM – 09:00 PM (Regular Intake Schedule)"
+              >
+                <div className="flex items-center gap-1 px-1 truncate">
+                  <Sun className="h-3 w-3 shrink-0 text-amber-950" />
+                  <span className="truncate">{bn ? 'নিয়মিত খাদ্য গ্রহণ (সকাল ৭:০০ - রাত ৯:০০)' : 'Regular Intake (7 AM – 9 PM)'}</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── 7-Day Navigation Tabs ────────────────────────────────────────────────── */}
-      <div className="bg-card border rounded-2xl p-2 shadow-sm">
+      <div className="bg-card border border-border/80 rounded-2xl p-2.5 shadow-sm">
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" role="tablist">
           {[1, 2, 3, 4, 5, 6, 7].map(dayNum => {
             const dayData = weeklyDietPlan?.days?.find(d => d.day_number === dayNum);
@@ -613,30 +674,30 @@ export const DietChartTab: React.FC = () => {
                 aria-selected={isActive}
                 data-testid={`day-tab-${dayNum}`}
                 onClick={() => setActiveDayNumber(dayNum)}
-                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[72px] ${
+                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[76px] ${
                   isActive
-                    ? 'border-primary bg-primary/10 shadow-sm ring-1 ring-primary'
-                    : 'border-border/60 bg-background/50 hover:bg-secondary/40'
+                    ? 'border-emerald-500 bg-emerald-500/10 shadow-md ring-2 ring-emerald-500/30'
+                    : 'border-border/70 bg-card hover:bg-secondary/50 hover:border-border'
                 }`}
               >
                 <div className="flex items-center justify-between gap-1 w-full">
-                  <span className={`text-xs font-bold truncate ${isActive ? 'text-primary' : 'text-foreground'}`}>
+                  <span className={`text-xs font-bold truncate ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'}`}>
                     {bn ? nameBn : nameEn}
                   </span>
                   {isLocked && (
-                    <span title="Day locked">
+                    <span title="Day locked" className="p-0.5 rounded bg-amber-500/10 border border-amber-500/30">
                       <Lock className="h-3 w-3 text-amber-500 shrink-0" />
                     </span>
                   )}
                 </div>
 
                 <div className="mt-2 flex items-baseline justify-between w-full">
-                  <span className="text-sm font-extrabold text-foreground">
+                  <span className="text-sm font-extrabold text-foreground tabular-numbers">
                     {calories > 0 ? calories : '—'}{' '}
                     <span className="text-[10px] font-normal text-muted-foreground">kcal</span>
                   </span>
                   {calories > 0 && (
-                    <span className={`text-[10px] font-semibold ${
+                    <span className={`text-[10px] font-semibold tabular-numbers ${
                       Math.abs(variance) <= 50 ? 'text-emerald-500' : 'text-amber-500'
                     }`}>
                       {variance > 0 ? `+${variance}` : variance}
@@ -645,7 +706,7 @@ export const DietChartTab: React.FC = () => {
                 </div>
 
                 {dayData?.safety_decision === 'HARD_STOP' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-1 bg-rose-500" title="Clinical Hard Stop" />
+                  <span className="absolute bottom-0 left-0 right-0 h-1 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" title="Clinical Hard Stop" />
                 )}
               </button>
             );
@@ -654,11 +715,11 @@ export const DietChartTab: React.FC = () => {
       </div>
 
       {/* ── Active Day Macro Targets & Nutritional Highlights ────────────────────── */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+      <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
           <div>
             <div className="flex items-center gap-2">
-              <Utensils className="h-4 w-4 text-primary" />
+              <Utensils className="h-4 w-4 text-emerald-500" />
               <h2 className="font-bold text-sm text-foreground">
                 {bn 
                   ? `${currentDayPlan?.day_name_bn || `দিন ${activeDayNumber}`} — পুষ্টি উপাদান ও পারিবারিক পরিমাপ`
@@ -674,81 +735,131 @@ export const DietChartTab: React.FC = () => {
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <span className="text-xs text-muted-foreground">
-              {bn ? 'সক্রিয় দিন:' : 'Active Day:'} <strong>{activeDayNumber} / 7</strong>
+              {bn ? 'সক্রিয় দিন:' : 'Active Day:'} <strong className="text-foreground">{activeDayNumber} / 7</strong>
             </span>
+          </div>
+        </div>
+
+        {/* Continuous Segmented Macro Balance Bar */}
+        <div className="p-3.5 rounded-xl bg-secondary/30 border border-border/80 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+              <Sliders className="h-3.5 w-3.5 text-primary" />
+              <span>{bn ? 'ম্যাক্রো অনুপাত বিভাজন (Carb : Protein : Fat)' : 'Macronutrient Energy Distribution'}</span>
+            </span>
+            <div className="flex items-center gap-3 text-[11px] font-mono tabular-numbers">
+              <span className="text-blue-500 font-bold">{Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}% C</span>
+              <span className="text-emerald-500 font-bold">{Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}% P</span>
+              <span className="text-amber-500 font-bold">{Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}% F</span>
+            </div>
+          </div>
+          <div className="h-2 w-full rounded-full overflow-hidden flex bg-secondary/60 shadow-inner">
+            <div 
+              style={{ width: `${Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}%` }} 
+              className="bg-blue-500 h-full transition-all duration-300" 
+              title={`Carbs: ${Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}%`}
+            />
+            <div 
+              style={{ width: `${Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}%` }} 
+              className="bg-emerald-500 h-full transition-all duration-300" 
+              title={`Protein: ${Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}%`}
+            />
+            <div 
+              style={{ width: `${Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}%` }} 
+              className="bg-amber-500 h-full transition-all duration-300" 
+              title={`Fat: ${Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}%`}
+            />
           </div>
         </div>
 
         {/* Macro Bars Matrix */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
           
-          <div className="p-3 rounded-xl border bg-background space-y-1">
-            <div className="text-[11px] text-muted-foreground">{bn ? 'মোট ক্যালোরি:' : 'Total Calories:'}</div>
-            <div className="text-base font-bold flex items-baseline justify-between">
+          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'মোট ক্যালোরি:' : 'Total Calories:'}</span>
+              <Flame className="h-3.5 w-3.5 text-amber-500" />
+            </div>
+            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
               <span>{totalKcal} <span className="text-xs font-normal text-muted-foreground">kcal</span></span>
               <span className="text-[10px] text-muted-foreground">/ {targetKcal}</span>
             </div>
-            <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
               <div 
-                className={`h-full ${Math.abs(totalKcal - targetKcal) <= 50 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                className={`h-full transition-all duration-300 ${Math.abs(totalKcal - targetKcal) <= 50 ? 'bg-emerald-500' : 'bg-amber-500'}`}
                 style={{ width: `${Math.min(100, (totalKcal / Math.max(1, targetKcal)) * 100)}%` }}
               />
             </div>
           </div>
 
-          <div className="p-3 rounded-xl border bg-background space-y-1">
-            <div className="text-[11px] text-muted-foreground">{bn ? 'মোট প্রোটিন:' : 'Protein Target:'}</div>
-            <div className="text-base font-bold flex items-baseline justify-between">
+          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'মোট প্রোটিন:' : 'Protein Target:'}</span>
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+            </div>
+            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
               <span className="text-emerald-500">{totalProtein} <span className="text-xs font-normal text-muted-foreground">g</span></span>
               <span className="text-[10px] text-muted-foreground">/ {targetProtein}g</span>
             </div>
-            <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
               <div 
-                className="bg-emerald-500 h-full"
+                className="bg-emerald-500 h-full transition-all duration-300"
                 style={{ width: `${Math.min(100, (totalProtein / Math.max(1, targetProtein)) * 100)}%` }}
               />
             </div>
           </div>
 
-          <div className="p-3 rounded-xl border bg-background space-y-1">
-            <div className="text-[11px] text-muted-foreground">{bn ? 'মোট শর্করা:' : 'Carbs Target:'}</div>
-            <div className="text-base font-bold flex items-baseline justify-between">
+          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'মোট শর্করা:' : 'Carbs Target:'}</span>
+              <span className="h-2 w-2 rounded-full bg-blue-500" />
+            </div>
+            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
               <span className="text-blue-500">{totalCarbs} <span className="text-xs font-normal text-muted-foreground">g</span></span>
               <span className="text-[10px] text-muted-foreground">/ {targetCarbs}g</span>
             </div>
-            <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
               <div 
-                className="bg-blue-500 h-full"
+                className="bg-blue-500 h-full transition-all duration-300"
                 style={{ width: `${Math.min(100, (totalCarbs / Math.max(1, targetCarbs)) * 100)}%` }}
               />
             </div>
           </div>
 
-          <div className="p-3 rounded-xl border bg-background space-y-1">
-            <div className="text-[11px] text-muted-foreground">{bn ? 'স্বাস্থ্যকর চর্বি:' : 'Fat Target:'}</div>
-            <div className="text-base font-bold flex items-baseline justify-between">
+          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'স্বাস্থ্যকর চর্বি:' : 'Fat Target:'}</span>
+              <span className="h-2 w-2 rounded-full bg-amber-500" />
+            </div>
+            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
               <span className="text-amber-500">{totalFat} <span className="text-xs font-normal text-muted-foreground">g</span></span>
               <span className="text-[10px] text-muted-foreground">/ {targetFat}g</span>
             </div>
-            <div className="w-full bg-secondary h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
               <div 
-                className="bg-amber-500 h-full"
+                className="bg-amber-500 h-full transition-all duration-300"
                 style={{ width: `${Math.min(100, (totalFat / Math.max(1, targetFat)) * 100)}%` }}
               />
             </div>
           </div>
 
-          <div className="p-3 rounded-xl border bg-background space-y-1">
-            <div className="text-[11px] text-muted-foreground">{bn ? 'আনুমানিক GL (প্রাক্কলিত):' : 'Estimated GL:'}</div>
-            <div className="text-base font-bold text-purple-500">{avgGl}</div>
+          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'আনুমানিক GL (প্রাক্কলিত):' : 'Estimated GL:'}</span>
+              <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+            </div>
+            <div className="text-base font-bold text-purple-500 tabular-numbers">{avgGl}</div>
             <div className="text-[10px] text-muted-foreground font-medium">
               {avgGl < 50 ? (bn ? 'লো গ্লাইসেমিক (আদর্শ)' : 'Low (Optimal)') : (bn ? 'মাঝারি' : 'Moderate')}
             </div>
           </div>
 
-          <div className="p-3 rounded-xl border bg-background space-y-1">
-            <div className="text-[11px] text-muted-foreground">{bn ? 'PRAL স্কোর:' : 'PRAL Score:'}</div>
-            <div className={`text-base font-bold ${totalPral < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'PRAL স্কোর:' : 'PRAL Score:'}</span>
+              <span className={`h-2 w-2 rounded-full ${totalPral < 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+            </div>
+            <div className={`text-base font-bold tabular-numbers ${totalPral < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
               {totalPral}
             </div>
             <div className="text-[10px] text-muted-foreground font-medium">
@@ -804,37 +915,40 @@ export const DietChartTab: React.FC = () => {
           const isMealLocked = Boolean(meal.is_locked || lockState.locked_meal_ids.includes(meal.id));
 
           return (
-            <div key={meal.id} className="bg-card border rounded-2xl shadow-sm overflow-hidden" data-testid={`meal-card-${meal.id}`}>
+            <div key={meal.id} className="bg-card border border-border/80 rounded-2xl shadow-sm overflow-hidden transition-all hover:border-border" data-testid={`meal-card-${meal.id}`}>
               
               {/* Meal Header */}
-              <div className="p-4 bg-secondary/40 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="p-4 bg-secondary/30 border-b border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <span className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary font-bold text-xs">
-                    {meal.target_time}
+                  <span className="px-3 py-1 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 font-mono font-bold text-xs shadow-2xs tabular-numbers flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />
+                    <span>{meal.target_time}</span>
                   </span>
                   <div>
-                    <h3 className="font-bold text-sm text-foreground">
-                      {bn ? meal.title_bn : meal.title_en}
+                    <h3 className="font-bold text-sm text-foreground tracking-tight flex items-center gap-2">
+                      <span>{bn ? meal.title_bn : meal.title_en}</span>
                     </h3>
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
-                      <span>{meal.meal_calories} kcal</span>
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5 tabular-numbers font-medium">
+                      <span className="font-bold text-foreground">{meal.meal_calories} kcal</span>
                       <span>•</span>
-                      <span className="text-emerald-500">P: {meal.meal_protein_g}g</span>
+                      <span className="text-emerald-500 font-semibold">P: {meal.meal_protein_g}g</span>
                       <span>•</span>
-                      <span className="text-blue-500">C: {meal.meal_carbs_g}g</span>
+                      <span className="text-blue-500 font-semibold">C: {meal.meal_carbs_g}g</span>
                       <span>•</span>
-                      <span className="text-amber-500">F: {meal.meal_fat_g}g</span>
+                      <span className="text-amber-500 font-semibold">F: {meal.meal_fat_g}g</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Meal Level Badges & Actions */}
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-500 font-semibold">
+                  <span className="text-[10px] px-2 py-0.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 font-semibold tabular-numbers">
                     GL: {meal.meal_gl}
                   </span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
-                    meal.meal_pral < 0 ? 'bg-emerald-500/15 text-emerald-500' : 'bg-rose-500/15 text-rose-500'
+                  <span className={`text-[10px] px-2 py-0.5 rounded-lg font-semibold border tabular-numbers ${
+                    meal.meal_pral < 0 
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                      : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
                   }`}>
                     PRAL: {meal.meal_pral}
                   </span>
@@ -843,22 +957,22 @@ export const DietChartTab: React.FC = () => {
                     type="button"
                     data-testid={`btn-lock-meal-${meal.id}`}
                     onClick={() => toggleMealLockInDay(activeDayNumber, meal.id)}
-                    className={`p-1.5 rounded-lg border text-xs transition flex items-center gap-1 ${
+                    className={`px-2.5 py-1.5 rounded-xl border text-xs transition-all flex items-center gap-1.5 shadow-2xs hover:scale-[1.02] ${
                       isMealLocked
-                        ? 'bg-amber-500/20 text-amber-600 border-amber-500/40 font-semibold'
-                        : 'bg-muted/40 text-muted-foreground hover:text-foreground border-border'
+                        ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40 font-semibold ring-1 ring-amber-500/20'
+                        : 'bg-background hover:bg-secondary text-muted-foreground hover:text-foreground border-border/80'
                     }`}
                     title={isMealLocked ? 'Meal locked from regeneration' : 'Lock meal'}
                   >
-                    {isMealLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                    {isMealLocked ? <Lock className="h-3.5 w-3.5 text-amber-500" /> : <Unlock className="h-3.5 w-3.5" />}
                     <span className="text-[10px] hidden sm:inline">{isMealLocked ? (bn ? 'লকড' : 'Locked') : (bn ? 'আনলক' : 'Lock')}</span>
                   </button>
 
                   <button
                     onClick={() => setSelectedMealForAdd(meal.id)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 transition"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
                   >
-                    <Plus className="h-3 w-3" />
+                    <Plus className="h-3.5 w-3.5" />
                     <span>{bn ? 'খাবার যুক্ত' : 'Add Food'}</span>
                   </button>
                 </div>
@@ -899,7 +1013,7 @@ export const DietChartTab: React.FC = () => {
               {/* Items Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-secondary/20 text-muted-foreground border-b text-[11px]">
+                  <thead className="bg-secondary/20 text-muted-foreground border-b border-border/60 text-[11px]">
                     <tr>
                       <th className="py-2.5 px-4 font-semibold">{bn ? 'খাবারের নাম' : 'Food Name'}</th>
                       <th className="py-2.5 px-3 font-semibold">{bn ? 'কাঁচা ওজন (Raw g)' : 'Raw (g)'}</th>
@@ -923,12 +1037,12 @@ export const DietChartTab: React.FC = () => {
                             <div className="font-semibold text-foreground text-xs flex items-center gap-1.5">
                               <span>{bn ? item.food_name_bn : item.food_name_en}</span>
                               {item.traffic_status === 'YELLOW' && (
-                                <span className="text-[9px] px-1 py-0.5 bg-amber-500/20 text-amber-600 rounded font-semibold">
+                                <span className="text-[9px] px-1.5 py-0.5 bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded-md font-semibold">
                                   CONDITIONAL
                                 </span>
                               )}
                               {item.traffic_status === 'RED' && (
-                                <span className="text-[9px] px-1.5 py-0.5 bg-rose-500 text-white rounded font-bold">
+                                <span className="text-[9px] px-1.5 py-0.5 bg-rose-500 text-white rounded-md font-bold shadow-xs">
                                   CONTRAINDICATED (RED)
                                 </span>
                               )}
@@ -952,9 +1066,9 @@ export const DietChartTab: React.FC = () => {
                                 step="5"
                                 value={item.raw_weight_g}
                                 onChange={e => updateDayMealItemRawGrams(activeDayNumber, meal.id, item.id, Number(e.target.value))}
-                                className="w-16 px-2 py-1 text-xs font-semibold bg-background border rounded-lg focus:ring-1 focus:ring-primary text-center"
+                                className="w-16 px-2 py-1 text-xs font-semibold font-mono bg-background border border-border/80 rounded-xl focus:ring-2 focus:ring-emerald-500/30 text-center shadow-inner tabular-numbers"
                               />
-                              <span className="text-[11px] text-muted-foreground">g</span>
+                              <span className="text-[11px] text-muted-foreground font-mono">g</span>
                             </div>
                           </td>
 
@@ -967,12 +1081,12 @@ export const DietChartTab: React.FC = () => {
                           </td>
 
                           {/* Kcal */}
-                          <td className="py-3 px-3 font-bold text-foreground">
+                          <td className="py-3 px-3 font-bold text-foreground font-mono tabular-numbers">
                             {item.kcal}
                           </td>
 
                           {/* Macros */}
-                          <td className="py-3 px-3 text-[11px]">
+                          <td className="py-3 px-3 text-[11px] font-mono tabular-numbers">
                             <span className="text-emerald-500 font-semibold">{item.protein_g}p</span> / 
                             <span className="text-blue-500 font-semibold"> {item.carbs_g}c</span> / 
                             <span className="text-amber-500 font-semibold"> {item.fat_g}f</span>
@@ -988,9 +1102,9 @@ export const DietChartTab: React.FC = () => {
                                     type="button"
                                     onClick={() => swapDayMealItemAlternative(activeDayNumber, meal.id, item.id, alt)}
                                     title={bn ? `${alt.name_bn} (${alt.cooked_display_bn}) দিয়ে বদলান` : `Swap with ${alt.name_en}`}
-                                    className="px-2 py-0.5 rounded-lg border bg-background hover:bg-primary/10 hover:border-primary text-[10px] text-muted-foreground hover:text-primary transition flex items-center gap-1"
+                                    className="px-2.5 py-0.5 rounded-lg border border-border/80 bg-background/80 hover:bg-emerald-500/10 hover:border-emerald-500/30 text-[10px] text-muted-foreground hover:text-emerald-600 transition-all flex items-center gap-1 shadow-2xs"
                                   >
-                                    <RefreshCw className="h-2.5 w-2.5" />
+                                    <RefreshCw className="h-2.5 w-2.5 text-emerald-500" />
                                     <span>{bn ? alt.name_bn : alt.name_en} ({alt.raw_weight_g}g)</span>
                                   </button>
                                 ))}
@@ -1007,14 +1121,14 @@ export const DietChartTab: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => toggleItemLockInDay(activeDayNumber, item.id)}
-                              className={`p-1 rounded-md border text-[10px] transition ${
+                              className={`p-1.5 rounded-lg border text-[10px] transition-all shadow-2xs ${
                                 isItemLocked
-                                  ? 'bg-amber-500/20 text-amber-600 border-amber-500/40'
+                                  ? 'bg-amber-500/20 text-amber-600 border-amber-500/40 font-semibold'
                                   : 'text-muted-foreground hover:text-foreground border-transparent hover:border-border'
                               }`}
                               title={isItemLocked ? 'Item locked' : 'Lock item'}
                             >
-                              {isItemLocked ? <Lock className="h-3 w-3" /> : <Unlock className="h-3 w-3" />}
+                              {isItemLocked ? <Lock className="h-3 w-3 text-amber-500" /> : <Unlock className="h-3 w-3" />}
                             </button>
                           </td>
 
@@ -1022,7 +1136,7 @@ export const DietChartTab: React.FC = () => {
                           <td className="py-3 px-3 text-right">
                             <button
                               onClick={() => removeDayMealItem(activeDayNumber, meal.id, item.id)}
-                              className="p-1 rounded text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition"
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
                               title="Remove item"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1042,34 +1156,43 @@ export const DietChartTab: React.FC = () => {
       </div>
 
       {/* ── 7-Day Nutrition Overview Matrix ─────────────────────────────────────── */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4" data-testid="weekly-overview-matrix">
-        <div className="flex items-center justify-between border-b pb-3">
-          <div className="flex items-center gap-2">
-            <Sliders className="h-4 w-4 text-primary" />
-            <h3 className="font-bold text-sm text-foreground">
-              {bn ? '৭ দিনের সাপ্তাহিক পুষ্টি ম্যাট্রিক্স ও সমন্বিত সামারি' : '7-Day Weekly Nutrition Matrix & Longitudinal Comparison'}
-            </h3>
+      <div className="bg-card border border-border/80 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all space-y-5" data-testid="weekly-overview-matrix">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20">
+              <Sliders className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="font-bold text-sm text-foreground tracking-tight">
+                {bn ? '৭ দিনের সাপ্তাহিক পুষ্টি ম্যাট্রিক্স ও সমন্বিত সামারি' : '7-Day Longitudinal Nutrition Matrix & Weekly Summary'}
+              </h3>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {bn ? 'সকল দিনের ক্যালোরি ও ম্যাক্রো সামঞ্জস্য নিরীক্ষা' : 'Cross-day variance, macro stability and safety compliance'}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-muted-foreground">
-            {bn ? 'সকল দিনের ক্যালোরি ও ম্যাক্রো সামঞ্জস্য' : 'Cross-day variance and compliance summary'}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-secondary/80 text-muted-foreground border border-border/60">
+              {weeklyDietPlan?.days?.length || 0} / 7 Days Mapped
+            </span>
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-2xl border border-border/60">
           <table className="w-full text-left text-xs" data-testid="weekly-overview-table">
-            <thead className="bg-secondary/20 text-muted-foreground border-b text-[11px]">
+            <thead className="bg-secondary/40 text-muted-foreground border-b border-border/60 text-[11px]">
               <tr>
-                <th className="py-2.5 px-3 font-semibold">{bn ? 'দিন' : 'Day'}</th>
-                <th className="py-2.5 px-3 font-semibold">{bn ? 'নাম' : 'Day Name'}</th>
-                <th className="py-2.5 px-3 font-semibold">Calories (kcal)</th>
-                <th className="py-2.5 px-3 font-semibold">{bn ? 'ক্যালোরি পার্থক্য' : 'Calorie Var'}</th>
-                <th className="py-2.5 px-3 font-semibold">Protein (g)</th>
-                <th className="py-2.5 px-3 font-semibold">Carbs (g)</th>
-                <th className="py-2.5 px-3 font-semibold">Fat (g)</th>
-                <th className="py-2.5 px-3 font-semibold">Est. GL</th>
-                <th className="py-2.5 px-3 font-semibold">PRAL</th>
-                <th className="py-2.5 px-3 font-semibold">{bn ? 'নিরাপত্তা' : 'Safety'}</th>
-                <th className="py-2.5 px-3 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
+                <th className="py-3 px-3.5 font-bold uppercase tracking-wider">{bn ? 'দিন' : 'Day'}</th>
+                <th className="py-3 px-3 font-semibold">{bn ? 'নাম' : 'Day Name'}</th>
+                <th className="py-3 px-3 font-semibold">Calories</th>
+                <th className="py-3 px-3 font-semibold">{bn ? 'ক্যালোরি পার্থক্য' : 'Variance'}</th>
+                <th className="py-3 px-3 font-semibold">Protein</th>
+                <th className="py-3 px-3 font-semibold">Carbs</th>
+                <th className="py-3 px-3 font-semibold">Fat</th>
+                <th className="py-3 px-3 font-semibold">Est. GL</th>
+                <th className="py-3 px-3 font-semibold">PRAL</th>
+                <th className="py-3 px-3 font-semibold">{bn ? 'নিরাপত্তা' : 'Safety'}</th>
+                <th className="py-3 px-3.5 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -1088,52 +1211,61 @@ export const DietChartTab: React.FC = () => {
                 return (
                   <tr 
                     key={num} 
-                    className={`transition cursor-pointer ${
-                      isSelected ? 'bg-primary/10 font-medium' : 'hover:bg-accent/30'
+                    className={`transition-colors cursor-pointer group ${
+                      isSelected ? 'bg-primary/10 font-medium' : 'hover:bg-accent/40'
                     }`}
                     onClick={() => setActiveDayNumber(num)}
                   >
-                    <td className="py-2.5 px-3 font-bold text-foreground">
-                      {num}
+                    <td className="py-3 px-3.5 font-bold text-foreground font-mono">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                          isSelected ? 'bg-primary text-primary-foreground shadow-xs' : 'bg-secondary text-muted-foreground'
+                        }`}>
+                          {num}
+                        </span>
+                      </div>
                     </td>
-                    <td className="py-2.5 px-3 text-foreground">
+                    <td className="py-3 px-3 text-foreground font-medium">
                       {bn ? dayPlan?.day_name_bn || `${num}ম দিন` : dayPlan?.day_name_en || `Day ${num}`}
-                      {dayPlan?.is_locked && <Lock className="inline h-3 w-3 ml-1 text-amber-500" />}
+                      {dayPlan?.is_locked && <Lock className="inline h-3 w-3 ml-1.5 text-amber-500" />}
                     </td>
-                    <td className="py-2.5 px-3 font-semibold text-foreground">
-                      {cal}
+                    <td className="py-3 px-3 font-bold text-foreground font-mono tabular-numbers">
+                      {cal} <span className="text-[10px] text-muted-foreground font-normal">kcal</span>
                     </td>
-                    <td className={`py-2.5 px-3 font-semibold ${
+                    <td className={`py-3 px-3 font-semibold font-mono tabular-numbers ${
                       Math.abs(varCal) <= 50 ? 'text-emerald-500' : 'text-amber-500'
                     }`}>
                       {varCal > 0 ? `+${varCal}` : varCal} kcal
                     </td>
-                    <td className="py-2.5 px-3 text-emerald-500 font-semibold">{p}g</td>
-                    <td className="py-2.5 px-3 text-blue-500 font-semibold">{c}g</td>
-                    <td className="py-2.5 px-3 text-amber-500 font-semibold">{f}g</td>
-                    <td className="py-2.5 px-3 text-purple-500">{gl}</td>
-                    <td className={`py-2.5 px-3 font-semibold ${pral < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    <td className="py-3 px-3 text-emerald-500 font-semibold font-mono tabular-numbers">{p}g</td>
+                    <td className="py-3 px-3 text-blue-500 font-semibold font-mono tabular-numbers">{c}g</td>
+                    <td className="py-3 px-3 text-amber-500 font-semibold font-mono tabular-numbers">{f}g</td>
+                    <td className="py-3 px-3 text-purple-500 font-mono tabular-numbers">{gl}</td>
+                    <td className={`py-3 px-3 font-semibold font-mono tabular-numbers ${pral < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                       {pral}
                     </td>
-                    <td className="py-2.5 px-3">
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                    <td className="py-3 px-3">
+                      <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider inline-flex items-center gap-1 shadow-2xs ${
                         safety === 'HARD_STOP'
-                          ? 'bg-rose-500 text-white'
+                          ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
                           : safety === 'CLINICAL_REVIEW_REQUIRED'
-                          ? 'bg-amber-500 text-white'
-                          : 'bg-emerald-500 text-white'
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                          : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
                       }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${
+                          safety === 'HARD_STOP' ? 'bg-rose-500' : safety === 'CLINICAL_REVIEW_REQUIRED' ? 'bg-amber-500' : 'bg-emerald-500'
+                        }`} />
                         {safety}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 text-right">
+                    <td className="py-3 px-3.5 text-right">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveDayNumber(num);
                         }}
-                        className="px-2 py-1 rounded-md text-[11px] font-semibold bg-secondary hover:bg-secondary/80 text-foreground transition"
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-secondary/80 hover:bg-secondary text-foreground border border-border/60 hover:border-border transition shadow-2xs"
                       >
                         {bn ? 'দেখুন' : 'View'}
                       </button>
@@ -1148,14 +1280,14 @@ export const DietChartTab: React.FC = () => {
 
       {/* ── Add Custom Food Item Modal ─────────────────────────────────────────── */}
       {selectedMealForAdd && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" data-testid="add-food-modal">
-          <div className="bg-card border rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center border-b pb-3 shrink-0">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4" data-testid="add-food-modal">
+          <div className="bg-card border border-border/80 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b border-border/60 pb-3.5 shrink-0">
               <div>
-                <h3 className="font-bold text-sm text-foreground">
+                <h3 className="font-bold text-sm text-foreground tracking-tight">
                   {bn ? 'ক্লিনিক্যাল খাদ্য নির্বাচন ও সংযোজন' : 'Add Clinically Safe Food'}
                 </h3>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground mt-0.5">
                   {bn ? `নির্বাচিত মিল: ${selectedMealForAdd} • দিন: ${activeDayNumber}` : `Target Meal: ${selectedMealForAdd} • Day ${activeDayNumber}`}
                 </p>
               </div>
@@ -1165,15 +1297,15 @@ export const DietChartTab: React.FC = () => {
                   setSelectedFoodIdToAdd('');
                   setFoodSearchQuery('');
                 }}
-                className="text-muted-foreground hover:text-foreground text-sm font-bold"
+                className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition text-xs font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3 overflow-y-auto pr-1 flex-1">
+            <div className="space-y-3.5 overflow-y-auto pr-1 flex-1">
               {/* Search & Filter Row */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div>
                   <input
                     type="text"
@@ -1181,7 +1313,7 @@ export const DietChartTab: React.FC = () => {
                     placeholder={bn ? "খাবারের নাম বা ক্যাটাগরি খুঁজুন (বাংলা / English)..." : "Search food by name or category (Bn/En)..."}
                     value={foodSearchQuery}
                     onChange={e => setFoodSearchQuery(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2 text-xs bg-background border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
                   />
                 </div>
 
@@ -1191,7 +1323,7 @@ export const DietChartTab: React.FC = () => {
                       data-testid="select-food-category"
                       value={foodCategoryFilter}
                       onChange={e => setFoodCategoryFilter(e.target.value)}
-                      className="w-full px-2 py-1.5 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3 py-1.5 text-xs bg-background border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
                     >
                       <option value="all">{bn ? '-- সকল ক্যাটাগরি --' : '-- All Categories --'}</option>
                       {availableCategories.map((cat: string) => (
@@ -1200,25 +1332,25 @@ export const DietChartTab: React.FC = () => {
                     </select>
                   </div>
 
-                  <div className="flex gap-1 shrink-0 text-[11px]">
+                  <div className="flex gap-1.5 shrink-0 text-[11px]">
                     <button
                       type="button"
                       onClick={() => setFoodSafetyFilter('all')}
-                      className={`px-2 py-1 rounded border transition ${foodSafetyFilter === 'all' ? 'bg-primary text-primary-foreground font-semibold' : 'bg-background hover:bg-muted text-muted-foreground'}`}
+                      className={`px-2.5 py-1 rounded-lg border text-xs transition shadow-2xs ${foodSafetyFilter === 'all' ? 'bg-primary text-primary-foreground font-semibold border-primary' : 'bg-background hover:bg-muted text-muted-foreground border-border/80'}`}
                     >
                       {bn ? 'সকল' : 'All'}
                     </button>
                     <button
                       type="button"
                       onClick={() => setFoodSafetyFilter('green')}
-                      className={`px-2 py-1 rounded border transition ${foodSafetyFilter === 'green' ? 'bg-emerald-600 text-white font-semibold' : 'bg-background hover:bg-muted text-emerald-600'}`}
+                      className={`px-2.5 py-1 rounded-lg border text-xs transition shadow-2xs ${foodSafetyFilter === 'green' ? 'bg-emerald-600 text-white font-semibold border-emerald-600' : 'bg-background hover:bg-muted text-emerald-600 border-border/80'}`}
                     >
                       🟢 {bn ? 'সুপারিশ' : 'Rec'}
                     </button>
                     <button
                       type="button"
                       onClick={() => setFoodSafetyFilter('yellow')}
-                      className={`px-2 py-1 rounded border transition ${foodSafetyFilter === 'yellow' ? 'bg-amber-600 text-white font-semibold' : 'bg-background hover:bg-muted text-amber-600'}`}
+                      className={`px-2.5 py-1 rounded-lg border text-xs transition shadow-2xs ${foodSafetyFilter === 'yellow' ? 'bg-amber-600 text-white font-semibold border-amber-600' : 'bg-background hover:bg-muted text-amber-600 border-border/80'}`}
                     >
                       🟡 {bn ? 'সতর্ক' : 'Caution'}
                     </button>
@@ -1227,7 +1359,7 @@ export const DietChartTab: React.FC = () => {
               </div>
 
               {/* Candidates List */}
-              <div className="border rounded-lg max-h-48 overflow-y-auto divide-y bg-background/50">
+              <div className="border border-border/80 rounded-2xl max-h-48 overflow-y-auto divide-y divide-border/60 bg-background/50">
                 {filteredFoodCandidates.length === 0 ? (
                   <div className="p-4 text-center text-xs text-muted-foreground">
                     {bn ? 'কোনো খাবার পাওয়া যায়নি।' : 'No matching foods found.'}
@@ -1244,7 +1376,7 @@ export const DietChartTab: React.FC = () => {
                         key={f.id}
                         type="button"
                         onClick={() => setSelectedFoodIdToAdd(f.id)}
-                        className={`w-full text-left p-2 text-xs flex items-center justify-between transition hover:bg-muted/60 ${
+                        className={`w-full text-left p-2.5 text-xs flex items-center justify-between transition-colors hover:bg-muted/60 ${
                           isSelected ? 'bg-primary/10 border-l-4 border-l-primary' : ''
                         }`}
                       >
@@ -1257,26 +1389,26 @@ export const DietChartTab: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-muted-foreground">
+                          <div className="text-[10px] text-muted-foreground tabular-numbers mt-0.5">
                             {f.category} • {f.per_100g.kcal} kcal, P: {f.per_100g.protein_g}g, C: {f.per_100g.carbs_g}g, F: {f.per_100g.fat_g}g
                           </div>
                         </div>
 
                         <div className="shrink-0 text-[10px] font-medium">
                           {isRed ? (
-                            <span className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 border border-rose-500/30">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 border border-rose-500/30 font-semibold">
                               🔴 {bn ? 'নিষিদ্ধ' : 'Contraindicated'}
                             </span>
                           ) : isGreen ? (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/30">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/30 font-semibold">
                               🟢 {bn ? 'সুপারিশকৃত' : 'Recommended'}
                             </span>
                           ) : isYellow ? (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/30">
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/30 font-semibold">
                               🟡 {bn ? 'সতর্কতা' : 'Caution'}
                             </span>
                           ) : (
-                            <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground border">
+                            <span className="px-2 py-0.5 rounded-full bg-secondary text-muted-foreground border border-border/60">
                               ⚪ {bn ? 'সাধারণ' : 'General'}
                             </span>
                           )}
@@ -1289,24 +1421,24 @@ export const DietChartTab: React.FC = () => {
 
               {/* Selected Item Portion & Macro Preview */}
               {selectedFoodObj && (
-                <div className="p-3 rounded-lg border bg-card space-y-2">
+                <div className="p-3.5 rounded-2xl border border-border/80 bg-card space-y-2.5 shadow-2xs">
                   <div className="flex justify-between items-center text-xs">
                     <span className="font-semibold text-foreground">
                       {bn ? selectedFoodObj.name_bn : selectedFoodObj.name_en}
                     </span>
-                    <span className="text-[10px] text-muted-foreground">
+                    <span className="text-[10px] text-muted-foreground px-2 py-0.5 rounded-md bg-secondary">
                       {selectedFoodObj.category}
                     </span>
                   </div>
 
                   {selectedFoodTraffic === 'RED' ? (
-                    <div className="p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-medium">
+                    <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-medium">
                       ⛔ {bn 
                         ? 'ক্লিনিক্যাল সতর্কতা: এই খাদ্যটি রোগীর বর্তমান বায়োমার্কার বা অবস্থার সাথে সরাসরি সাংঘর্ষিক (Contraindicated)। এটি খাদ্য তালিকায় যোগ করা নিষিদ্ধ।'
                         : 'Clinical Warning: This food is strictly contraindicated for the patient\'s active clinical conditions/biomarkers. Addition is blocked.'}
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       <div className="flex items-center gap-2">
                         <label className="text-xs font-medium text-muted-foreground shrink-0">
                           {bn ? 'কাঁচা ওজন (গ্রাম):' : 'Raw Weight (g):'}
@@ -1318,32 +1450,32 @@ export const DietChartTab: React.FC = () => {
                           min="5"
                           value={addFoodGrams}
                           onChange={e => setAddFoodGrams(Number(e.target.value))}
-                          className="w-24 px-2 py-1 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 text-center font-bold"
+                          className="w-24 px-2.5 py-1 text-xs bg-background border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 text-center font-bold font-mono tabular-numbers"
                         />
                       </div>
 
                       {/* Live calculated macros for portion */}
                       {addFoodGrams > 0 && (
-                        <div className="text-[11px] grid grid-cols-5 gap-1 text-center bg-muted/40 p-2 rounded-lg">
+                        <div className="text-[11px] grid grid-cols-5 gap-1.5 text-center bg-secondary/30 p-2.5 rounded-xl border border-border/40 font-mono tabular-numbers">
                           <div>
-                            <div className="text-muted-foreground text-[9px]">{bn ? 'ক্যালোরি' : 'Kcal'}</div>
-                            <div className="font-semibold">{Math.round(((selectedFoodObj.per_100g.kcal ?? 0) * addFoodGrams) / 100)}</div>
+                            <div className="text-muted-foreground text-[9px] font-sans font-medium">{bn ? 'ক্যালোরি' : 'Kcal'}</div>
+                            <div className="font-bold text-foreground">{Math.round(((selectedFoodObj.per_100g.kcal ?? 0) * addFoodGrams) / 100)}</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-[9px]">{bn ? 'প্রোটিন' : 'Protein'}</div>
-                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.protein_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                            <div className="text-muted-foreground text-[9px] font-sans font-medium">{bn ? 'প্রোটিন' : 'Protein'}</div>
+                            <div className="font-bold text-emerald-500">{Math.round((((selectedFoodObj.per_100g.protein_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-[9px]">{bn ? 'কার্ব' : 'Carbs'}</div>
-                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.carbs_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                            <div className="text-muted-foreground text-[9px] font-sans font-medium">{bn ? 'কার্ব' : 'Carbs'}</div>
+                            <div className="font-bold text-blue-500">{Math.round((((selectedFoodObj.per_100g.carbs_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-[9px]">{bn ? 'ফ্যাট' : 'Fat'}</div>
-                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.fat_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                            <div className="text-muted-foreground text-[9px] font-sans font-medium">{bn ? 'ফ্যাট' : 'Fat'}</div>
+                            <div className="font-bold text-amber-500">{Math.round((((selectedFoodObj.per_100g.fat_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
                           </div>
                           <div>
-                            <div className="text-muted-foreground text-[9px]">{bn ? 'ফাইবার' : 'Fiber'}</div>
-                            <div className="font-semibold">{Math.round((((selectedFoodObj.per_100g.fiber_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
+                            <div className="text-muted-foreground text-[9px] font-sans font-medium">{bn ? 'ফাইবার' : 'Fiber'}</div>
+                            <div className="font-bold text-purple-500">{Math.round((((selectedFoodObj.per_100g.fiber_g ?? 0) * addFoodGrams) / 100) * 10) / 10}g</div>
                           </div>
                         </div>
                       )}
@@ -1353,7 +1485,7 @@ export const DietChartTab: React.FC = () => {
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t shrink-0">
+            <div className="flex justify-end gap-2 pt-3 border-t border-border/60 shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -1361,7 +1493,7 @@ export const DietChartTab: React.FC = () => {
                   setSelectedFoodIdToAdd('');
                   setFoodSearchQuery('');
                 }}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-secondary transition"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold border border-border/80 hover:bg-secondary transition"
               >
                 {bn ? 'বাতিল' : 'Cancel'}
               </button>
@@ -1377,7 +1509,7 @@ export const DietChartTab: React.FC = () => {
                     setFoodSearchQuery('');
                   }
                 }}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition"
+                className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition shadow-sm"
               >
                 {bn ? 'যুক্ত করুন' : 'Add Item'}
               </button>
@@ -1388,21 +1520,21 @@ export const DietChartTab: React.FC = () => {
 
       {/* ── Copy Day Modal ────────────────────────────────────────────────────── */}
       {isCopyModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" data-testid="copy-day-modal">
-          <div className="bg-card border rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-sm text-foreground">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4" data-testid="copy-day-modal">
+          <div className="bg-card border border-border/80 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-border/60 pb-3">
+              <h3 className="font-bold text-sm text-foreground tracking-tight">
                 {bn ? 'ডায়েট প্ল্যান কপি করুন' : 'Copy Day Meal Plan'}
               </h3>
               <button 
                 onClick={() => setIsCopyModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground text-sm font-bold"
+                className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition text-xs font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
                   {bn ? 'উৎস দিন (Source Day):' : 'Source Day:'}
@@ -1410,7 +1542,7 @@ export const DietChartTab: React.FC = () => {
                 <select
                   value={copySourceDay}
                   onChange={e => setCopySourceDay(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2 text-xs bg-background border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
                 >
                   {[1, 2, 3, 4, 5, 6, 7].map(num => (
                     <option key={num} value={num}>
@@ -1427,7 +1559,7 @@ export const DietChartTab: React.FC = () => {
                 <select
                   value={copyTargetDay}
                   onChange={e => setCopyTargetDay(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  className="w-full px-3 py-2 text-xs bg-background border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
                 >
                   {[1, 2, 3, 4, 5, 6, 7].map(num => (
                     <option key={num} value={num} disabled={num === copySourceDay}>
@@ -1437,18 +1569,18 @@ export const DietChartTab: React.FC = () => {
                 </select>
               </div>
 
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground bg-secondary/30 p-2.5 rounded-xl border border-border/40">
                 {bn 
                   ? 'গন্তব্য দিনের খাবারসমূহ নতুন উপাদান আইডি দিয়ে প্রতিস্থাপিত হবে এবং সম্পূর্ণ ক্লিনিক্যাল সেফটি নিয়মাবলি পুনঃযাচাই করা হবে।' 
                   : 'Target day items will receive fresh unique IDs and undergo full safety revalidation.'}
               </p>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t">
+            <div className="flex justify-end gap-2 pt-3 border-t border-border/60">
               <button
                 type="button"
                 onClick={() => setIsCopyModalOpen(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-secondary transition"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold border border-border/80 hover:bg-secondary transition"
               >
                 {bn ? 'বাতিল' : 'Cancel'}
               </button>
@@ -1457,7 +1589,7 @@ export const DietChartTab: React.FC = () => {
                 data-testid="btn-submit-copy-day"
                 onClick={handleCopyDay}
                 disabled={copySourceDay === copyTargetDay}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition"
+                className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition shadow-sm"
               >
                 {bn ? 'কপি সম্পন্ন করুন' : 'Confirm Copy'}
               </button>
@@ -1468,24 +1600,26 @@ export const DietChartTab: React.FC = () => {
 
       {/* ── Clinician Sign-Off Modal ───────────────────────────────────────────── */}
       {isSignOffModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" data-testid="sign-off-modal">
-          <div className="bg-card border rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center border-b pb-3">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4" data-testid="sign-off-modal">
+          <div className="bg-card border border-border/80 rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-border/60 pb-3">
               <div className="flex items-center gap-2">
-                <CheckSquare className="h-4 w-4 text-emerald-500" />
-                <h3 className="font-bold text-sm text-foreground">
+                <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                  <CheckSquare className="h-4 w-4" />
+                </div>
+                <h3 className="font-bold text-sm text-foreground tracking-tight">
                   {bn ? '৭ দিনের ডায়েট প্রেসক্রিপশন ক্লিনিক্যাল অনুমোদন' : '7-Day Nutrition Prescription Sign-Off'}
                 </h3>
               </div>
               <button 
                 onClick={() => setIsSignOffModalOpen(false)}
-                className="text-muted-foreground hover:text-foreground text-sm font-bold"
+                className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition text-xs font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
                   {bn ? 'লাইসেন্সধারী ক্লিনিক্যাল নিউট্রিশনিস্ট / চিকিৎসক আইডি:' : 'Licensed Clinician / Nutritionist ID:'}
@@ -1496,7 +1630,7 @@ export const DietChartTab: React.FC = () => {
                   value={clinicianIdInput}
                   onChange={e => setClinicianIdInput(e.target.value)}
                   placeholder="e.g. BMDC_A-12345 or DR_NUTRITION_01"
-                  className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+                  className="w-full px-3.5 py-2 text-xs bg-background border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono text-foreground"
                 />
               </div>
 
@@ -1509,12 +1643,12 @@ export const DietChartTab: React.FC = () => {
                   value={clinicianNotesInput}
                   onChange={e => setClinicianNotesInput(e.target.value)}
                   placeholder={bn ? 'রোগীর বিশেষ নির্দেশিকা লিখুন...' : 'Enter clinical directions or rationale...'}
-                  className="w-full px-3 py-2 text-xs bg-background border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+                  className="w-full px-3.5 py-2 text-xs bg-background border border-border/80 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none text-foreground"
                 />
               </div>
 
               {approvalFeedback && (
-                <div className={`p-2.5 rounded-lg text-xs font-semibold ${
+                <div className={`p-3 rounded-xl text-xs font-semibold ${
                   approvalFeedback.includes('failed') || approvalFeedback.includes('ব্যর্থ')
                     ? 'bg-rose-500/15 text-rose-600 border border-rose-500/30'
                     : 'bg-emerald-500/15 text-emerald-600 border border-emerald-500/30'
@@ -1524,11 +1658,11 @@ export const DietChartTab: React.FC = () => {
               )}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t">
+            <div className="flex justify-end gap-2 pt-3 border-t border-border/60">
               <button
                 type="button"
                 onClick={() => setIsSignOffModalOpen(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-secondary transition"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold border border-border/80 hover:bg-secondary transition"
               >
                 {bn ? 'বাতিল' : 'Cancel'}
               </button>
@@ -1537,7 +1671,7 @@ export const DietChartTab: React.FC = () => {
                 data-testid="btn-submit-approval"
                 onClick={handleApprovePlan}
                 disabled={!clinicianIdInput.trim() || hasHardStop}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition"
+                className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 transition shadow-sm"
               >
                 {bn ? 'চূড়ান্ত অনুমোদন প্রদান' : 'Approve & Sign-Off'}
               </button>
