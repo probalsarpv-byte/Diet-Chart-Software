@@ -114,3 +114,27 @@ describe('Task 3: Medicines & DNI Engine', () => {
     assert.ok(res.criticalWarnings.some(w => w.warning_en.toLowerCase().includes('betaine') || w.warning_en.toLowerCase().includes('nsaid')));
   });
 });
+
+describe('Task 4: Fasting Safety for SGLT2i & Sulfonylureas', () => {
+  it('caps fasting at 16h and triggers HARD_STOP on 18h fasting for SGLT2i patient', async () => {
+    const { evaluateFastingEligibility } = await import('../src/clinical-safety/fastingSafetyEngine');
+    const { eligibility, safetyResults } = evaluateFastingEligibility(
+      {
+        id: 'test_pt_sglt2',
+        age: 50,
+        gender: 'female',
+        height_cm: 160,
+        weight_kg: 68,
+        waist_cm: 80,
+        activity_level: 'sedentary',
+        selected_conditions: ['t2d_ir'],
+        active_medications: ['Empagliflozin'],
+        population_group: 'adult_standard'
+      } as any,
+      18 // requested 18h fast
+    );
+    assert.ok(eligibility.max_allowable_fasting_hours <= 16);
+    assert.strictEqual(safetyResults.some((r: any) => r.decision === 'HARD_STOP'), true);
+    assert.ok(safetyResults.some((r: any) => r.rule_id.includes('SGLT2') || r.rule_id.includes('DURATION_EXCEEDS')));
+  });
+});

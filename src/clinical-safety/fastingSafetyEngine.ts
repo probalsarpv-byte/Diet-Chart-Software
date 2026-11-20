@@ -159,6 +159,41 @@ export function evaluateFastingEligibility(
     }
   }
 
+  // 4b. SGLT2 Inhibitors (Euglycemic DKA & Dehydration Risk)
+  const hasSGLT2 = activeMeds.some(m => 
+    m.includes('empagliflozin') || m.includes('dapagliflozin') || m.includes('canagliflozin') ||
+    m.includes('jardiance') || m.includes('forxiga') || m.includes('emparol') || m.includes('dapaglif')
+  );
+
+  if (hasSGLT2) {
+    if (isEligible) {
+      if (maxHours > 16) {
+        maxHours = 16;
+      }
+      reasons_en.push('Patient is taking an SGLT2 inhibitor (Empagliflozin/Dapagliflozin). Fasting >16h is strictly restricted due to euglycemic DKA risk.');
+      reasons_bn.push('এসজিএলটি২ ইনহিবিটর ওষুধ গ্রহণের কারণে ১৬ ঘণ্টার বেশি উপবাস ইউজ্লাইসেমিক কিটোঅ্যাসিডোসিসের ঝুঁকিতে কঠোরভাবে নিষিদ্ধ।');
+      if (proposedFastingHours && proposedFastingHours > 16) {
+        safetyResults.push({
+          rule_id: 'FASTING_SGLT2_PROLONGED_STOP',
+          rule_version: '1.0.0',
+          patient_id: patient.id,
+          decision: 'HARD_STOP',
+          severity: 'critical',
+          title_en: 'Fasting Blocked: SGLT2i Euglycemic DKA Hazard',
+          title_bn: 'উপবাস নিষিদ্ধ: এসজিএলটি২ কিটোঅ্যাসিডোসিসের ঝুঁকি',
+          clinical_explanation_en: `Proposed fasting of ${proposedFastingHours} hours with active SGLT2 inhibitor therapy carries an imminent hazard of euglycemic diabetic ketoacidosis.`,
+          clinical_explanation_bn: 'এসজিএলটি২ ওষুধ চলাকালীন দীর্ঘ উপবাসে রক্তে গ্লুকোজ স্বাভাবিক থাকলেও মারাত্মক কিটোঅ্যাসিডোসিস হতে পারে।',
+          required_action_en: 'Cap fasting at maximum 14-16 hours and maintain consistent hydration and carbohydrate intake.',
+          required_action_bn: 'উপবাস সর্বোচ্চ ১৬ ঘণ্টায় সীমিত রাখুন এবং পর্যাপ্ত পানি ও শর্করা নিশ্চিত করুন।',
+          triggering_observations: activeMeds.filter(m => m.includes('empa') || m.includes('dapa') || m.includes('jardiance') || m.includes('forxiga')),
+          clinician_review_required: true,
+          provenance_reference: 'AACE/ADA Consensus Statement on SGLT2i Euglycemic DKA Prevention',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  }
+
   // 5. Proposed Duration Validation against max allowable
   if (proposedFastingHours && proposedFastingHours > maxHours && isEligible && !safetyResults.some(r => r.rule_id === 'FASTING_HYPOGLYCEMIA_MED_STOP' && r.decision === 'HARD_STOP')) {
     safetyResults.push({
