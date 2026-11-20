@@ -204,6 +204,168 @@ export const DISEASE_RULES: Record<ClinicalConditionId, DiseaseRule> = {
     ],
     clinicalRationaleBn: "অতিরিক্ত সোডিয়াম রক্তনালীর চাপ বাড়ায় এবং অনিয়ন্ত্রিত উচ্চ রক্তচাপ কিডনির সূক্ষ্ম গ্লোমেরুলাস কোষের ক্ষতি করে।",
     clinicalRationaleEn: "Excess sodium promotes vascular hypervolemia and renal glomerular hyperfiltration injury."
+  },
+
+  dyslipidemia_atherosclerosis: {
+    id: 'dyslipidemia_atherosclerosis',
+    name_en: "Dyslipidemia / Atherosclerosis & Cardiovascular Risk",
+    name_bn: "ডিসলিপিডেমিয়া / এথেরোস্ক্লেরোসিস ও হৃদরোগের ঝুঁকি",
+    clinical_summary_en: "Elevated atherogenic ApoB/LDL particles, small dense LDL, endothelial oxidative stress, and hypertriglyceridemia. Focuses on soluble viscous fibers, plant sterols, omega-3 fatty acids, and trans-fat elimination.",
+    clinical_summary_bn: "রক্তে ক্ষতিকর কোলেস্টেরল (এলডিএল, ট্রাইগ্লিসারাইড) বৃদ্ধি ও রক্তনালীর প্রাচীরে প্লাক জমার ঝুঁকি। দ্রবণীয় ফাইবার, ওমেগা-৩ ও প্রাকৃতিক উদ্ভিজ্জ অ্যান্টিঅক্সিডেন্ট মূল থেরাপি।",
+    redTags: ['high_fructose', 'high_sodium_processed'],
+    yellowTags: ['high_purine'],
+    greenTags: ['anti_inflammatory', 'nitrate_rich', 'choline_rich'],
+    redFoods: ['trans fat', 'dalda', 'vanaspati', 'deep fried', 'bakery products', 'processed meat', 'soft drinks', 'sugar'],
+    yellowFoods: ['egg yolk', 'red meat', 'beef', 'mutton', 'white rice', 'coconut oil'],
+    greenFoods: ['cold pressed mustard oil', 'flaxseed', 'chia', 'garlic', 'fenugreek', 'red rice', 'sea fish', 'bottle gourd', 'green tea'],
+    macroAdjustment: {
+      carb_pct_range: [30, 35],
+      protein_g_per_kg: [1.2, 1.4],
+      fat_pct_range: [35, 40]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "সকালে খালি পেটে বা প্রধান খাবারের পূর্বে মেথি ভেজানো পানি অথবা ইসুবগুলের ভুসি পান করলে পিত্ত ও অতিরিক্ত কোলেস্টেরল অন্ত্র দিয়ে নির্গত হয়।",
+        rule_en: "Consume soaked fenugreek water or psyllium husk prior to main meals to bind intestinal bile acids and excrete circulating cholesterol."
+      }
+    ],
+    clinicalRationaleBn: "ট্রান্স ফ্যাট ও পরিশোধিত চিনি যকৃতে ভিএলডিএল ও ট্রাইগ্লিসারাইড বাড়ায়; দ্রবণীয় ফাইবার কোলেস্টেরল পুনঃশোষণ রোধ করে।",
+    clinicalRationaleEn: "Trans fats and high-fructose syrups upregulate hepatic SREBP-1c, accelerating atherogenic dyslipidemia."
+  },
+
+  metabolic_syndrome: {
+    id: 'metabolic_syndrome',
+    name_en: "Metabolic Syndrome (MetS / Cardiometabolic Triad)",
+    name_bn: "মেটাবলিক সিন্ড্রোম (কার্ডিওমেটাবলিক ট্রায়াড)",
+    clinical_summary_en: "Co-occurrence of abdominal visceral adiposity, hypertriglyceridemia, low HDL, elevated fasting glucose, and arterial hypertension. Protocol emphasizes low glycemic load, AMPK activation, and circadian fasting.",
+    clinical_summary_bn: "পেটের মেদ বৃদ্ধি, উচ্চ ট্রাইগ্লিসারাইড, কম এইচডিএল, উচ্চ রক্তচাপ ও ব্লাড সুগার বৃদ্ধির যৌথ জটিলতা। লো-গ্লাইসেমিক খাদ্য ও মেটাবলিক নমনীয়তা পুনরুদ্ধার লক্ষ্য।",
+    redTags: ['high_fructose', 'high_sodium_processed'],
+    yellowTags: ['medium_purine'],
+    greenTags: ['insulin_sensitizing', 'anti_inflammatory', 'nitrate_rich'],
+    redFoods: ['sugar', 'sweets', 'sweetmeat', 'white flour', 'bakery', 'chanachur', 'soft drinks', 'deep fried'],
+    yellowFoods: ['white rice', 'potato', 'banana', 'mango'],
+    greenFoods: ['bitter gourd', 'cinnamon', 'fenugreek', 'spinach', 'cucumber', 'freshwater fish', 'egg', 'apple cider vinegar'],
+    macroAdjustment: {
+      carb_pct_range: [25, 35],
+      protein_g_per_kg: [1.3, 1.5],
+      fat_pct_range: [35, 45]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "প্রতিদিন ১২-১৪ ঘণ্টার প্রাকৃতিক উপবাস (Intermittent Fasting) পালন করুন এবং খাবারের মাঝের অনর্থক স্ন্যাকস খাওয়া বন্ধ রাখুন।",
+        rule_en: "Adopt a consistent 12-14 hour overnight fasting interval and eliminate intermediate snacking to lower basal hyperinsulinemia."
+      }
+    ],
+    clinicalRationaleBn: "ইনসুলিন ও ভিসেরাল ফ্যাটের পারস্পরিক চক্র ভাঙতে কার্বোহাইড্রেট নিয়ন্ত্রণ ও দীর্ঘ বিরতির উপবাস অত্যন্ত কার্যকরী।",
+    clinicalRationaleEn: "Visceral adipocytes secrete pro-inflammatory adipokines and free fatty acids, exacerbating hepatic and peripheral insulin resistance."
+  },
+
+  lada_early_pancreatic: {
+    id: 'lada_early_pancreatic',
+    name_en: "LADA / Autoimmune Diabetes / Beta-Cell Insufficiency",
+    name_bn: "লাডা / অটোইমিউন ডায়াবেটিস ও অগ্ন্যাশয় সুরক্ষা",
+    clinical_summary_en: "Adult-onset autoimmune beta-cell failure (anti-GAD/IA-2 antibodies) with progressive insulin deficiency. Protocol focuses on pancreatic beta-cell preservation, immune modulation, and avoiding beta-cell glucotoxicity.",
+    clinical_summary_bn: "প্রাপ্তবয়স্কদের অটোইমিউন ডায়াবেটিস যাতে অগ্ন্যাশয়ের ইনসুলিন উৎপাদনকারী বিটা কোষ ধীরে ধীরে ক্ষতিগ্রস্ত হয়। বিটা কোষের দীর্ঘায়ু রক্ষা ও সুগার স্পাইক রোধ লক্ষ্য।",
+    redTags: ['high_fructose', 'contains_gluten'],
+    yellowTags: ['high_sodium_processed'],
+    greenTags: ['anti_inflammatory', 'gluten_free', 'gut_healing'],
+    redFoods: ['sugar', 'wheat', 'bakery', 'honey', 'soft drinks', 'sweetmeat'],
+    yellowFoods: ['white rice', 'potato', 'sweet fruits'],
+    greenFoods: ['egg', 'freshwater fish', 'pure cow ghee', 'leafy greens', 'turmeric', 'pumpkin seeds', 'olive oil'],
+    macroAdjustment: {
+      carb_pct_range: [30, 35],
+      protein_g_per_kg: [1.2, 1.4],
+      fat_pct_range: [35, 40]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "প্রতিটি খাবারে প্রোটিন ও স্বাস্থ্যকর চর্বি নিশ্চিত করুন যাতে রক্তে ইনসুলিনের হঠাৎ ঘাটতি বা গ্লুকোজ স্পাইক না ঘটে।",
+        rule_en: "Pair complex carbohydrates with clean protein and healthy lipids at every meal to avoid postprandial glucose volatility."
+      }
+    ],
+    clinicalRationaleBn: "উচ্চ গ্লুকোজ বিটা কোষে গ্লুকোটক্সিসিটি সৃষ্টি করে এর ধ্বংস ত্বরান্বিত করে; পরিমিত সুষম খাদ্য বিটা কোষের কর্মক্ষমতা দীর্ঘস্থায়ী করে।",
+    clinicalRationaleEn: "Glucotoxicity accelerates apoptotic demise of remaining pancreatic beta-cells; nutritional stabilization mitigates autoimmune stress."
+  },
+
+  sibo_microbial_overgrowth: {
+    id: 'sibo_microbial_overgrowth',
+    name_en: "SIBO / Small Intestinal Bacterial Overgrowth",
+    name_bn: "সিবো / ক্ষুদ্রান্ত্রে অতিরিক্ত ব্যাকটেরিয়ার বিস্তার",
+    clinical_summary_en: "Abnormal bacterial colonization of the small intestine triggering early carbohydrate fermentation, bloating, methane/hydrogen gas, and migrating motor complex (MMC) failure. Protocol utilizes biphasic low-fermentable foods and MMC spacing.",
+    clinical_summary_bn: "ক্ষুদ্রান্ত্রে অনাকাঙ্ক্ষিত ব্যাকটেরিয়ার বংশবৃদ্ধি যার ফলে খাবার গ্রহণের পরপরই তীব্র পেট ফাঁপা, গ্যাস ও হজমে বিঘ্ন ঘটে। লো-ফার্মেন্টেবল খাদ্য ও অন্ত্রের পরিচ্ছন্নতা তরঙ্গ সক্রিয়করণ প্রধান লক্ষ্য।",
+    redTags: ['high_fodmap', 'high_fructose'],
+    yellowTags: ['phytate_soak_needed'],
+    greenTags: ['low_fodmap', 'gut_healing', 'anti_inflammatory'],
+    redFoods: ['raw onion', 'raw garlic', 'wheat', 'cauliflower', 'cabbage', 'beans', 'lentils', 'apples', 'soft drinks'],
+    yellowFoods: ['well cooked lentils', 'soaked chickpeas', 'ripe papaya'],
+    greenFoods: ['bottle gourd', 'cucumber', 'ginger', 'mint', 'red rice', 'steamed freshwater fish', 'egg', 'pure cow ghee'],
+    macroAdjustment: {
+      carb_pct_range: [35, 40],
+      protein_g_per_kg: [1.2, 1.4],
+      fat_pct_range: [30, 35]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "দুই মূল খাবারের মাঝে কমপক্ষে ৪-৫ ঘণ্টার সম্পূর্ণ বিরতি রাখুন (কোনো খাবার বা ক্যালোরিযুক্ত পানীয় নয়) যাতে অন্ত্রের প্রাকৃতিক পরিচ্ছন্নতা তরঙ্গ (MMC) খাবার অবশিষ্টাংশ পরিষ্কার করতে পারে।",
+        rule_en: "Enforce strict 4-5 hour inter-meal fasting to permit migrating motor complex (MMC) phase III housekeeping contractions."
+      }
+    ],
+    clinicalRationaleBn: "উচ্চ ফার্মান্টেবল কার্বোহাইড্রেট ক্ষুদ্রান্ত্রের ব্যাকটেরিয়ার প্রধান খাদ্য; এগুলো বন্ধ করলে ব্যাকটেরিয়ার বিস্তার ও পেট ফাঁপা দ্রুত কমে।",
+    clinicalRationaleEn: "Bacterial fermentation of oligosaccharides in the small intestine yields excessive hydrogen/methane, distending bowel loops."
+  },
+
+  gerd_reflux_esophagitis: {
+    id: 'gerd_reflux_esophagitis',
+    name_en: "GERD / Reflux Esophagitis & LES Dysfunction",
+    name_bn: "জিইআরডি / এসিড রিফ্লাক্স ও খাদ্যনালীর প্রদাহ",
+    clinical_summary_en: "Retrograde flow of gastric contents into the esophagus due to transient lower esophageal sphincter (LES) relaxations or delayed gastric emptying. Protocol eliminates LES relaxants and mechanical intra-abdominal pressure.",
+    clinical_summary_bn: "পাকস্থলীর অ্যাসিড ও পাচক রস খাদ্যনালীতে উঠে আসা, বুকজ্বালা ও গলায় অস্বস্তি। খাদ্যনালীর ভালভ (LES) শিথিলকারী খাবার বর্জন ও সহজপাচ্য হালকা আহার মূল চিকিৎসা।",
+    redTags: ['high_histamine', 'high_sodium_processed'],
+    yellowTags: ['high_fructose'],
+    greenTags: ['gut_healing', 'anti_inflammatory', 'low_fodmap'],
+    redFoods: ['deep fried', 'raw chili', 'peppermint', 'mint', 'chocolate', 'coffee', 'black tea', 'citrus fruits', 'tomato sauce', 'soft drinks'],
+    yellowFoods: ['cooked onion', 'garlic in curry', 'fatty meat'],
+    greenFoods: ['bottle gourd', 'green papaya stew', 'oatmeal', 'boiled fish', 'almond milk', 'cucumber', 'ginger tea', 'red rice'],
+    macroAdjustment: {
+      carb_pct_range: [40, 45],
+      protein_g_per_kg: [1.1, 1.3],
+      fat_pct_range: [25, 30]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "শোবার অন্তত ৩ ঘণ্টা পূর্বে রাতের খাবার সম্পন্ন করুন এবং আহারের পরপরই শুয়ে পড়বেন না। একবারে অতিরিক্ত না খেয়ে অল্প অল্প করে দিনে ৩-৪ বার আহার করুন।",
+        rule_en: "Complete evening meal at least 3 hours before sleep; avoid postprandial recumbency and consume moderate-volume portions."
+      }
+    ],
+    clinicalRationaleBn: "ভাজাভুজি, অতিরিক্ত চর্বি ও পুদিনা খাদ্যনালীর ভালভ আলগা করে দেয়, ফলে শোবার পর পাকস্থলীর এসিড সহজে খাদ্যনালীতে উঠে বুকজ্বালা ঘটায়।",
+    clinicalRationaleEn: "Fat-rich chyme stimulates cholecystokinin release, decreasing lower esophageal sphincter resting tone and delaying gastric emptying."
+  },
+
+  ibd_mucosal_inflammation: {
+    id: 'ibd_mucosal_inflammation',
+    name_en: "IBD / Mucosal Colitis & Intestinal Inflammation",
+    name_bn: "আইবিডি / আলসারেটিভ কোলাইটিস ও অন্ত্রের দীর্ঘস্থায়ী প্রদাহ",
+    clinical_summary_en: "Chronic intestinal mucosal immune hyperreactivity, impaired epithelial barrier integrity, and microvascular permeability. Protocol focuses on mucosal regeneration, low-residue during active flares, and elemental nutrition support.",
+    clinical_summary_bn: "বৃহদান্ত্র বা অন্ত্রের মিউকোসা স্তরের তীব্র প্রদাহ, ক্ষত ও রক্তক্ষরণজনিত সমস্যা। সহজে শোষণযোগ্য মসৃণ নরম পথ্য, প্রদাহ দমন ও অন্ত্রের দেয়াল পুনর্গঠন মূল লক্ষ্য।",
+    redTags: ['contains_gluten', 'high_histamine', 'high_fodmap'],
+    yellowTags: ['phytate_soak_needed'],
+    greenTags: ['gut_healing', 'anti_inflammatory', 'low_fodmap'],
+    redFoods: ['raw vegetables', 'roughage', 'spicy shutki', 'chili', 'cow milk', 'seeds', 'nuts', 'deep fried', 'processed meat'],
+    yellowFoods: ['well cooked vegetables', 'lentil soup', 'skinless chicken'],
+    greenFoods: ['steamed fish', 'magur fish soup', 'boiled green papaya', 'bottle gourd', 'soft rice', 'pure cow ghee', 'turmeric broth'],
+    macroAdjustment: {
+      carb_pct_range: [40, 45],
+      protein_g_per_kg: [1.3, 1.6],
+      fat_pct_range: [25, 30]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "প্রদাহের তীব্র অবস্থায় কাঁচা শাকসবজি বা শক্ত খাবার সম্পূর্ণরূপে বাদ দিয়ে নরম ও সহজপাচ্য জাও ভাত, সেদ্ধ পেঁপে ও হালকা মাছের ঝোল গ্রহণ করুন।",
+        rule_en: "During inflammatory exacerbations, strictly eliminate raw roughage and seeds; adopt warm, pureed or soft easily absorbed nutrition."
+      }
+    ],
+    clinicalRationaleBn: "অন্ত্রের দেয়ালে ক্ষত থাকলে অপাচ্য আঁশ ও কাঁচা খাদ্য মিউকোসা স্তরে ঘর্ষণ তৈরি করে রক্তক্ষরণ ও প্রদাহ বাড়িয়ে দেয়।",
+    clinicalRationaleEn: "Insoluble fibrous roughage induces mechanical friction across friable, inflamed mucosal ulcerations, precipitating micro-hemorrhage."
   }
 };
 

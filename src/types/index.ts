@@ -193,7 +193,13 @@ export type ClinicalConditionId =
   | 'pcos'
   | 'gut_dysbiosis'
   | 'uric_acid_gout'
-  | 'hypertension_ckd';
+  | 'hypertension_ckd'
+  | 'dyslipidemia_atherosclerosis'
+  | 'metabolic_syndrome'
+  | 'lada_early_pancreatic'
+  | 'sibo_microbial_overgrowth'
+  | 'gerd_reflux_esophagitis'
+  | 'ibd_mucosal_inflammation';
 
 export interface CalculatedAnthropometrics {
   bmi: number;

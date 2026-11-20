@@ -188,7 +188,8 @@ export function calculateAnthropometrics(
 
   // 10. Macronutrient Targets
   let protein_multiplier = 1.2;
-  if (conditions.includes('t2d_ir') || conditions.includes('pcos') || conditions.includes('fatty_liver')) {
+  if (conditions.includes('t2d_ir') || conditions.includes('pcos') || conditions.includes('fatty_liver') ||
+      conditions.includes('dyslipidemia_atherosclerosis') || conditions.includes('metabolic_syndrome') || conditions.includes('lada_early_pancreatic')) {
     protein_multiplier = 1.35;
   }
   if (conditions.includes('hypertension_ckd')) {
@@ -203,11 +204,13 @@ export function calculateAnthropometrics(
   let carb_pct = 0.40;
   let fat_pct = 0.35;
 
-  if (conditions.includes('t2d_ir') || conditions.includes('pcos') || conditions.includes('fatty_liver')) {
+  if (conditions.includes('t2d_ir') || conditions.includes('pcos') || conditions.includes('fatty_liver') ||
+      conditions.includes('dyslipidemia_atherosclerosis') || conditions.includes('metabolic_syndrome') || conditions.includes('lada_early_pancreatic')) {
     carb_pct = 0.30;
     fat_pct = 0.40;
   }
-  if (conditions.includes('gut_dysbiosis')) {
+  if (conditions.includes('gut_dysbiosis') || conditions.includes('sibo_microbial_overgrowth') ||
+      conditions.includes('gerd_reflux_esophagitis') || conditions.includes('ibd_mucosal_inflammation')) {
     carb_pct = 0.35;
     fat_pct = 0.35;
   }
