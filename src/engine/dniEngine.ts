@@ -5,8 +5,14 @@ import {
   CandidateSupplement,
   SupplementOverlapWarning,
   DailyTimelineItem, 
-  PatientProfile 
+  PatientProfile,
+  ActivityLevel,
+  ClinicalConditionId,
+  GutAndAyurvedicProfile,
+  FunctionalLabs
 } from '../types';
+import medicinesData from '../data/medicines.json';
+import supplementsData from '../data/supplements.json';
 
 export interface DNIEngineResult {
   depletions: {
@@ -74,6 +80,22 @@ export function checkSupplementOverlaps(supplements: CandidateSupplement[]): Sup
       severity: 'medium',
       warning_bn: `সতর্কতা: একাধিক জিংক সাপ্লিমেন্ট নির্বাচিত। দৈনিক ৪০ মিগ্রার বেশি জিংক গ্রহণ করলে তামা (Copper) শোষণ কমে রক্তাল্পতা দেখা দিতে পারে।`,
       warning_en: `Zinc Accumulation: Chronic zinc ingestion above 40 mg/day competitively inhibits intestinal copper absorption, potentially leading to microcytic anemia or neutropenia.`
+    });
+  }
+
+  // 4. Folate screening (UL is 1,000 mcg/day for supplemental folate)
+  const folateSupps = approvedOrCandidate.filter(s => 
+    s.id.includes('folate') || s.name_en.toLowerCase().includes('folate') || s.id.includes('b9')
+  );
+  if (folateSupps.length > 1) {
+    warnings.push({
+      nutrient: "Folate (Vitamin B9)",
+      total_amount_estimated: `${folateSupps.length} concurrent Folate sources`,
+      tolerable_upper_limit: "1,000 mcg/day (dietary supplemental UL)",
+      sources: folateSupps.map(s => s.name_en),
+      severity: 'medium',
+      warning_bn: `সতর্কতা: একাধিক ফোলেট (ভিটামিন বি৯) উৎস উপস্থিত। দৈনিক ১০০০ মাইক্রোগ্রামের বেশি ফোলেট দীর্ঘমেয়াদে গ্রহণ করলে ভিটামিন বি১২ ঘাটতিজনিত নিউরোপ্যাথির লক্ষণ চাপা পড়ে যেতে পারে।`,
+      warning_en: `Cumulative Folate Exposure: Multiple formulations supply supplemental folate. Supplemental intake exceeding 1,000 mcg/day may mask hematological manifestations of occult Vitamin B12 deficiency.`
     });
   }
 
@@ -196,6 +218,10 @@ export function evaluateDNIAndTimeline(
   const hasMetformin = activeMeds.some(m => m.id === 'med_metformin' || m.generic_name.toLowerCase().includes('metformin'));
   const hasStatin = activeMeds.some(m => m.id === 'med_statin' || m.generic_name.toLowerCase().includes('statin'));
   const hasSteroids = activeMeds.some(m => m.id === 'med_steroids' || m.generic_name.toLowerCase().includes('prednisolone'));
+  const hasNSAID = activeMeds.some(m => m.id === 'med_nsaid' || m.generic_name.toLowerCase().includes('naproxen') || m.generic_name.toLowerCase().includes('ibuprofen') || m.generic_name.toLowerCase().includes('diclofenac'));
+  const hasSGLT2 = activeMeds.some(m => m.id === 'med_sglt2i' || m.generic_name.toLowerCase().includes('empagliflozin') || m.generic_name.toLowerCase().includes('dapagliflozin'));
+  const hasSulfonylurea = activeMeds.some(m => m.id === 'med_sulfonylurea' || m.generic_name.toLowerCase().includes('gliclazide') || m.generic_name.toLowerCase().includes('glimepiride'));
+  const hasARB = activeMeds.some(m => m.id === 'med_arb_acei' || m.generic_name.toLowerCase().includes('losartan') || m.generic_name.toLowerCase().includes('telmisartan') || m.generic_name.toLowerCase().includes('ramipril'));
 
   if (hasLevothyroxine) {
     criticalWarnings.push({
@@ -208,6 +234,36 @@ export function evaluateDNIAndTimeline(
     criticalWarnings.push({
       warning_bn: "পিপিআই (PPI) জাতীয় ওষুধের দীর্ঘমেয়াদি ব্যবহার পাকস্থলীর স্বাভাবিক এসিড কমিয়ে পুষ্টি শোষণ (ম্যাগনেসিয়াম, ভিটামিন বি১২, আয়রন) মারাত্মকভাবে ব্যাহত করে। খাবারের পূর্বে আদা ও সৈন্ধব লবণ দিয়ে পাচক রস উদ্দীপন ফলপ্রসূ হতে পারে।",
       warning_en: "Proton Pump Inhibitor (PPI) pharmacotherapy induces prolonged hypochlorhydria, significantly impeding fractional absorption of Magnesium, Vitamin B12, and non-heme Iron. Pre-meal digestive stimulation recommended."
+    });
+  }
+
+  if (hasNSAID) {
+    criticalWarnings.push({
+      warning_bn: "সতর্কতা: এনএসএআইডি (NSAID - ন্যাপ্রোক্সেন/আইবুপ্রোফেন/ডাইক্লোফেনাক) চলাকালীন বিটাইন এইচসিএল (পাকস্থলীর অ্যাসিড সাপ্লিমেন্ট) গ্রহণ কঠোরভাবে নিষিদ্ধ; এটি মিউকোসা ক্ষয় ও রক্তক্ষরণের ঝুঁকি সৃষ্টি করে।",
+      warning_en: "CRITICAL SAFETY ALERT: Betaine HCl is strictly contraindicated with concurrent NSAID therapy (Naproxen/Ibuprofen/Diclofenac) due to severe risk of gastric mucosal ulceration and hemorrhage."
+    });
+    // Suppress Betaine HCl from candidate supplements
+    candidateSupplementsMap.delete('supp_betaine_hcl_pepsin');
+  }
+
+  if (hasSGLT2) {
+    criticalWarnings.push({
+      warning_bn: "সতর্কতা: এসজিএলটি২ ইনহিবিটর (SGLT2i) গ্রহণকারী রোগীদের জন্য অতি-স্বল্প শর্করা (<৬০ গ্রাম) বা ১৬ ঘণ্টার বেশি দীর্ঘ উপবাস ইউজ্লাইসেমিক কিটোঅ্যাসিডোসিসের (euDKA) ঝুঁকি তৈরি করে। পর্যাপ্ত তরল ও ইলেক্ট্রোলাইট বজায় রাখুন।",
+      warning_en: "SGLT2 INHIBITOR PRECAUTION: Strict carbohydrate restriction (<60g) or fasting >16h poses a severe risk of Euglycemic Diabetic Ketoacidosis (euDKA). Ensure daily fluid intake >=2.5L and maintain minimum 60g complex carbohydrates."
+    });
+  }
+
+  if (hasSulfonylurea) {
+    criticalWarnings.push({
+      warning_bn: "সতর্কতা: সালফোনাইলইউরিয়া (গ্লিক্লাজাইড/গ্লিমেপিরাইড) ওষুধের সাথে দীর্ঘ উপবাস বা খাবার বাদ দিলে মারাত্মক হাইপোগ্লাইসেমিয়া হতে পারে। খাবার গ্রহণের সাথে সমন্বয় আবশ্যক।",
+      warning_en: "SULFONYLUREA HYPOGLYCEMIA ALERT: Skipping meals or prolonged fasting on secretagogues triggers severe acute hypoglycemia. Ensure synchronized meal intake."
+    });
+  }
+
+  if (hasARB) {
+    criticalWarnings.push({
+      warning_bn: "সতর্কতা: এআরবি/এসিই ইনহিবিটর কিডনি দিয়ে পটাসিয়াম নির্গমন কমায়; অতিরিক্ত ডাবের পানি বা পটাসিয়াম সাপ্লিমেন্ট গ্রহণ পরিহার করুন।",
+      warning_en: "POTASSIUM-SPARING PRECAUTION: ARB/ACE inhibitors impair renal potassium excretion. Avoid excessive potassium-rich supplements or coconut water."
     });
   }
 
@@ -391,4 +447,80 @@ export function evaluateDNIAndTimeline(
     timeline,
     criticalWarnings
   };
+}
+
+export function runDNIEngine(
+  patient: {
+    age: number;
+    gender: 'male' | 'female';
+    height_cm: number;
+    weight_kg: number;
+    activity_level: ActivityLevel;
+    selected_conditions: ClinicalConditionId[];
+    active_medications?: string[];
+    gut_profile?: Partial<GutAndAyurvedicProfile>;
+    labs?: Partial<FunctionalLabs>;
+  },
+  medicines: MedicineItem[] = medicinesData as MedicineItem[],
+  supplements: SupplementItem[] = supplementsData as SupplementItem[]
+): DNIEngineResult {
+  const fullPatient: PatientProfile = {
+    schema_version: 2,
+    id: 'temp_pt',
+    name: 'Anonymous',
+    age: patient.age,
+    gender: patient.gender,
+    phone: '01700000000',
+    visit_date: new Date().toISOString().split('T')[0],
+    current_phase: 1,
+    height_cm: patient.height_cm,
+    weight_kg: patient.weight_kg,
+    waist_cm: 80,
+    activity_level: patient.activity_level,
+    sleep_hours: 7,
+    shift_worker: false,
+    population_group: 'adult_standard',
+    bmr_floor_strategy: 'clamped_to_bmr',
+    confirmed_allergies: [],
+    clinician_disallowed_foods: [],
+    clinician_disallowed_tags: [],
+    selected_conditions: patient.selected_conditions,
+    active_medications: patient.active_medications || [],
+    gut_profile: {
+      bloating: 'none',
+      acid_reflux_hypoacidity: patient.gut_profile?.acid_reflux_hypoacidity || false,
+      bristol_stool_score: 4,
+      energy_score: 7,
+      sleep_quality_score: 7,
+      digestive_fire_agni: 'samagni',
+      ...patient.gut_profile
+    },
+    labs: {
+      lab_flags: [],
+      ...patient.labs
+    },
+    calculated: {
+      bmi: 24,
+      bmi_category_en: 'Normal',
+      bmi_category_bn: 'স্বাভাবিক',
+      ibw_kg: 65,
+      adjusted_bw_kg: 65,
+      whtr: 0.47,
+      whtr_risk_en: 'Low',
+      whtr_risk_bn: 'কম',
+      bmr: 1500,
+      tdee: 1800,
+      bmr_safe_calorie_floor: 1500,
+      target_calories: 1800,
+      target_protein_g: 80,
+      target_carbs_g: 200,
+      target_fat_g: 60,
+      protein_ratio_used: 'Standard',
+      population_group: 'adult_standard',
+      bmr_floor_strategy: 'clamped_to_bmr',
+      is_estimated: true,
+      energy_calculation_method: 'Mifflin-St Jeor'
+    }
+  };
+  return evaluateDNIAndTimeline(fullPatient, medicines, supplements);
 }

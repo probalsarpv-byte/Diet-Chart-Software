@@ -411,5 +411,366 @@
         "action": "strictly_avoid"
       }
     ]
+  },
+  {
+    "id": "med_sglt2i",
+    "generic_name": "Empagliflozin / Dapagliflozin",
+    "brand_names_bd": [
+      "Jardiance",
+      "Forxiga",
+      "Emparol",
+      "Dapaglif",
+      "Glicon",
+      "Empa",
+      "Dapa"
+    ],
+    "drug_class": "SGLT2 Inhibitor / Antidiabetic",
+    "mechanism_bn": "কিডনির প্রক্সিমাল টিউবুলে SGLT2 রিসেপ্টর ব্লক করে প্রস্রাবের মাধ্যমে অতিরিক্ত গ্লুকোজ ও সোডিয়াম নির্গমন ঘটায়।",
+    "mechanism_en": "Inhibits sodium-glucose co-transporter 2 (SGLT2) in renal proximal tubules, promoting glucosuria and natriuresis.",
+    "depletions": [
+      {
+        "nutrient": "Magnesium & Fluid Volume",
+        "severity": "high",
+        "reason_bn": "অসমোটিক ডাইইউরেসিসের কারণে শরীর থেকে অতিরিক্ত তরল ও ম্যাগনেসিয়াম নির্গত হয়ে ডিহাইড্রেশন ও পেশির টান লাগতে পারে।",
+        "reason_en": "Osmotic diuresis accelerates renal magnesium excretion and contracted plasma volume.",
+        "supplement_recommendation": {
+          "name_en": "Magnesium Glycinate (Chelated)",
+          "name_bn": "ম্যাগনেসিয়াম গ্লাইসিনেট",
+          "dose": "250 - 350 mg/day",
+          "timing": "Bedtime with water",
+          "verified_bd_brands": [
+            "Gefomag",
+            "Mag-G"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "সকালে ১ গ্লাস পূর্ণ পানি দিয়ে গ্রহণ করুন; সারা দিন পর্যাপ্ত তরল পান নিশ্চিত করুন।",
+        "rule_en": "Take in the morning with a full glass of water; maintain consistent daytime hydration.",
+        "time_slot": "08:00 AM (Morning)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Very Low Carbohydrate / Strict Keto (<60g)",
+        "effect_bn": "SGLT2 ইনহিবিটরে থাকা অবস্থায় অতি-স্বল্প কার্বোহাইড্রেট বা ক্র্যাশ ডায়েট করলে মারাত্মক ইউজ্লাইসেমিক কিটোঅ্যাসিডোসিস (euDKA) হতে পারে।",
+        "effect_en": "Extreme carbohydrate restriction precipitates life-threatening euglycemic diabetic ketoacidosis.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_sulfonylurea",
+    "generic_name": "Gliclazide / Glimepiride",
+    "brand_names_bd": [
+      "Comprid",
+      "Diamicron",
+      "Secrin",
+      "Amaryl",
+      "Diapro",
+      "Glicron"
+    ],
+    "drug_class": "Sulfonylurea / Insulin Secretagogue",
+    "mechanism_bn": "অগ্ন্যাশয়ের বিটা কোষকে উদ্দীপিত করে সরাসরি রক্তে অতিরিক্ত ইনসুলিন নিঃসরণ ঘটায়।",
+    "mechanism_en": "Stimulates pancreatic beta-cells to secrete insulin independently of blood glucose levels.",
+    "depletions": [
+      {
+        "nutrient": "Coenzyme Q10",
+        "severity": "medium",
+        "reason_bn": "বিটা কোষের অতিরিক্ত কার্যকারিতা ও মাইটোকন্ড্রিয়াল অক্সিজেনেটর হ্রাস।",
+        "reason_en": "Increased pancreatic oxidative stress may deplete endogenous cellular antioxidants.",
+        "supplement_recommendation": {
+          "name_en": "CoQ10 Ubiquinol",
+          "name_bn": "কো-এনজাইম কিউ১০",
+          "dose": "100 mg/day",
+          "timing": "With lunch",
+          "verified_bd_brands": [
+            "Q10",
+            "CoQ"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "সকালের নাশতার ঠিক পূর্বে বা প্রথম লোকমার সাথে গ্রহণ করুন। খাবার না খেয়ে ওষুধ খেলে হাইপোগ্লাইসেমিয়ার মারাত্মক ঝুঁকি থাকে।",
+        "rule_en": "Take immediately prior to breakfast or with the first bite of the meal. Never take without food.",
+        "time_slot": "08:00 AM (With Breakfast)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Prolonged Intermittent Fasting (>14h)",
+        "effect_bn": "সালফোনাইলইউরিয়া গ্রহণের সময় খাবার না খেলে তীব্র হাইপোগ্লাইসেমিয়া (ব্লাড সুগার ৩.০ এর নিচে নামা) ও অজ্ঞান হওয়ার ঝুঁকি থাকে।",
+        "effect_en": "Causes acute, dangerous hypoglycemia during prolonged fasting intervals.",
+        "action": "strictly_avoid_timing"
+      }
+    ]
+  },
+  {
+    "id": "med_glp1ra",
+    "generic_name": "Semaglutide / Liraglutide",
+    "brand_names_bd": [
+      "Ozempic",
+      "Rybelsus",
+      "Victoza",
+      "Saxenda",
+      "Semaglyn"
+    ],
+    "drug_class": "GLP-1 Receptor Agonist / Incretin Mimetic",
+    "mechanism_bn": "জিএলপি-১ রিসেপ্টর সক্রিয় করে পাচক রসে ইনসুলিন নিঃসরণ বাড়ায় এবং পাকস্থলী খালি হওয়ার গতি ধীর করে।",
+    "mechanism_en": "Activates GLP-1 receptors, enhancing glucose-dependent insulin secretion and delaying gastric emptying.",
+    "depletions": [
+      {
+        "nutrient": "Dietary Protein / Sarcopenia Prevention",
+        "severity": "high",
+        "reason_bn": "ক্ষুধা অতিমাত্রায় কমার কারণে পর্যাপ্ত প্রোটিন গ্রহণ না হলে দ্রুত পেশি ক্ষয় (Sarcopenia) ঘটে।",
+        "reason_en": "Severe appetite suppression often leads to inadequate dietary protein intake and muscle wasting.",
+        "supplement_recommendation": {
+          "name_en": "Targeted Clean Protein Intake",
+          "name_bn": "পর্যাপ্ত পরিচ্ছন্ন প্রোটিন (১.৩-১.৫ গ্রাম/কেজি)",
+          "dose": "1.3 - 1.5 g/kg/day",
+          "timing": "Divided across meals",
+          "verified_bd_brands": [
+            "Clinical Protein Strategy"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "যদি মুখে খাওয়ার ট্যাবলেট (Rybelsus) হয়, তবে সকালে খালি পেটে অনধিক আধা গ্লাস সাধারণ পানি দিয়ে গ্রহণ করুন এবং ৩০ মিনিট অন্য কিছু খাবেন না।",
+        "rule_en": "Oral formulation (Rybelsus) must be taken upon rising with ≤120 mL plain water; wait 30 minutes before any food.",
+        "time_slot": "06:30 AM (Upon Waking)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "High-Fat Heavy Greasy Meals",
+        "effect_bn": "অতিরিক্ত চর্বিযুক্ত খাবার পাকস্থলীতে দীর্ঘক্ষণ আটকে তীব্র বমি ভাব ও গ্যাস্ট্রোপেরেসিস সৃষ্টি করে।",
+        "effect_en": "Greasy meals combined with delayed gastric emptying provoke severe nausea and reflux.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_arb_acei",
+    "generic_name": "Losartan / Telmisartan / Ramipril",
+    "brand_names_bd": [
+      "Angilock",
+      "Osartil",
+      "Telma",
+      "Cardizem",
+      "Ramace",
+      "Telpres",
+      "Losacar"
+    ],
+    "drug_class": "Angiotensin Receptor Blocker (ARB) / ACE Inhibitor",
+    "mechanism_bn": "এনজিওটেনসিন-২ রিসেপ্টর অবরুদ্ধ করে রক্তনালী প্রসারিত করে এবং রক্তচাপ কমায়।",
+    "mechanism_en": "Blocks angiotensin II type 1 receptors, promoting vasodilation and reducing aldosterone secretion.",
+    "depletions": [
+      {
+        "nutrient": "Zinc",
+        "severity": "medium",
+        "reason_bn": "কিডনি দিয়ে মূত্রের মাধ্যমে জিংক নির্গমন বৃদ্ধি পায়।",
+        "reason_en": "Increased urinary zinc excretion can precipitate gradual subclinical zinc deficiency.",
+        "supplement_recommendation": {
+          "name_en": "Zinc Glycinate / Chelate",
+          "name_bn": "চিলেটেড জিংক (১৫-২৫ মিগ্রা)",
+          "dose": "15 - 25 mg/day",
+          "timing": "With lunch or dinner",
+          "verified_bd_brands": [
+            "Zif",
+            "Zincore"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "নিয়মিত একই সময়ে (সকালে বা সন্ধ্যায়) ১ গ্লাস পানি দিয়ে গ্রহণ করুন।",
+        "rule_en": "Take consistently at the same scheduled hour daily with water.",
+        "time_slot": "08:30 AM (Morning)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Excessive Potassium Sources (Coconut Water, Potassium Salts)",
+        "effect_bn": "এআরবি ওষুধ কিডনি দিয়ে পটাসিয়াম বের হওয়া ধীর করে; অতিরিক্ত ডাবের পানি বা পটাসিয়াম খেলে বিপজ্জনক হাইপারক্যালেমিয়া হতে পারে।",
+        "effect_en": "Inhibition of aldosterone increases renal potassium retention; excess potassium risks lethal arrhythmias.",
+        "action": "caution_hyperkalemia"
+      }
+    ]
+  },
+  {
+    "id": "med_h2_blocker",
+    "generic_name": "Famotidine",
+    "brand_names_bd": [
+      "Famotack",
+      "Pepcid",
+      "Famo",
+      "Gastrosid"
+    ],
+    "drug_class": "H2 Receptor Antagonist / Acid Suppressant",
+    "mechanism_bn": "প্যারাইটাল কোষে হিস্টামিন এইচ২ রিসেপ্টর ব্লক করে গ্যাস্ট্রিক অ্যাসিড নিঃসরণ কমায়।",
+    "mechanism_en": "Competitively blocks H2 receptors on gastric parietal cells, diminishing basal and stimulated acid secretion.",
+    "depletions": [
+      {
+        "nutrient": "Vitamin B12 & Dietary Iron",
+        "severity": "medium",
+        "reason_bn": "পাকস্থলীর স্বাভাবিক অ্যাসিড কমে গেলে খাবারে থাকা B12 ও আয়রন আয়ন মুক্ত হয়ে শোষিত হতে পারে না।",
+        "reason_en": "Hypochlorhydria impairs enzymatic cleavage of protein-bound cobalamin and ferric-to-ferrous reduction.",
+        "supplement_recommendation": {
+          "name_en": "Sublingual Methylcobalamin + Gentle Iron",
+          "name_bn": "সাবলিঙ্গুয়াল মিথাইল বি১২",
+          "dose": "1000 mcg B12 sublingual",
+          "timing": "Morning",
+          "verified_bd_brands": [
+            "Methylcobal"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "রাতের রিফ্লাক্স রোধে শোবার ৩০-৬০ মিনিট পূর্বে বা আহারের ২০ মিনিট পূর্বে সেব্য।",
+        "rule_en": "Administer 30-60 minutes before bedtime or 20 minutes prior to provocative meals.",
+        "time_slot": "09:00 PM (Bedtime)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Raw Apple Cider Vinegar / Strong Citrus with Med",
+        "effect_bn": "ওষুধ গ্রহণের সাথে সাথে তীব্র টক অ্যাসিডিক খাবার খেলে অ্যান্টাসিড কার্যকারিতা ব্যাহত হয়।",
+        "effect_en": "Concomitant acidic liquids directly counteract therapeutic intragastric neutralization.",
+        "action": "strictly_avoid_timing"
+      }
+    ]
+  },
+  {
+    "id": "med_prokinetic",
+    "generic_name": "Mebeverine / Domperidone",
+    "brand_names_bd": [
+      "Colospa",
+      "Motigut",
+      "Mebever",
+      "Deflux",
+      "Vidon",
+      "Omidon"
+    ],
+    "drug_class": "Antispasmodic / Prokinetic Motility Agent",
+    "mechanism_bn": "অন্ত্রের মসৃণ পেশির সংকোচন স্বাভাবিক করে এবং পাকস্থলী খালি হওয়ার হার বাড়ায়।",
+    "mechanism_en": "Direct antispasmodic action on gastrointestinal smooth muscle and dopamine-D2 antagonist prokinetic activity.",
+    "depletions": [],
+    "timing_rules": [
+      {
+        "rule_bn": "খাবারের ২০-৩০ মিনিট পূর্বে সেবন করুন যাতে খাবার প্রবেশের সাথে সাথে অন্ত্রের সংকোচন মসৃণ থাকে।",
+        "rule_en": "Administer 20-30 minutes prior to meals for optimal pre-prandial motility control.",
+        "time_slot": "20 mins before Lunch & Dinner"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Carbonated Fizzy Drinks",
+        "effect_bn": "কোমল পানীয় পেটে অতিরিক্ত গ্যাস সৃষ্টি করে প্রো-কাইনেটিক গতিশীলতা নষ্ট করে।",
+        "effect_en": "Carbonation induces gastric distension, counteracting antispasmodic stabilization.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_5asa",
+    "generic_name": "Mesalazine",
+    "brand_names_bd": [
+      "Salofalk",
+      "Pentasa",
+      "Mesacol",
+      "Asacol"
+    ],
+    "drug_class": "5-Aminosalicylate (5-ASA) / Anti-inflammatory",
+    "mechanism_bn": "অন্ত্রের মিউকোসা স্তরে প্রদাহজনক প্রস্টাগ্ল্যান্ডিন ও লিউকোট্রিন সংশ্লেষণ প্রতিরোধ করে।",
+    "mechanism_en": "Locally inhibits cyclooxygenase and lipoxygenase pathways, reducing mucosal inflammation in colitis.",
+    "depletions": [
+      {
+        "nutrient": "Folate (Vitamin B9)",
+        "severity": "high",
+        "reason_bn": "মেসালাজিন অন্ত্রে ফোলেট ক্যারিয়ার প্রোটিনকে ব্লক করে রক্তাল্পতার ঝুঁকি বাড়ায়।",
+        "reason_en": "Competitively inhibits intestinal folate transport and cellular methylation pathways.",
+        "supplement_recommendation": {
+          "name_en": "L-Methylfolate (Active B9)",
+          "name_bn": "অ্যাক্টিভ এল-মিথাইলফোলেট (১ মিগ্রা)",
+          "dose": "1 - 2 mg/day",
+          "timing": "With lunch",
+          "verified_bd_brands": [
+            "Folmax",
+            "Metafol"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "ট্যাবলেট না চিবিয়ে পর্যাপ্ত পানি সহকারে আহারের পর গ্রহণ করুন।",
+        "rule_en": "Swallow whole with plenty of water after meals; do not chew sustained-release granules.",
+        "time_slot": "After Meals (Lunch & Dinner)"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Insoluble Roughage / Raw Greens in Flare",
+        "effect_bn": "অন্ত্রে আলসার চলাকালীন কাঁচা অপাচ্য আঁশ মিউকোসায় ক্ষত সৃষ্টি করে রক্তপাত বাড়ায়।",
+        "effect_en": "Harsh insoluble fibers physically abrade inflamed intestinal mucosa.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_nsaid",
+    "generic_name": "Naproxen / Ibuprofen / Diclofenac",
+    "brand_names_bd": [
+      "Naprosyn",
+      "Anaprox",
+      "Flamar",
+      "Clofenac",
+      "Voltarin",
+      "Proxen"
+    ],
+    "drug_class": "Non-Steroidal Anti-Inflammatory Drug (NSAID)",
+    "mechanism_bn": "সিওএক্স (COX-1/COX-2) এনজাইম বাধা দিয়ে প্রদাহ কমায় কিন্তু পাকস্থলীর সুরক্ষাকারী মিউকোসা স্তর ক্ষয় করে।",
+    "mechanism_en": "Non-selectively inhibits COX-1 and COX-2 enzymes, suppressing protective mucosal prostaglandins.",
+    "depletions": [
+      {
+        "nutrient": "Iron (Occult GI Loss) & Folate",
+        "severity": "high",
+        "reason_bn": "পাকস্থলী ও ডুওডেনামের মিউকোসায় সূক্ষ্ম ক্ষত তৈরি করে দীর্ঘমেয়াদে রক্তাল্পতা সৃষ্টি করতে পারে।",
+        "reason_en": "Subclinical microvascular gastrointestinal mucosal bleeding and mucosal erosion.",
+        "supplement_recommendation": {
+          "name_en": "Zinc Carnosine + Iron Bisglycinate",
+          "name_bn": "জিংক কার্নোসিন (মিউকোসা সুরক্ষা)",
+          "dose": "37.5 mg Zinc Carnosine",
+          "timing": "With meal",
+          "verified_bd_brands": [
+            "Clinical Mucosal Support"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "কখনই খালি পেটে খাবেন না; সর্বদা ভারী খাবারের সাথে পর্যাপ্ত পানি সহকারে গ্রহণ করুন।",
+        "rule_en": "Strictly contraindicated on an empty stomach; co-administer with a full substantial meal.",
+        "time_slot": "With Full Meal"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Betaine HCl / Gastric Acid Supplements",
+        "effect_bn": "এনএসএআইডি চলাকালীন বিটাইন এইচসিএল (পাকস্থলীর অ্যাসিড সাপ্লিমেন্ট) গ্রহণ করলে মারাত্মক গ্যাস্ট্রিক আলসার ও রক্তক্ষরণের ঝুঁকি সৃষ্টি হয়।",
+        "effect_en": "Betaine HCl with NSAIDs exponentially amplifies peptic ulceration and GI bleeding hazard.",
+        "action": "strictly_avoid"
+      }
+    ]
   }
 ]

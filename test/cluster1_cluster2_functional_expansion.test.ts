@@ -72,3 +72,45 @@ describe('Task 2: Disease Rules & Macro Adjustments', () => {
     assert.ok(res.target_fat_g > 0);
   });
 });
+
+describe('Task 3: Medicines & DNI Engine', () => {
+  it('contains SGLT2i, Sulfonylurea, ARB, and H2 blocker classes in medicines.json', async () => {
+    const { default: medicinesData } = await import('../src/data/medicines.json');
+    const classes = medicinesData.map((m: any) => m.drug_class);
+    assert.ok(classes.some((c: string) => c.includes('SGLT2')));
+    assert.ok(classes.some((c: string) => c.includes('Sulfonylurea')));
+    assert.ok(classes.some((c: string) => c.includes('Angiotensin') || c.includes('ARB')));
+    assert.ok(classes.some((c: string) => c.includes('H2 Receptor')));
+    assert.ok(classes.some((c: string) => c.includes('NSAID')));
+  });
+
+  it('flags cumulative Zinc upper limit (>40mg/day) and Folate (>1000mcg/day)', async () => {
+    const { checkSupplementOverlaps } = await import('../src/engine/dniEngine');
+    const overlaps = checkSupplementOverlaps([
+      { id: 'supp_zinc_carnosine', name_en: 'Zinc L-Carnosine 25mg', name_bn: 'জিংক কার্নোসিন', dose: '25mg', recommended_dose: '25mg', timing: 'with meal', approval_status: 'candidate' } as any,
+      { id: 'supp_multivitamin_zinc', name_en: 'Chelated Zinc 20mg', name_bn: 'চিলেটেড জিংক', dose: '20mg', recommended_dose: '20mg', timing: 'with meal', approval_status: 'candidate' } as any
+    ]);
+    assert.ok(overlaps.some(o => o.nutrient.toLowerCase().includes('zinc')));
+
+    const folateOverlaps = checkSupplementOverlaps([
+      { id: 'supp_active_folate_bcomplex', name_en: 'L-Methylfolate 500mcg', name_bn: 'এল-মিথাইলফোলেট', dose: '500mcg', recommended_dose: '500mcg', timing: 'with meal', approval_status: 'candidate' } as any,
+      { id: 'supp_prenatal_folate', name_en: 'Dietary Folate B9', name_bn: 'ফোলেট বি৯', dose: '600mcg', recommended_dose: '600mcg', timing: 'with meal', approval_status: 'candidate' } as any
+    ]);
+    assert.ok(folateOverlaps.some(o => o.nutrient.toLowerCase().includes('folate')));
+  });
+
+  it('suppresses Betaine HCl when NSAID medication is active and emits safety alert', async () => {
+    const { runDNIEngine } = await import('../src/engine/dniEngine');
+    const res = runDNIEngine({
+      age: 50,
+      gender: 'male',
+      height_cm: 172,
+      weight_kg: 75,
+      activity_level: 'sedentary',
+      selected_conditions: ['gerd_reflux_esophagitis'],
+      active_medications: ['Naproxen']
+    });
+    assert.ok(!res.candidateSupplements.some(s => s.id === 'supp_betaine_hcl_pepsin'), 'Betaine HCl must be suppressed');
+    assert.ok(res.criticalWarnings.some(w => w.warning_en.toLowerCase().includes('betaine') || w.warning_en.toLowerCase().includes('nsaid')));
+  });
+});
