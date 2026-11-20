@@ -131,50 +131,56 @@ export const ClinicalIntelligenceTab: React.FC = () => {
   const immediateCount = analysis.redFlags.filter(f => f.urgency === 'immediate').length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="bg-gradient-to-r from-card via-card to-purple-500/[0.04] border border-border/80 rounded-3xl p-6 shadow-sm flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h2 className="text-lg font-bold">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/25 text-xs font-semibold mb-2 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+            <span>{lang === 'bn' ? 'P2 রুট-কজ ইন্টেলিজেন্স ইঞ্জিন' : 'P2 Root-Cause Diagnostic Engine'}</span>
+          </div>
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
             {lang === 'bn' ? 'ক্লিনিক্যাল ইন্টেলিজেন্স ড্যাশবোর্ড' : 'Clinical Intelligence Dashboard'}
           </h2>
-          <p className="text-xs text-muted-foreground">
-            {lang === 'bn' ? `${patient.name} — ` : `${patient.name} — `}
-            {new Date(analysis.generatedAt).toLocaleString()}
+          <p className="text-xs text-muted-foreground mt-0.5">
+            <span className="font-semibold text-foreground">{patient.name}</span> ({patient.id}) •{' '}
+            {lang === 'bn' ? 'বিশ্লেষণ তৈরির সময়: ' : 'Generated: '}
+            <span className="tabular-numbers">{new Date(analysis.generatedAt).toLocaleString()}</span>
           </p>
         </div>
         {immediateCount > 0 && (
-          <div className="bg-rose-500 text-white text-xs font-bold px-3 py-1.5 rounded-full animate-pulse">
-            🚨 {immediateCount} {lang === 'bn' ? 'জরুরি ফ্ল্যাগ' : 'immediate flag(s)'}
+          <div className="bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold px-3.5 py-1.5 rounded-full animate-pulse shadow-sm flex items-center gap-1.5">
+            <span>🚨</span>
+            <span>{immediateCount} {lang === 'bn' ? 'জরুরি ফ্ল্যাগ সক্রিয়' : 'immediate clinical flag(s)'}</span>
           </div>
         )}
       </div>
 
       {/* Sub-tab navigation */}
-      <div className="flex gap-1 overflow-x-auto pb-1 border-b border-border">
+      <div className="flex gap-1.5 overflow-x-auto p-1.5 bg-secondary/30 border border-border/80 rounded-2xl no-scrollbar backdrop-blur-sm shadow-2xs">
         {SUB_TABS.map(tab => (
           <button
             key={tab.id}
             onClick={() => setSubTab(tab.id)}
-            className={`shrink-0 text-xs px-3 py-2 rounded-t-lg font-medium border-b-2 transition-all ${
+            className={`shrink-0 text-xs px-3.5 py-2 rounded-xl font-medium transition-all flex items-center gap-1.5 ${
               subTab === tab.id
-                ? 'border-primary text-primary font-semibold'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+                ? 'bg-card text-foreground font-bold shadow-xs border border-border/80 ring-1 ring-primary/20'
+                : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
             }`}
           >
-            {lang === 'bn' ? tab.label_bn : tab.label_en}
+            <span>{lang === 'bn' ? tab.label_bn : tab.label_en}</span>
             {tab.id === 'redflags' && analysis.redFlags.length > 0 && (
-              <span className="ml-1 bg-rose-500 text-white text-[9px] px-1 rounded-full">
+              <span className="bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold tabular-numbers">
                 {analysis.redFlags.length}
               </span>
             )}
             {tab.id === 'missing' && analysis.missingHighValueData.length > 0 && (
-              <span className="ml-1 bg-amber-500 text-white text-[9px] px-1 rounded-full">
+              <span className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] px-1.5 py-0.2 rounded-full font-bold tabular-numbers">
                 {analysis.missingHighValueData.length}
               </span>
             )}
             {tab.id === 'report' && (
-              <span className="ml-1 bg-emerald-500 text-white text-[9px] px-1.5 rounded-full font-bold">
+              <span className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] px-2 py-0.2 rounded-full font-bold">
                 A4
               </span>
             )}

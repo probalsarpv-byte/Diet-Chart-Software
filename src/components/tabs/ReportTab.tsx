@@ -124,26 +124,26 @@ export const ReportTab: React.FC = () => {
     <div className="space-y-6 pb-12">
       
       {/* Report Selector Header (Hidden in Print) */}
-      <div className="bg-card border rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold">
+      <div className="bg-gradient-to-r from-card via-card to-blue-500/[0.04] border border-border/80 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
+        <div className="flex items-center gap-3.5">
+          <div className="h-11 w-11 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-xs">
             <FileText className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="font-bold text-base text-foreground">
+            <h2 className="font-bold text-base text-foreground tracking-tight">
               {bn ? 'ক্লিনিক্যাল রিপোর্ট হাব (A4 প্রিন্ট ও এক্সপোর্ট)' : 'Clinical Reports Hub (A4 Print & Export)'}
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {bn ? 'হাসপাতাল-গ্রেড ডিটারমিনিস্টিক রিপোর্ট জেনারেশন ও লাইসেন্সপ্রাপ্ত চিকিৎসকের অনুমোদন' : 'Hospital-grade deterministic clinical reports and clinician sign-off'}
             </p>
           </div>
         </div>
 
         {/* Global Print & Language Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => setLanguage(language === 'bn' ? 'en' : 'bn')}
-            className="px-3 py-1.5 rounded-xl border bg-secondary/50 hover:bg-secondary text-xs font-semibold flex items-center gap-1.5 transition"
+            className="px-3.5 py-2 rounded-xl border border-border/80 bg-secondary/60 hover:bg-secondary text-xs font-semibold flex items-center gap-1.5 transition text-foreground shadow-2xs"
           >
             <Globe className="h-3.5 w-3.5 text-blue-500" />
             <span>{bn ? 'English' : 'বাংলা'}</span>
@@ -152,7 +152,7 @@ export const ReportTab: React.FC = () => {
           <button
             data-testid="btn-print-report"
             onClick={handlePrint}
-            className="px-4 py-1.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-90 text-xs font-bold flex items-center gap-1.5 shadow-md transition"
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 text-xs font-bold flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             <Printer className="h-4 w-4" />
             <span>{bn ? 'প্রিন্ট / PDF ডাউনলোড' : 'Print / Export PDF'}</span>
@@ -161,16 +161,16 @@ export const ReportTab: React.FC = () => {
       </div>
 
       {/* Patient & Visit Traceability Header (Hidden in Print) */}
-      <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-3 no-print">
+      <div className="bg-card border border-border/80 rounded-3xl p-5 shadow-sm space-y-3.5 no-print">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-border/60">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-xs">
               <UserCheck className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm text-foreground">{patient.name || (bn ? 'নামবিহীন রোগী' : 'Unnamed Patient')}</span>
-                <span className="px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] font-mono font-bold">{patient.id}</span>
+                <span className="font-extrabold text-sm text-foreground tracking-tight">{patient.name || (bn ? 'নামবিহীন রোগী' : 'Unnamed Patient')}</span>
+                <span className="px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] font-mono font-bold border border-border/60">{patient.id}</span>
                 <span className="text-xs text-muted-foreground">• {patient.age}y / {patient.gender === 'female' ? (bn ? 'মহিলা' : 'Female') : (bn ? 'পুরুষ' : 'Male')}</span>
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -188,7 +188,7 @@ export const ReportTab: React.FC = () => {
             <select
               value={activeReportVisit?.visit_id || ''}
               onChange={(e) => selectReportVisit(e.target.value)}
-              className="px-2.5 py-1.5 rounded-xl border bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary"
+              className="px-3 py-1.5 rounded-xl border border-border/80 bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               {(clinicalVisits && clinicalVisits.length > 0 ? clinicalVisits : [
                 { visit_id: patient.current_visit_id || 'vis_initial', visit_date: patient.visit_date, visit_type: 'baseline_consultation' }
@@ -317,14 +317,14 @@ export const ReportTab: React.FC = () => {
         </div>
       </div>
 
-      {/* 3 Report Selector Tabs (Hidden in Print) */}
-      <div className="flex items-center gap-2 border-b no-print overflow-x-auto pb-1">
+      {/* 4 Report Selector Tabs (Hidden in Print) */}
+      <div className="flex items-center gap-2 border border-border/80 bg-secondary/30 rounded-2xl p-1.5 no-print overflow-x-auto shadow-2xs">
         <button
           onClick={() => setActiveReportType('diet_prescription')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
             activeReportType === 'diet_prescription'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'hover:bg-muted text-muted-foreground'
+              ? 'bg-card text-foreground font-bold shadow-xs border border-border/80 ring-1 ring-primary/20'
+              : 'hover:bg-card/50 text-muted-foreground hover:text-foreground'
           }`}
         >
           <Utensils className="h-4 w-4" />
@@ -335,8 +335,8 @@ export const ReportTab: React.FC = () => {
           onClick={() => setActiveReportType('clinical_assessment')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
             activeReportType === 'clinical_assessment'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'hover:bg-muted text-muted-foreground'
+              ? 'bg-card text-foreground font-bold shadow-xs border border-border/80 ring-1 ring-primary/20'
+              : 'hover:bg-card/50 text-muted-foreground hover:text-foreground'
           }`}
         >
           <Award className="h-4 w-4" />
@@ -347,8 +347,8 @@ export const ReportTab: React.FC = () => {
           onClick={() => setActiveReportType('comparative_progress')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
             activeReportType === 'comparative_progress'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'hover:bg-muted text-muted-foreground'
+              ? 'bg-card text-foreground font-bold shadow-xs border border-border/80 ring-1 ring-primary/20'
+              : 'hover:bg-card/50 text-muted-foreground hover:text-foreground'
           }`}
         >
           <TrendingUp className="h-4 w-4" />
@@ -360,8 +360,8 @@ export const ReportTab: React.FC = () => {
           onClick={() => setActiveReportType('weekly_diet_plan')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
             activeReportType === 'weekly_diet_plan'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'hover:bg-muted text-muted-foreground'
+              ? 'bg-card text-foreground font-bold shadow-xs border border-border/80 ring-1 ring-primary/20'
+              : 'hover:bg-card/50 text-muted-foreground hover:text-foreground'
           }`}
         >
           <Calendar className="h-4 w-4" />
@@ -391,7 +391,7 @@ export const ReportTab: React.FC = () => {
           )}
 
           {/* Printable A4 Report Container */}
-          <div className="print-container bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 border rounded-3xl p-6 sm:p-10 max-w-4xl mx-auto shadow-xl space-y-6 print:p-0 print:border-none print:shadow-none print:bg-white print:text-black">
+          <div className="print-container bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 border border-border/80 rounded-3xl p-8 sm:p-12 max-w-4xl mx-auto shadow-2xl space-y-7 print:p-0 print:border-none print:shadow-none print:bg-white print:text-black transition-all">
             
             {/* Clinic Letterhead */}
             <div className="border-b-2 border-emerald-600 pb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -789,7 +789,7 @@ export const ReportTab: React.FC = () => {
       {activeReportType === 'weekly_diet_plan' && (
         <div className="space-y-6" data-testid="weekly-diet-report-view">
           {/* Printable A4 Report Container */}
-          <div className="print-container bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 border rounded-3xl p-6 sm:p-10 max-w-4xl mx-auto shadow-xl space-y-6 print:p-0 print:border-none print:shadow-none print:bg-white print:text-black">
+          <div className="print-container bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 border border-border/80 rounded-3xl p-8 sm:p-12 max-w-4xl mx-auto shadow-2xl space-y-7 print:p-0 print:border-none print:shadow-none print:bg-white print:text-black transition-all">
             
             {/* Clinic Letterhead */}
             <div className="border-b-2 border-emerald-600 pb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-4">
