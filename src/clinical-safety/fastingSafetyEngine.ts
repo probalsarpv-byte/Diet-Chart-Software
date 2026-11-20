@@ -30,7 +30,7 @@ export function evaluateFastingEligibility(
   const weight = patient.weight_kg;
 
   // 1. Pregnancy & Lactation (Absolute Contraindication)
-  if (pop === 'pregnancy' || pop === 'lactation') {
+  if (pop === 'pregnancy' || pop === 'lactation' || Boolean(patient.trimester)) {
     isEligible = false;
     maxHours = 0;
     riskLevel = 'contraindicated';

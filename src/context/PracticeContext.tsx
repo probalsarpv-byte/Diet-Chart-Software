@@ -1681,13 +1681,16 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       allFoods,
       trafficLight
     );
+    const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updated, allFoods, p2AnalysisResult?.p3PlanningContext);
+    updated.overall_safety_status = safetyEval.overall_decision;
+    updated.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
     setWeeklyDietPlan(updated);
     if (targetDayNumber === 1 && updated.days && updated.days[0]) {
       setDietChart(updated.days[0].meals);
     }
     persistWeeklyPlan(updated);
     return true;
-  }, [weeklyDietPlan, patient, allFoods, trafficLight, persistWeeklyPlan]);
+  }, [weeklyDietPlan, patient, allFoods, trafficLight, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
   const approveWeeklyPlan = useCallback((clinicianId: string, notes?: string): boolean => {
     // Step A — Clinical Governance & Identity Verification

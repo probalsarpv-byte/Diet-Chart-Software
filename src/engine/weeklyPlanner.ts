@@ -399,9 +399,10 @@ export function generateMealsForDay(
   const redIds = new Set(redFoods.map(f => f.id));
 
   // 1. Evaluate Fasting Eligibility with proposed duration
+  const existingIsFasting = Boolean(existingDayMeals && existingDayMeals.length > 0 && !existingDayMeals.some(m => m.meal_type === 'breakfast') && existingDayMeals.some(m => m.meal_type === 'lunch'));
   const pref = patient.dietary_preferences?.meal_structure;
-  const proposedFastingHours = (pref === 'intermittent_fasting_16_8') ? 16 : 0;
-  const fastingCheck = evaluateFastingEligibility(patient, proposedFastingHours);
+  const proposedFastingHours = (pref === 'intermittent_fasting_16_8' || existingIsFasting) ? 16 : 0;
+  const fastingCheck = evaluateFastingEligibility(patient, proposedFastingHours > 0 ? proposedFastingHours : 16);
   const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || 
     fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
 
@@ -413,7 +414,11 @@ export function generateMealsForDay(
     const hasBreakfast = existingDayMeals.some(m => m.meal_type === 'breakfast');
     const hasSnack = existingDayMeals.some(m => m.meal_type === 'evening_snack' || m.meal_type === 'mid_morning');
     if (!hasBreakfast && existingDayMeals.some(m => m.meal_type === 'lunch')) {
-      structure = 'intermittent_fasting_16_8';
+      if (isFastingContraindicated) {
+        structure = (pref === '3_meals') ? '3_meals' : '3_meals_1_snack';
+      } else {
+        structure = 'intermittent_fasting_16_8';
+      }
     } else if (hasMorning) {
       structure = '5_meals_traditional';
     } else if (hasSnack) {
@@ -622,8 +627,9 @@ export function generateMealsForDay(
         preferredOilKw,
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
+      const breakfastOilG = Math.max(5, Math.round(targetFat * breakfastShare.fat));
       if (fatCand.food) {
-        items.push(createPlanMealItem(fatCand.food, 5, allFoods, greenIds, redIds, yellowIds, fatCand.trafficStatus || 'GREEN'));
+        items.push(createPlanMealItem(fatCand.food, breakfastOilG, allFoods, greenIds, redIds, yellowIds, fatCand.trafficStatus || 'GREEN'));
       } else {
         const altFat = selectSafeMealCandidate(
           'Breakfast Healthy Fat',
@@ -632,7 +638,7 @@ export function generateMealsForDay(
           allFoods, greenFoods, yellowFoods, redFoods, patient
         );
         if (altFat.food) {
-          items.push(createPlanMealItem(altFat.food, 5, allFoods, greenIds, redIds, yellowIds, altFat.trafficStatus || 'GREEN'));
+          items.push(createPlanMealItem(altFat.food, breakfastOilG, allFoods, greenIds, redIds, yellowIds, altFat.trafficStatus || 'GREEN'));
         } else if (altFat.error) {
           errors.push(altFat.error);
         }
@@ -664,8 +670,9 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (grainCand.food) {
-        const lunchRiceRawG = Math.round((lunchCarbG / Math.max(0.65, (grainCand.food.per_100g.carbs_g ?? 0) / 100)));
-        items.push(createPlanMealItem(grainCand.food, Math.max(40, Math.min(140, lunchRiceRawG)), allFoods, greenIds, redIds, yellowIds, grainCand.trafficStatus || 'GREEN'));
+        const grainPer100 = (grainCand.food.per_100g.carbs_g ?? 70) / 100;
+        const lunchRiceRawG = Math.round(lunchCarbG / Math.max(0.15, grainPer100));
+        items.push(createPlanMealItem(grainCand.food, Math.max(40, Math.min(180, lunchRiceRawG)), allFoods, greenIds, redIds, yellowIds, grainCand.trafficStatus || 'GREEN'));
       } else if (grainCand.error) {
         errors.push(grainCand.error);
       }
@@ -678,8 +685,9 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (proteinCand.food) {
-        const lunchFishRawG = Math.round(((targetProtein * lunchShare.protein) / Math.max(0.18, (proteinCand.food.per_100g.protein_g ?? 0) / 100)));
-        items.push(createPlanMealItem(proteinCand.food, Math.max(80, Math.min(220, lunchFishRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
+        const protPer100 = (proteinCand.food.per_100g.protein_g ?? 18) / 100;
+        const lunchFishRawG = Math.round((targetProtein * lunchShare.protein) / Math.max(0.08, protPer100));
+        items.push(createPlanMealItem(proteinCand.food, Math.max(80, Math.min(250, lunchFishRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
       } else if (proteinCand.error) {
         errors.push(proteinCand.error);
       }
@@ -705,7 +713,7 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (oilCand.food) {
-        const lunchOilG = Math.max(10, Math.round((targetFat * lunchShare.fat) / 1.5));
+        const lunchOilG = Math.max(10, Math.round(targetFat * lunchShare.fat));
         items.push(createPlanMealItem(oilCand.food, lunchOilG, allFoods, greenIds, redIds, yellowIds, oilCand.trafficStatus || 'GREEN'));
       } else if (oilCand.error) {
         errors.push(oilCand.error);
@@ -768,8 +776,9 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (proteinCand.food) {
-        const dinnerChickenRawG = Math.round(((targetProtein * dinnerShare.protein) / Math.max(0.20, (proteinCand.food.per_100g.protein_g ?? 0) / 100)));
-        items.push(createPlanMealItem(proteinCand.food, Math.max(70, Math.min(200, dinnerChickenRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
+        const protPer100 = (proteinCand.food.per_100g.protein_g ?? 18) / 100;
+        const dinnerChickenRawG = Math.round((targetProtein * dinnerShare.protein) / Math.max(0.08, protPer100));
+        items.push(createPlanMealItem(proteinCand.food, Math.max(70, Math.min(220, dinnerChickenRawG)), allFoods, greenIds, redIds, yellowIds, proteinCand.trafficStatus || 'GREEN'));
       } else if (proteinCand.error) {
         errors.push(proteinCand.error);
       }
@@ -795,7 +804,7 @@ export function generateMealsForDay(
         allFoods, greenFoods, yellowFoods, redFoods, patient
       );
       if (oilCand.food) {
-        const dinnerOilG = Math.max(8, Math.round((targetFat * dinnerShare.fat) / 1.5));
+        const dinnerOilG = Math.max(8, Math.round(targetFat * dinnerShare.fat));
         items.push(createPlanMealItem(oilCand.food, dinnerOilG, allFoods, greenIds, redIds, yellowIds, oilCand.trafficStatus || 'GREEN'));
       } else if (oilCand.error) {
         errors.push(oilCand.error);
@@ -831,8 +840,20 @@ export function buildDayPlan(
 ): DayPlan {
   const dayName = DAY_NAMES[(dayNumber - 1) % DAY_NAMES.length];
 
-  // If day is locked and preserveLocks is true, keep it unchanged
+  // If day is locked and preserveLocks is true:
   if (preserveLocks && existingDayPlan && existingDayPlan.is_locked) {
+    const isFastingDay = existingDayPlan.meal_structure === 'intermittent_fasting_16_8' || 
+      existingDayPlan.fasting_schedule?.is_fasting ||
+      (!existingDayPlan.meals.some(m => m.meal_type === 'breakfast') && existingDayPlan.meals.some(m => m.meal_type === 'lunch'));
+
+    if (isFastingDay) {
+      const fastingCheck = evaluateFastingEligibility(patient, 16);
+      const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
+      if (isFastingContraindicated) {
+        // Expose contraindication on the locked fasting day as HARD_STOP
+        return recalculateDayPlan(existingDayPlan, targetMacros, patient, allFoods, p3Context);
+      }
+    }
     return existingDayPlan;
   }
 
@@ -1174,6 +1195,18 @@ export function recalculateDayPlan(
     }
   }
 
+  if (isFastingDay && isFastingContraindicated) {
+    safetyDecision = 'HARD_STOP';
+    const reasons = fastingCheck.eligibility.contraindication_reasons_en.length > 0
+      ? fastingCheck.eligibility.contraindication_reasons_en.join('; ')
+      : 'Intermittent fasting is clinically contraindicated for this patient.';
+    safetyNotes.unshift(`Fasting Contraindication (HARD_STOP): ${reasons}`);
+    const reasonsBn = fastingCheck.eligibility.contraindication_reasons_bn.length > 0
+      ? fastingCheck.eligibility.contraindication_reasons_bn.join('; ')
+      : 'রোগীর জন্য উপবাস চিকিৎসাগতভাবে নিষিদ্ধ।';
+    safetyNotesBn.unshift(`উপবাস নিষেধাজ্ঞা (HARD_STOP): ${reasonsBn}`);
+  }
+
   if (isFastingDay && !timingEval.is_intake_within_permitted_window) {
     for (const d of timingEval.timing_discrepancies) {
       safetyNotes.push(`Meal Timing: ${d}`);
@@ -1343,12 +1376,29 @@ export function generateWeeklyDietPlan(
 
   const weeklyNutritionalAdequacy = evaluateNutritionalAdequacy(weeklyAvgSummary, targetMacros, patient);
   const anyDayInadequate = days.some(d => d.nutritional_adequacy?.is_adequate === false);
-  if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
-    const reasonMsg = 'Nutritional Adequacy Not Achieved: Planned meals fall short of authoritative clinical targets (>15% deficit or below BMR floor).';
+  const anyDaySevereDeficit = days.some(d => {
+    const a = d.nutritional_adequacy;
+    return a && (!a.is_adequate) && (
+      a.energy_assessment?.status === 'bmr_floor_breach' ||
+      (a.calorie_achievement_pct < 70) ||
+      (a.protein_achievement_pct < 50)
+    );
+  });
+  const isWeeklySevereDeficit = 
+    weeklyNutritionalAdequacy.energy_assessment?.status === 'bmr_floor_breach' ||
+    (weeklyNutritionalAdequacy.calorie_achievement_pct < 70) ||
+    (weeklyNutritionalAdequacy.protein_achievement_pct < 50);
+
+  if (anyDaySevereDeficit || isWeeklySevereDeficit) {
+    const reasonMsg = 'Nutritional Adequacy Severe Deficit: Planned meals fall below somatic BMR floor or have severe starvation (<70% calories or <50% protein).';
     if (!unresolvedHardStops.includes(reasonMsg)) {
       unresolvedHardStops.push(reasonMsg);
     }
     overallSafety = 'HARD_STOP';
+  } else if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
+    if (overallSafety !== 'HARD_STOP') {
+      overallSafety = 'CLINICAL_REVIEW_REQUIRED';
+    }
   }
 
   const p2HandoffSummary = p3Context ? {
@@ -1486,7 +1536,13 @@ export function approveWeeklyDietPlan(
   clinicianId: string,
   notes?: string
 ): WeeklyDietPlan {
-  const trimmed = clinicianId.trim();
+  const trimmed = clinicianId ? clinicianId.trim() : '';
+  if (!trimmed) {
+    throw new Error('Approval blocked: Valid clinician ID or credential is required.');
+  }
+  if (plan.overall_safety_status === 'HARD_STOP') {
+    throw new Error('Approval blocked: Weekly plan contains unresolved clinical hard stops.');
+  }
   const timestamp = new Date().toISOString();
 
   const updatedDays = (plan.days || []).map(day => {
@@ -1735,12 +1791,29 @@ export function regenerateDayInWeeklyPlan(
   };
   const weeklyNutritionalAdequacy = evaluateNutritionalAdequacy(weeklyAvgSummary, currentPlan.target_macros, patient);
   const anyDayInadequate = updatedDays.some(d => d.nutritional_adequacy?.is_adequate === false);
-  if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
-    const reasonMsg = 'Nutritional Adequacy Not Achieved: Planned meals fall short of authoritative clinical targets (>15% deficit or below BMR floor).';
+  const anyDaySevereDeficit = updatedDays.some(d => {
+    const a = d.nutritional_adequacy;
+    return a && (!a.is_adequate) && (
+      a.energy_assessment?.status === 'bmr_floor_breach' ||
+      (a.calorie_achievement_pct < 70) ||
+      (a.protein_achievement_pct < 50)
+    );
+  });
+  const isWeeklySevereDeficit = 
+    weeklyNutritionalAdequacy.energy_assessment?.status === 'bmr_floor_breach' ||
+    (weeklyNutritionalAdequacy.calorie_achievement_pct < 70) ||
+    (weeklyNutritionalAdequacy.protein_achievement_pct < 50);
+
+  if (anyDaySevereDeficit || isWeeklySevereDeficit) {
+    const reasonMsg = 'Nutritional Adequacy Severe Deficit: Planned meals fall below somatic BMR floor or have severe starvation (<70% calories or <50% protein).';
     if (!unresolvedHardStops.includes(reasonMsg)) {
       unresolvedHardStops.push(reasonMsg);
     }
     overallSafety = 'HARD_STOP';
+  } else if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
+    if (overallSafety !== 'HARD_STOP') {
+      overallSafety = 'CLINICAL_REVIEW_REQUIRED';
+    }
   }
 
   const updatedPlan: WeeklyDietPlan = {
@@ -1839,12 +1912,29 @@ export function copyDayInWeeklyPlan(
   };
   const weeklyNutritionalAdequacy = evaluateNutritionalAdequacy(weeklyAvgSummary, currentPlan.target_macros, patient);
   const anyDayInadequate = updatedDays.some(d => d.nutritional_adequacy?.is_adequate === false);
-  if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
-    const reasonMsg = 'Nutritional Adequacy Not Achieved: Planned meals fall short of authoritative clinical targets (>15% deficit or below BMR floor).';
+  const anyDaySevereDeficit = updatedDays.some(d => {
+    const a = d.nutritional_adequacy;
+    return a && (!a.is_adequate) && (
+      a.energy_assessment?.status === 'bmr_floor_breach' ||
+      (a.calorie_achievement_pct < 70) ||
+      (a.protein_achievement_pct < 50)
+    );
+  });
+  const isWeeklySevereDeficit = 
+    weeklyNutritionalAdequacy.energy_assessment?.status === 'bmr_floor_breach' ||
+    (weeklyNutritionalAdequacy.calorie_achievement_pct < 70) ||
+    (weeklyNutritionalAdequacy.protein_achievement_pct < 50);
+
+  if (anyDaySevereDeficit || isWeeklySevereDeficit) {
+    const reasonMsg = 'Nutritional Adequacy Severe Deficit: Planned meals fall below somatic BMR floor or have severe starvation (<70% calories or <50% protein).';
     if (!unresolvedHardStops.includes(reasonMsg)) {
       unresolvedHardStops.push(reasonMsg);
     }
     overallSafety = 'HARD_STOP';
+  } else if (!weeklyNutritionalAdequacy.is_adequate || anyDayInadequate) {
+    if (overallSafety !== 'HARD_STOP') {
+      overallSafety = 'CLINICAL_REVIEW_REQUIRED';
+    }
   }
 
   const updatedPlan: WeeklyDietPlan = {
