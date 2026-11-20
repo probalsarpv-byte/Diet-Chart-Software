@@ -164,5 +164,169 @@
       "Pregnancy",
       "Severe Hypoglycemia"
     ]
+  },
+  {
+    "id": "supp_alpha_lipoic_acid",
+    "name_en": "Alpha Lipoic Acid (R-ALA)",
+    "name_bn": "আলফা লিপোয়িক অ্যাসিড (আর-এএলএ)",
+    "category": "Antioxidant / Mitochondrial & Insulin Sensitivity",
+    "clinical_indications": [
+      "Diabetic Peripheral Neuropathy",
+      "Insulin Resistance",
+      "Hepatic Steatosis",
+      "Mitochondrial Energy Decline"
+    ],
+    "recommended_dose": "300 - 600 mg/day",
+    "timing_schedule": "Morning 30 mins before breakfast on an empty stomach",
+    "timing_note_bn": "সকালে খালি পেটে বা খাবারের ৩০ মিনিট পূর্বে গ্রহণ করুন; এটি অন্তকোষীয় গ্লুটাথিয়ন পুনর্ব্যবহার বাড়ায়।",
+    "timing_note_en": "Take on an empty stomach 30 mins prior to breakfast for maximal intestinal absorption and glutathione recycling.",
+    "verified_bd_brands": [
+      "Lipon-R",
+      "Neuro-ALA",
+      "Thioct"
+    ],
+    "contraindications": [
+      "Thiamine deficiency without B1 co-administration"
+    ]
+  },
+  {
+    "id": "supp_inositol_40_1",
+    "name_en": "Myo-Inositol + D-Chiro Inositol (40:1 Ratio)",
+    "name_bn": "মায়ো-ইনসিটল + ডি-কাইরো ইনসিটল (৪০:১ অনুপাত)",
+    "category": "Nutraceutical / Ovarian & Second-Messenger Signaling",
+    "clinical_indications": [
+      "PCOS Anovulation",
+      "Hyperandrogenism",
+      "Gestational Diabetes Risk",
+      "Insulin Receptor Desensitization"
+    ],
+    "recommended_dose": "2000 mg Myo + 50 mg D-Chiro (40:1) twice daily",
+    "timing_schedule": "Morning with breakfast and Evening with dinner",
+    "timing_note_bn": "পানির সাথে গুলে সকাল ও রাতের খাবারের সাথে গ্রহণ করুন; এটি ডিম্বস্ফোটন স্বাভাবিক করতে সাহায্য করে।",
+    "timing_note_en": "Dissolve in water with breakfast and dinner. Restores physiological ovarian 40:1 inositol stereoisomer ratio.",
+    "verified_bd_brands": [
+      "Ova-Balance",
+      "Inositol Plus",
+      "Folli-PCOS"
+    ],
+    "contraindications": []
+  },
+  {
+    "id": "supp_active_folate_bcomplex",
+    "name_en": "Co-Enzymated B-Complex (L-Methylfolate + P-5-P)",
+    "name_bn": "অ্যাক্টিভ কো-এনজাইম বি-কমপ্লেক্স (এল-মিথাইলফোলেট + পি-৫-পি)",
+    "category": "Vitamin / Methylation & Homocysteine Biotransformation",
+    "clinical_indications": [
+      "Hyperhomocysteinemia",
+      "MTHFR Polymorphism",
+      "Metformin/5-ASA Depletion",
+      "Cardiovascular Endothelial Stress"
+    ],
+    "recommended_dose": "400 - 800 mcg 5-MTHF + 25 mg P-5-P daily",
+    "timing_schedule": "Morning with breakfast",
+    "timing_note_bn": "সকালের নাশতার সাথে গ্রহণীয়। সিন্থেটিক ফলিক এসিডের তুলনায় এটি শরীরে সরাসরি ব্যবহৃত হয়।",
+    "timing_note_en": "Take with breakfast. Bioidentical 5-MTHF bypasses compromised dihydrofolate reductase enzymatic steps.",
+    "verified_bd_brands": [
+      "Folmax Active",
+      "Methyl-B Forte"
+    ],
+    "contraindications": [
+      "Uninvestigated macrocytic anemia without prior B12 status check"
+    ]
+  },
+  {
+    "id": "supp_zinc_carnosine",
+    "name_en": "Zinc L-Carnosine (Polaprezinc)",
+    "name_bn": "জিংক এল-কার্নোসিন (মিউকোসা নিরাময়কারী)",
+    "category": "Mineral Complex / Gastric & Intestinal Epithelial Repair",
+    "clinical_indications": [
+      "Gastritis / Acid Reflux / GERD",
+      "NSAID Induced Mucosal Erosion",
+      "Intestinal Permeability / Leaky Gut",
+      "H. Pylori Support"
+    ],
+    "recommended_dose": "37.5 - 75 mg twice daily (yielding 8-16 mg elemental Zn)",
+    "timing_schedule": "Between meals or with light meal (Lunch & Dinner)",
+    "timing_note_bn": "খাবারের ঠিক পূর্বে বা হালকা খাবারের সাথে গ্রহণ করুন; এটি পাকস্থলীর ক্ষতের উপর প্রতিরক্ষামূলক আস্তরণ তৈরি করে।",
+    "timing_note_en": "Take before or with light meals. Adheres electrostatically to mucosal ulcerations to accelerate epithelial restitution.",
+    "verified_bd_brands": [
+      "ZinCar-Mucosa",
+      "PepZin-GI Formulation"
+    ],
+    "contraindications": [
+      "Cumulative elemental zinc intake > 40 mg/day"
+    ]
+  },
+  {
+    "id": "supp_l_glutamine",
+    "name_en": "L-Glutamine Micronized Powder",
+    "name_bn": "এল-গ্লুটামিন মাইক্রোনাইজড পাউডার",
+    "category": "Amino Acid / Enterocyte Fuel & Tight Junction Integrity",
+    "clinical_indications": [
+      "Leaky Gut Syndrome",
+      "IBD Remission Support",
+      "Post-Infectious IBS",
+      "Strenuous Exercise Mucosal Stress"
+    ],
+    "recommended_dose": "5 - 10 grams daily",
+    "timing_schedule": "Morning on an empty stomach and Bedtime in room-temperature water",
+    "timing_note_bn": "১ চা চামচ (৫ গ্রাম) স্বাভাবিক তাপমাত্রার পানিতে গুলে সকালে খালি পেটে বা রাতে শোবার আগে পান করুন। গরম পানিতে গুলবেন না।",
+    "timing_note_en": "Stir 5g into room temperature water; consume on empty stomach. Avoid hot liquids which degrade glutamine.",
+    "verified_bd_brands": [
+      "Gluta-Heal",
+      "Entero-Glutamine Pure"
+    ],
+    "contraindications": [
+      "Hepatic Encephalopathy",
+      "End-Stage Renal Disease (ESRD)"
+    ]
+  },
+  {
+    "id": "supp_betaine_hcl_pepsin",
+    "name_en": "Betaine HCl + Pepsin",
+    "name_bn": "বিটাইন এইচসিএল + পেপসিন",
+    "category": "Digestive Support / Hypochlorhydria & Protein Hydrolysis",
+    "clinical_indications": [
+      "Hypochlorhydria / Low Stomach Acid",
+      "Postprandial Heaviness / Gas",
+      "Age-Related Digestive Fire (Manda Agni) Decline"
+    ],
+    "recommended_dose": "350 - 650 mg per protein-dense meal",
+    "timing_schedule": "Mid-meal during substantial protein intake",
+    "timing_note_bn": "খাবার গ্রহণের মাঝামাঝি সময়ে ১টি ক্যাপসুল পানির সাথে নিন। কোনো অবস্থাতেই খালি পেটে খাবেন না।",
+    "timing_note_en": "Ingest mid-way through a protein-rich meal. Never take on an empty stomach or with liquid-only meals.",
+    "verified_bd_brands": [
+      "Acid-Digest HCl",
+      "Betaine-Pure"
+    ],
+    "contraindications": [
+      "Active Peptic Ulcer Disease",
+      "Concurrent NSAID or Corticosteroid Therapy",
+      "Gastritis Erosive"
+    ]
+  },
+  {
+    "id": "supp_curcumin_phytosome",
+    "name_en": "Curcumin Phytosome (Phospholipid Bound)",
+    "name_bn": "কারকিউমিন ফাইটোসোম (উচ্চ শোষণক্ষম হলুদ নির্যাস)",
+    "category": "Phytomedicine / NF-kB Downregulator & Anti-inflammatory",
+    "clinical_indications": [
+      "Ulcerative Colitis Mucosal Inflammation",
+      "Cardiovascular Atherosclerosis",
+      "Non-Alcoholic Steatohepatitis (MASH)",
+      "Systemic hs-CRP Elevation"
+    ],
+    "recommended_dose": "500 - 1000 mg/day",
+    "timing_schedule": "With lunch or main fat-containing meal",
+    "timing_note_bn": "দুপুরের প্রধান খাবারের সাথে সেব্য। চর্বিতে দ্রবণীয় হওয়ায় খাবারের চর্বির উপস্থিতিতে এর কার্যকারিতা বাড়ে।",
+    "timing_note_en": "Take with lunch. Phytosomal complex enhances systemic and colonic mucosal bioavailability 29-fold.",
+    "verified_bd_brands": [
+      "Curcu-Phyt",
+      "Meriva Curcumin Complex"
+    ],
+    "contraindications": [
+      "Biliary Tract Obstruction",
+      "Concurrent High-Dose Anticoagulants (Warfarin)"
+    ]
   }
 ]

@@ -138,3 +138,27 @@ describe('Task 4: Fasting Safety for SGLT2i & Sulfonylureas', () => {
     assert.ok(safetyResults.some((r: any) => r.rule_id.includes('SGLT2') || r.rule_id.includes('DURATION_EXCEEDS')));
   });
 });
+
+describe('Task 5: Functional Supplements Catalog', () => {
+  it('contains all 7 new functional supplements with required clinical fields', async () => {
+    const { default: supplementsData } = await import('../src/data/supplements.json');
+    const requiredIds = [
+      'supp_alpha_lipoic_acid',
+      'supp_inositol_40_1',
+      'supp_active_folate_bcomplex',
+      'supp_zinc_carnosine',
+      'supp_l_glutamine',
+      'supp_betaine_hcl_pepsin',
+      'supp_curcumin_phytosome'
+    ];
+    for (const id of requiredIds) {
+      const supp = supplementsData.find((s: any) => s.id === id);
+      assert.ok(supp, `Supplement ${id} must exist in supplements.json`);
+      assert.ok(supp.name_en && supp.name_bn, `${id} must have bilingual names`);
+      assert.ok(supp.recommended_dose && supp.timing_schedule, `${id} must have dose and timing`);
+      assert.ok(supp.timing_note_bn && supp.timing_note_en, `${id} must have bilingual timing notes`);
+      assert.ok(Array.isArray(supp.clinical_indications) && supp.clinical_indications.length > 0, `${id} must have indications`);
+      assert.ok(Array.isArray(supp.contraindications), `${id} must have contraindications array`);
+    }
+  });
+});
