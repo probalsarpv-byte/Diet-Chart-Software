@@ -162,3 +162,22 @@ describe('Task 5: Functional Supplements Catalog', () => {
     }
   });
 });
+
+describe('Task 6: Lab Analyzer Biomarkers', () => {
+  it('automatically derives Non-HDL and evaluates Fasting Insulin and Homocysteine', async () => {
+    const { analyzeFunctionalBiomarkers } = await import('../src/engine/labAnalyzer');
+    const analysis = analyzeFunctionalBiomarkers({
+      total_cholesterol: 230,
+      hdl: 45,
+      fasting_insulin: 8.5,
+      homocysteine: 16.2
+    });
+    // Non-HDL = 230 - 45 = 185 mg/dL (>130 is high/abnormal)
+    assert.strictEqual(analysis.derived_non_hdl, 185);
+    assert.strictEqual(analysis.non_hdl_status, 'abnormal_high');
+    // Fasting Insulin > 6 µIU/mL is sub-optimal in functional medicine
+    assert.strictEqual(analysis.fasting_insulin_status, 'borderline_high');
+    // Homocysteine > 15 is abnormal
+    assert.strictEqual(analysis.homocysteine_status, 'abnormal_high');
+  });
+});

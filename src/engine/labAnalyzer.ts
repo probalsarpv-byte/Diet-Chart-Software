@@ -85,6 +85,44 @@ export function analyzeFunctionalLabs(labs: Partial<FunctionalLabs>, gender: 'ma
     });
   }
 
+  // 2b. Non-HDL Cholesterol (Derived: Total Cholesterol - HDL)
+  let non_hdl: number | undefined = labs.non_hdl;
+  let non_hdl_status_en: string | undefined = undefined;
+  let non_hdl_status_bn: string | undefined = undefined;
+
+  if (!isValidNumber(non_hdl) && isValidNumber(labs.total_cholesterol) && isValidNumber(labs.hdl)) {
+    non_hdl = Math.round((labs.total_cholesterol - labs.hdl) * 10) / 10;
+  }
+
+  if (isValidNumber(non_hdl)) {
+    if (non_hdl < 100) {
+      non_hdl_status_en = "Optimal Non-HDL (<100 mg/dL)";
+      non_hdl_status_bn = "আদর্শ নন-এইচডিএল কোলেস্টেরল (<১০০ মিলিগ্রাম/ডেসিলিটার)";
+    } else if (non_hdl <= 130) {
+      non_hdl_status_en = "Borderline Atherogenic Burden (100 - 130 mg/dL)";
+      non_hdl_status_bn = "সীমান্তবর্তী এথেরোজেনিক চাপ (১০০ - ১৩০ মিলিগ্রাম/ডেসিলিটার)";
+    } else {
+      non_hdl_status_en = "Elevated Atherogenic Lipoprotein Burden (>130 mg/dL)";
+      non_hdl_status_bn = "উচ্চ এথেরোজেনিক লিপোপ্রোটিন চাপ (>১৩০ মিলিগ্রাম/ডেসিলিটার)";
+    }
+
+    flags.push({
+      marker: "Non-HDL Cholesterol (Derived)",
+      value: non_hdl,
+      unit: "mg/dL",
+      conventional_range: "< 130 mg/dL",
+      optimal_range: "< 100 mg/dL",
+      status: non_hdl < 100 ? 'optimal' : non_hdl <= 130 ? 'borderline' : 'abnormal',
+      is_diagnostic_threshold: non_hdl >= 160,
+      insight_en: non_hdl < 100
+        ? "Excellent aggregate atherogenic particle clearance."
+        : "Sum of all atherogenic apolipoprotein B particles (VLDL, IDL, LDL); warrants soluble fiber and cardiovascular protocol.",
+      insight_bn: non_hdl < 100
+        ? "রক্তে ক্ষতিকর কোলেস্টেরলের সামগ্রিক মাত্রা আদর্শ।"
+        : "রক্তে ক্ষতিকর এথেরোজেনিক কণার সামগ্রিক চাপ নির্দেশক; দ্রবণীয় ফাইবার ও স্বাস্থ্যকর তেল প্রয়োজন।"
+    });
+  }
+
   // 3. HbA1c
   if (isValidNumber(labs.hba1c)) {
     const val = labs.hba1c;
@@ -295,6 +333,63 @@ export function analyzeFunctionalLabs(labs: Partial<FunctionalLabs>, gender: 'ma
     });
   }
 
+  // 12. Homocysteine
+  let homocysteine: number | undefined = labs.homocysteine;
+  let homocysteine_status_en: string | undefined = undefined;
+  let homocysteine_status_bn: string | undefined = undefined;
+
+  if (isValidNumber(homocysteine)) {
+    const val = homocysteine;
+    const isOpt = val >= 6.0 && val <= 9.0;
+    if (isOpt) {
+      homocysteine_status_en = "Optimal Vascular Methylation (6.0 - 9.0 µmol/L)";
+      homocysteine_status_bn = "আদর্শ রক্তনালী মিথাইলেশন (৬.০ - ৯.০ মাইক্রোমোল/লিটার)";
+    } else if (val <= 14.9) {
+      homocysteine_status_en = "Borderline Subclinical Elevation (9.1 - 14.9 µmol/L)";
+      homocysteine_status_bn = "সীমান্তবর্তী সাবক্লিনিক্যাল বৃদ্ধি (৯.১ - ১৪.৯ মাইক্রোমোল/লিটার)";
+    } else {
+      homocysteine_status_en = "Hyperhomocysteinemia Vascular Risk (≥15.0 µmol/L)";
+      homocysteine_status_bn = "উচ্চ হোমোসিস্টিন ও রক্তনালী প্রদাহ ঝুঁকি (≥১৫.০ মাইক্রোমোল/লিটার)";
+    }
+
+    flags.push({
+      marker: "Serum Homocysteine",
+      value: val,
+      unit: "µmol/L",
+      conventional_range: "< 15.0 µmol/L",
+      optimal_range: "6.0 - 9.0 µmol/L",
+      status: isOpt ? 'optimal' : val <= 14.9 ? 'borderline' : 'abnormal',
+      is_diagnostic_threshold: val >= 15.0,
+      insight_en: isOpt 
+        ? "Optimal methionine transmethylation cycle balance." 
+        : "Elevated homocysteine irritates vascular endothelium and indicates functional B6/B12/folate methylation deficit.",
+      insight_bn: isOpt 
+        ? "মেথিয়োনাইন চক্র ও মিথাইলেশন প্রক্রিয়া আদর্শ।" 
+        : "হোমোসিস্টিন বৃদ্ধি রক্তনালীর অভ্যন্তরীণ ক্ষতি এবং ভিটামিন বি১২/ফোলেটের ঘাটতি নির্দেশ করে।"
+    });
+  }
+
+  // 13. hs-CRP
+  if (isValidNumber(labs.hs_crp)) {
+    const val = labs.hs_crp;
+    const isOpt = val < 0.5;
+    flags.push({
+      marker: "hs-CRP (Cardiovascular & Systemic Inflammation)",
+      value: val,
+      unit: "mg/L",
+      conventional_range: "< 3.0 mg/L",
+      optimal_range: "< 0.5 mg/L",
+      status: isOpt ? 'optimal' : val <= 3.0 ? 'borderline' : 'abnormal',
+      is_diagnostic_threshold: val >= 10.0,
+      insight_en: isOpt 
+        ? "Quiescent basal vascular inflammatory state." 
+        : "Moderate systemic micro-inflammatory baseline; benefits from curcumin, omega-3, and polyphenol-rich diet.",
+      insight_bn: isOpt 
+        ? "রক্তনালী ও শরীরে কোনো সুপ্ত প্রদাহ নেই।" 
+        : "মাঝারি সিস্টেমিক প্রদাহ নির্দেশক; ওমেগা-৩ ও অ্যান্টি-ইনফ্ল্যামেটরি খাদ্য উপকারী।"
+    });
+  }
+
   return {
     ...labs,
     homa_ir,
@@ -303,6 +398,30 @@ export function analyzeFunctionalLabs(labs: Partial<FunctionalLabs>, gender: 'ma
     tg_hdl_ratio,
     tg_hdl_status_en,
     tg_hdl_status_bn,
+    non_hdl,
+    non_hdl_status_en,
+    non_hdl_status_bn,
+    homocysteine,
+    homocysteine_status_en,
+    homocysteine_status_bn,
     lab_flags: flags
+  };
+}
+
+export function analyzeFunctionalBiomarkers(
+  labs: Partial<FunctionalLabs>,
+  gender: 'male' | 'female' = 'female'
+) {
+  const result = analyzeFunctionalLabs(labs, gender);
+  const nonHdlFlag = result.lab_flags.find(f => f.marker.toLowerCase().includes('non-hdl'));
+  const insulinFlag = result.lab_flags.find(f => f.marker.toLowerCase().includes('fasting insulin'));
+  const homocysteineFlag = result.lab_flags.find(f => f.marker.toLowerCase().includes('homocysteine'));
+
+  return {
+    ...result,
+    derived_non_hdl: result.non_hdl,
+    non_hdl_status: nonHdlFlag ? (nonHdlFlag.status === 'abnormal' ? 'abnormal_high' : nonHdlFlag.status) : undefined,
+    fasting_insulin_status: insulinFlag ? (insulinFlag.status === 'borderline' ? 'borderline_high' : insulinFlag.status) : undefined,
+    homocysteine_status: homocysteineFlag ? (homocysteineFlag.status === 'abnormal' ? 'abnormal_high' : homocysteineFlag.status) : undefined
   };
 }

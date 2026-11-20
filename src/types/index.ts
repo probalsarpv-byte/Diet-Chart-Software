@@ -268,6 +268,12 @@ export interface FunctionalLabs {
   tg_hdl_ratio?: number;
   tg_hdl_status_en?: string;
   tg_hdl_status_bn?: string;
+  non_hdl?: number;
+  non_hdl_status_en?: string;
+  non_hdl_status_bn?: string;
+  homocysteine?: number;
+  homocysteine_status_en?: string;
+  homocysteine_status_bn?: string;
   lab_flags: LabFlag[];
 }
 
