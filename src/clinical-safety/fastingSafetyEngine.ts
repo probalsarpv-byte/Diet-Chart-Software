@@ -30,7 +30,7 @@ export function evaluateFastingEligibility(
   const weight = patient.weight_kg;
 
   // 1. Pregnancy & Lactation (Absolute Contraindication)
-  if (pop === 'pregnancy' || pop === 'lactation') {
+  if (pop === 'pregnancy' || pop === 'lactation' || Boolean(patient.trimester)) {
     isEligible = false;
     maxHours = 0;
     riskLevel = 'contraindicated';
@@ -81,14 +81,31 @@ export function evaluateFastingEligibility(
     });
   }
 
-  // 3. Underweight & Malnutrition Risk
-  const isUnderweight = (weight && weight < 45) || (patient.calculated?.bmi && patient.calculated.bmi < 18.5);
-  if (isUnderweight) {
+  // 3. Underweight & Malnutrition Risk (Adult ESPEN / WHO Malnutrition Protocol)
+  const isAdult = (age !== undefined ? age >= 18 : true) && pop !== 'pediatric' && pop !== 'adolescent';
+  const effectiveBmi = patient.calculated?.bmi || (weight && patient.height_cm ? Math.round((weight / Math.pow(patient.height_cm / 100, 2)) * 10) / 10 : undefined);
+  
+  const hasDocumentedMalnutrition = pop === 'malnutrition_risk' || 
+    Boolean(patient.clinical_safety && (patient.clinical_safety as any).malnutrition_risk) ||
+    Boolean(patient.calculated?.bmi_category_en?.toLowerCase().includes('underweight'));
+
+  // In adults, underweight is defined by BMI < 18.5 kg/m² or severe somatic wasting (<40 kg or documented malnutrition).
+  // An absolute weight < 45 kg alone does NOT define underweight in short-stature adults with normal BMI (>= 18.5).
+  const isUnderweightAdult = isAdult && (
+    (effectiveBmi !== undefined && effectiveBmi < 18.5) ||
+    hasDocumentedMalnutrition ||
+    (weight !== undefined && weight < 40)
+  );
+
+  if (isUnderweightAdult) {
     isEligible = false;
     maxHours = 0;
     riskLevel = 'contraindicated';
-    reasons_en.push('Underweight status (<45 kg or BMI <18.5) contraindicates fasting due to inadequate glycogen stores and catabolic risk.');
-    reasons_bn.push('কম ওজন (<৪৫ কেজি বা বিএমআই <১৮.৫) রোগীদের জন্য উপবাস নিষিদ্ধ।');
+    const reasonDetail = effectiveBmi !== undefined 
+      ? `BMI ${effectiveBmi} kg/m² (<18.5)` 
+      : (hasDocumentedMalnutrition ? 'documented malnutrition risk' : `weight ${weight} kg (<40 kg severe wasting floor)`);
+    reasons_en.push(`Adult underweight status (${reasonDetail}) contraindicates fasting due to inadequate glycogen stores and catabolic proteolysis risk.`);
+    reasons_bn.push(`কম ওজন বা অপুষ্টি ঝুঁকির কারণে (${reasonDetail}) উপবাস সম্পূর্ণ নিষিদ্ধ।`);
     safetyResults.push({
       rule_id: 'FASTING_UNDERWEIGHT_STOP',
       rule_version: '1.0.0',
@@ -97,13 +114,13 @@ export function evaluateFastingEligibility(
       severity: 'critical',
       title_en: 'Fasting Contraindicated: Severe Underweight / Cachexia Risk',
       title_bn: 'কম ওজনের কারণে উপবাস নিষিদ্ধ',
-      clinical_explanation_en: 'Patient has inadequate adipose and glycogen reserves. Fasting will accelerate somatic muscle proteolysis.',
+      clinical_explanation_en: `Patient meets adult malnutrition criteria (${reasonDetail}). Prolonged fasting accelerates somatic muscle proteolysis and glycemic instability.`,
       clinical_explanation_bn: 'শরীরে সঞ্চিত শক্তির ঘাটতি থাকায় উপবাস করলে মাংসপেশি ভেঙে মারাত্মক ক্ষতি হবে।',
       required_action_en: 'Initiate hypercaloric refeeding protocol. Fasting is blocked.',
       required_action_bn: 'পুষ্টিকর খাবারের মাধ্যমে ওজন বৃদ্ধির পরিকল্পনা করুন।',
-      triggering_observations: [`weight_kg:${weight}`, `bmi:${patient.calculated?.bmi}`],
+      triggering_observations: [`weight_kg:${weight}`, `bmi:${effectiveBmi}`],
       clinician_review_required: true,
-      provenance_reference: 'ESPEN Malnutrition Protocol',
+      provenance_reference: 'ESPEN Malnutrition Protocol / WHO Adult Underweight Criteria',
       timestamp: new Date().toISOString()
     });
   }

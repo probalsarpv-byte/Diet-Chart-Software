@@ -52,6 +52,8 @@ import {
   copyDayInWeeklyPlan, 
   calculateMealTotals,
   invalidateWeeklyPlanApproval,
+  approveWeeklyDietPlan,
+  validatePortionInput,
   evaluateWeeklyPlanClinicalSafety,
   recalculateDayPlan
 } from '@/engine/weeklyPlanner';
@@ -1325,7 +1327,9 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [weeklyDietPlan, patient, p2AnalysisResult?.p3PlanningContext, trafficLight, allFoods, persistWeeklyPlan]);
 
   const updateDayMealItemRawGrams = useCallback((dayNumber: number, mealId: string, itemId: string, rawGrams: number) => {
-    if (typeof rawGrams !== 'number' || isNaN(rawGrams) || rawGrams <= 0) return;
+    const validation = validatePortionInput(rawGrams);
+    if (!validation.is_valid) return;
+    const sanitizedGrams = validation.sanitized_grams;
 
     setWeeklyDietPlan(prev => {
       if (!prev) return prev;
@@ -1348,12 +1352,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               fat_g: (item.fat_g / (item.raw_weight_g || 100)) * 100,
               fiber_g: (item.fiber_g / (item.raw_weight_g || 100)) * 100
             };
-            const cookedG = Math.round(rawGrams * ratio);
-            const display = food ? getCookedDisplay(food, rawGrams, cookedG) : { bn: `${cookedG} গ্রাম`, en: `${cookedG}g` };
-            const mult = rawGrams / 100;
+            const cookedG = Math.round(sanitizedGrams * ratio);
+            const display = food ? getCookedDisplay(food, sanitizedGrams, cookedG) : { bn: `${cookedG} গ্রাম`, en: `${cookedG}g` };
+            const mult = sanitizedGrams / 100;
             return {
               ...item,
-              raw_weight_g: rawGrams,
+              raw_weight_g: sanitizedGrams,
               cooked_weight_g: cookedG,
               cooked_display_bn: display.bn,
               cooked_display_en: display.en,
@@ -1362,7 +1366,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               carbs_g: Math.round((per100.carbs_g ?? 0) * mult * 10) / 10,
               fat_g: Math.round((per100.fat_g ?? 0) * mult * 10) / 10,
               fiber_g: Math.round((per100.fiber_g ?? 0) * mult * 10) / 10,
-              alternatives: food ? generateExchangesForFood(food, rawGrams, allFoods, greenIds, redIds, yellowIds) : item.alternatives
+              alternatives: food ? generateExchangesForFood(food, sanitizedGrams, allFoods, greenIds, redIds, yellowIds) : item.alternatives
             };
           });
 
@@ -1677,13 +1681,16 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       allFoods,
       trafficLight
     );
+    const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updated, allFoods, p2AnalysisResult?.p3PlanningContext);
+    updated.overall_safety_status = safetyEval.overall_decision;
+    updated.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
     setWeeklyDietPlan(updated);
     if (targetDayNumber === 1 && updated.days && updated.days[0]) {
       setDietChart(updated.days[0].meals);
     }
     persistWeeklyPlan(updated);
     return true;
-  }, [weeklyDietPlan, patient, allFoods, trafficLight, persistWeeklyPlan]);
+  }, [weeklyDietPlan, patient, allFoods, trafficLight, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
   const approveWeeklyPlan = useCallback((clinicianId: string, notes?: string): boolean => {
     // Step A — Clinical Governance & Identity Verification
@@ -1759,32 +1766,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     // Step C — Persist-First Sequence
-    const trimmed = clinicianId.trim();
-    const timestamp = new Date().toISOString();
     const targetVisitId = weeklyDietPlan.visit_id || activeVisitId;
     const planKey = `shuddho_weekly_plan_${weeklyDietPlan.patient_id}_${targetVisitId}`;
 
-    const approvedPlan: WeeklyDietPlan = {
-      ...weeklyDietPlan,
-      version: weeklyDietPlan.status === 'approved' ? weeklyDietPlan.version : weeklyDietPlan.version + 1,
-      status: 'approved',
-      is_approved: true,
-      approved_by: trimmed,
-      approval_date: timestamp,
-      approved_at: timestamp,
-      approval_notes: notes?.trim() || undefined,
-      clinician_notes: notes?.trim() || weeklyDietPlan.clinician_notes,
-      invalidation_reason: undefined,
-      invalidated_at: undefined,
-      approval_metadata: {
-        clinician_id: trimmed,
-        clinician_name: trimmed,
-        approval_timestamp: timestamp,
-        license_number: trimmed,
-        notes: notes?.trim() || undefined
-      },
-      updated_at: timestamp
-    };
+    const approvedPlan = approveWeeklyDietPlan(weeklyDietPlan, clinicianId, notes);
 
     // 1. Save to primary weekly plan storage
     const saveSucceeded = safeStorage.setItem(planKey, approvedPlan);
@@ -1811,7 +1796,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const updatedRecord: PatientRecord = {
         ...existingPatientRecord,
         weekly_diet_plan: approvedPlan,
-        updated_at: timestamp
+        updated_at: approvedPlan.updated_at
       };
       const tx = savePatientTransaction({
         currentRecord: updatedRecord,

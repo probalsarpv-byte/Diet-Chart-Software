@@ -29,10 +29,20 @@ import {
   calculateMealTotals,
   DAY_NAMES,
   invalidateWeeklyPlanApproval,
-  evaluateWeeklyPlanClinicalSafety
+  approveWeeklyDietPlan,
+  validatePortionInput,
+  evaluateNutritionalAdequacy,
+  evaluateWeeklyPlanClinicalSafety,
+  buildDayPlan,
+  recalculateDayPlan
 } from '../src/engine/weeklyPlanner';
 import { validateClinicianCredentials } from '../src/engine/longitudinal/comparisonEngine';
 import { evaluateFastingEligibility } from '../src/clinical-safety/fastingSafetyEngine';
+import {
+  parseTimeString,
+  calculateIntervalHours,
+  evaluateMealScheduleTiming
+} from '../src/clinical-safety/mealTimingEngine';
 import {
   FoodItem,
   MedicineItem,
@@ -41,7 +51,8 @@ import {
   WeeklyDietPlan,
   DayPlan,
   DietChartMeal,
-  DietChartMealItem
+  DietChartMealItem,
+  DayPlanSummary
 } from '../src/types';
 import { P3NutritionPlanningContext } from '../src/engine/p2/types';
 
@@ -1173,7 +1184,10 @@ function runAcceptanceSuite() {
       weight_kg: 42,
       height_cm: 158,
       calculated: {
+        ...createBaseTestPatient().calculated,
         bmi: 16.8,
+        bmi_category_en: 'Underweight',
+        bmi_category_bn: 'কম ওজন',
         bmr: 1050,
         tdee: 1260,
         target_calories: 1500,
@@ -1248,10 +1262,12 @@ function runAcceptanceSuite() {
     const p3WithRestrictions: P3NutritionPlanningContext = {
       clinicalAssessmentApproved: true,
       prescriptions: {
-        sodium: { hasConfirmedLimit: true, numericalLimit: 2000, unit: 'mg/day', clinicalReason: 'Hypertension' },
-        fluid: { hasConfirmedLimit: true, numericalLimit: 1500, unit: 'mL/day', clinicalReason: 'Heart Failure' }
+        sodium: { nutrient: 'sodium', isRestricted: true, source: 'clinician_order', requiresClarification: false, hasConfirmedLimit: true, numericalLimit: 2000, unit: 'mg/day', clinicalReason: 'Hypertension' },
+        fluid: { nutrient: 'fluid', isRestricted: true, source: 'clinician_order', requiresClarification: false, hasConfirmedLimit: true, numericalLimit: 1500, unit: 'mL/day', clinicalReason: 'Heart Failure' },
+        potassium: { nutrient: 'potassium', isRestricted: false, source: 'clinician_order', requiresClarification: false },
+        protein: { nutrient: 'protein', isRestricted: false, source: 'clinician_order', requiresClarification: false }
       }
-    };
+    } as any;
     const plan = generateWeeklyDietPlan(pRestricted, allFoods, baseTrafficLight, p3WithRestrictions);
     assert(plan.days[0].safety_notes?.some(n => n.includes('Sodium restriction')) === true, 'Test 11: Sodium restriction documented');
     assert(plan.days[0].safety_notes?.some(n => n.includes('Fluid restriction')) === true, 'Test 11: Fluid restriction documented');
@@ -1367,7 +1383,7 @@ function runAcceptanceSuite() {
     assert(day1.meals[0].scheduled_time === '12:30 PM', 'Test 17: Lunch scheduled at 12:30 PM');
     assert(day1.meals[1].scheduled_time === '04:30 PM', 'Test 17: Mid-window snack at 04:30 PM');
     assert(day1.meals[2].scheduled_time === '07:30 PM', 'Test 17: Dinner at 07:30 PM');
-    assert(!day1.meals.some(m => m.scheduled_time.includes('AM')), 'Test 17: No meals outside 12:00 PM – 08:00 PM window');
+    assert(!day1.meals.some(m => (m.scheduled_time || '').includes('AM')), 'Test 17: No meals outside 12:00 PM – 08:00 PM window');
   }
 
   // TEST 18: Unsafe or nutritionally inadequate draft cannot be approved
@@ -1392,7 +1408,7 @@ function runAcceptanceSuite() {
           day_name_bn: '১ম দিন',
           day_name_en: 'Day 1',
           meals: [],
-          summary: { calories: 400, protein_g: 15, carbs_g: 50, fat_g: 10, fiber_g: 5, gl: 10, pral: 0, calorie_variance: -1250, protein_variance: -67, carbs_variance: -170, fat_variance: -35 },
+          summary: { calories: 400, protein_g: 15, carbs_g: 50, fat_g: 10, fiber_g: 5, gl: 10, gl_is_estimated: false, pral: 0, calorie_variance: -1250, protein_variance: -67, carbs_variance: -170, fat_variance: -35 },
           safety_decision: 'SAFE'
         }
       ],
@@ -1402,6 +1418,295 @@ function runAcceptanceSuite() {
     assert(safety.overall_decision === 'HARD_STOP', 'Test 18: Severe nutritional deficit triggers HARD_STOP');
     assert(safety.is_eligible_for_approval === false, 'Test 18: Nutritionally inadequate plan is ineligible for approval');
     assert(safety.unresolved_hard_stops.some(s => s.includes('Nutritional Deficit')), 'Test 18: Unresolved hard stops cite nutritional deficit');
+  }
+
+  // TEST 19: Fasting Draft State & Approval Lifecycle
+  console.log('\n--- TEST 19: Fasting Draft State & Approval Lifecycle ---');
+  {
+    const pFast = createBaseTestPatient({
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const draftPlan = generateWeeklyDietPlan(pFast, allFoods, baseTrafficLight);
+    assert(draftPlan.status === 'draft', 'Test 19: Fresh plan is draft');
+    assert(draftPlan.is_approved === false, 'Test 19: Draft plan is not approved');
+    assert(draftPlan.days[0].fasting_schedule?.decision_status === 'fasting_proposed_draft', 'Test 19: Fasting day decision_status is fasting_proposed_draft (NEVER approved in draft)');
+    assert(draftPlan.fasting_schedule?.decision_status === 'fasting_proposed_draft', 'Test 19: Weekly plan fasting_schedule decision_status is fasting_proposed_draft');
+
+    // Transition to approved using approveWeeklyDietPlan
+    const approvedPlan = approveWeeklyDietPlan(draftPlan, 'BMDC-12345-DR', 'Clinician approved 16:8 regimen');
+    assert(approvedPlan.status === 'approved', 'Test 19: Plan status transitioned to approved');
+    assert(approvedPlan.is_approved === true, 'Test 19: is_approved is true');
+    assert(approvedPlan.days[0].fasting_schedule?.decision_status === 'fasting_approved', 'Test 19: Fasting day decision_status transitioned to fasting_approved on approval');
+    assert(approvedPlan.fasting_schedule?.decision_status === 'fasting_approved', 'Test 19: Weekly plan fasting decision_status transitioned to fasting_approved');
+
+    // Invalidation resets to requires_review
+    const invalidated = invalidateWeeklyPlanApproval(approvedPlan, 'Patient requested meal time adjustment');
+    assert(invalidated.status === 'requires_review', 'Test 19: Status transitioned to requires_review');
+    assert(invalidated.is_approved === false, 'Test 19: is_approved reset to false');
+    assert(invalidated.days[0].fasting_schedule?.decision_status === 'fasting_requires_review', 'Test 19: Day fasting decision_status reset to fasting_requires_review');
+    assert(invalidated.fasting_schedule?.decision_status === 'fasting_requires_review', 'Test 19: Weekly fasting decision_status reset to fasting_requires_review');
+  }
+
+  // TEST 20: Adult Underweight ESPEN / WHO Malnutrition vs Short-Stature Normal BMI
+  console.log('\n--- TEST 20: Adult Underweight ESPEN / WHO Criteria ---');
+  {
+    // Case A: Short stature adult with 43 kg but normal BMI (143 cm, BMI = 21.0 kg/m²)
+    const pShortNormalBmi = createBaseTestPatient({
+      age: 35,
+      weight_kg: 43,
+      height_cm: 143,
+      population_group: 'adult_standard',
+      calculated: {
+        ...createBaseTestPatient().calculated,
+        bmi: 21.0,
+        bmi_category_en: 'Normal weight',
+        bmi_category_bn: 'স্বাভাবিক ওজন'
+      },
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const checkA = evaluateFastingEligibility(pShortNormalBmi, 16);
+    assert(checkA.eligibility.is_eligible_for_fasting === true, 'Test 20: Adult 43kg with normal BMI (21.0) is not falsely classified as underweight');
+    assert(!checkA.safetyResults.some(r => r.rule_id === 'FASTING_UNDERWEIGHT_STOP'), 'Test 20: Does not trigger FASTING_UNDERWEIGHT_STOP');
+
+    // Case B: Severe somatic wasting (<40 kg floor)
+    const pSevereWasting = createBaseTestPatient({
+      age: 30,
+      weight_kg: 38,
+      height_cm: 155,
+      calculated: {
+        ...createBaseTestPatient().calculated,
+        bmi: 15.8,
+        bmi_category_en: 'Severe Underweight',
+        bmi_category_bn: 'মারাত্মক কম ওজন'
+      }
+    });
+    const checkB = evaluateFastingEligibility(pSevereWasting, 16);
+    assert(checkB.eligibility.is_eligible_for_fasting === false, 'Test 20: Severe wasting (<40kg, low BMI) is contraindicated');
+    assert(checkB.safetyResults.some(r => r.rule_id === 'FASTING_UNDERWEIGHT_STOP'), 'Test 20: Triggers FASTING_UNDERWEIGHT_STOP for low BMI');
+  }
+
+  // TEST 21: Circadian & Meal Timing Window Discrepancy Detection
+  console.log('\n--- TEST 21: Circadian & Meal Timing Window Engine ---');
+  {
+    // Test parsing
+    const p12 = parseTimeString('12:30 PM');
+    assert(p12 !== null && p12.hours24 === 12 && p12.minutes === 30 && p12.totalMinutes === 750, 'Test 21: Parses 12:30 PM accurately');
+    const p24 = parseTimeString('19:45');
+    assert(p24 !== null && p24.hours24 === 19 && p24.minutes === 45 && p24.display12h === '07:45 PM', 'Test 21: Parses 19:45 to 07:45 PM accurately');
+
+    // Test interval with midnight rollover
+    const intervalOvernight = calculateIntervalHours('20:00', '08:00', true);
+    assert(intervalOvernight === 12.0, 'Test 21: Calculates 12.0h overnight interval across midnight');
+
+    // Test timing evaluation on 16:8 schedule meals (12:30 PM, 04:30 PM, 07:30 PM)
+    const validMeals: DietChartMeal[] = [
+      { id: 'm1', meal_type: 'lunch', title_en: 'Lunch', title_bn: 'দুপুরের খাবার', scheduled_time: '12:30 PM', target_time: '12:30 PM', meal_calories: 600, meal_protein_g: 30, meal_carbs_g: 70, meal_fat_g: 20, meal_gl: 15, meal_gl_is_estimated: false, incompatible_warnings: [], meal_pral: -2, items: [] },
+      { id: 'm2', meal_type: 'evening_snack', title_en: 'Snack', title_bn: 'বিকালের নাস্তা', scheduled_time: '04:30 PM', target_time: '04:30 PM', meal_calories: 250, meal_protein_g: 10, meal_carbs_g: 35, meal_fat_g: 8, meal_gl: 8, meal_gl_is_estimated: false, incompatible_warnings: [], meal_pral: -1, items: [] },
+      { id: 'm3', meal_type: 'dinner', title_en: 'Dinner', title_bn: 'রাতের খাবার', scheduled_time: '07:30 PM', target_time: '07:30 PM', meal_calories: 550, meal_protein_g: 28, meal_carbs_g: 65, meal_fat_g: 18, meal_gl: 14, meal_gl_is_estimated: false, incompatible_warnings: [], meal_pral: -3, items: [] }
+    ];
+
+    const evalValid = evaluateMealScheduleTiming(validMeals, {
+      eatingWindowStart: '12:00 PM',
+      eatingWindowEnd: '08:00 PM',
+      plannedFastingHours: 16
+    });
+
+    assert(evalValid.is_valid === true, 'Test 21: Meal schedule is valid');
+    assert(evalValid.scheduled_intake_window_hours === 7.0, 'Test 21: Scheduled intake window is 7.0h (12:30 PM to 07:30 PM)');
+    assert(evalValid.scheduled_overnight_fast_hours === 17.0, 'Test 21: Overnight fast is 17.0h (07:30 PM to 12:30 PM next day)');
+    assert(evalValid.is_intake_within_permitted_window === true, 'Test 21: All meals fall within 12:00 PM - 08:00 PM window');
+
+    // Test timing discrepancy when a caloric snack is scheduled outside window at 09:00 AM
+    const invalidMeals: DietChartMeal[] = [
+      { id: 'm0', meal_type: 'mid_morning', title_en: 'Early Snack', title_bn: 'সকালের নাস্তা', scheduled_time: '09:00 AM', target_time: '09:00 AM', meal_calories: 200, meal_protein_g: 5, meal_carbs_g: 30, meal_fat_g: 5, meal_gl: 6, meal_gl_is_estimated: false, incompatible_warnings: [], meal_pral: 0, items: [{ id: 'i1', food_id: 'apple', food_name_en: 'Apple', food_name_bn: 'আপেল', category: 'fruit', prep_note_bn: '', prep_note_en: '', alternatives: [], raw_weight_g: 100, cooked_weight_g: 100, cooked_display_bn: '১০০ গ্রাম', cooked_display_en: '100g', kcal: 52, protein_g: 0.3, carbs_g: 14, fat_g: 0.2, fiber_g: 2.4, traffic_status: 'GREEN' }] },
+      ...validMeals
+    ];
+
+    const evalInvalid = evaluateMealScheduleTiming(invalidMeals, {
+      eatingWindowStart: '12:00 PM',
+      eatingWindowEnd: '08:00 PM',
+      plannedFastingHours: 16
+    });
+
+    assert(evalInvalid.is_intake_within_permitted_window === false, 'Test 21: Detects meal outside 12:00 PM - 08:00 PM window');
+    assert(evalInvalid.timing_discrepancies.length > 0, 'Test 21: Timing discrepancies populated');
+    assert(evalInvalid.timing_discrepancies[0].includes('outside the designated eating window'), 'Test 21: Timing discrepancy message cites designated window');
+  }
+
+  // TEST 22: Food Portion Size Validation & Sanitization Guard
+  console.log('\n--- TEST 22: Food Portion Validation Guard ---');
+  {
+    const vNormal = validatePortionInput(150);
+    assert(vNormal.is_valid === true && vNormal.sanitized_grams === 150, 'Test 22: 150g is valid');
+
+    const vZero = validatePortionInput(0);
+    assert(vZero.is_valid === false && vZero.error_en !== undefined, 'Test 22: 0g is invalid and returns error');
+
+    const vNegative = validatePortionInput(-25);
+    assert(vNegative.is_valid === false, 'Test 22: Negative grams is invalid');
+
+    const vExcessive = validatePortionInput(2500);
+    assert(vExcessive.is_valid === false && vExcessive.sanitized_grams === 1500, 'Test 22: 2500g is capped/flagged');
+
+    const vNaN = validatePortionInput(NaN);
+    assert(vNaN.is_valid === false, 'Test 22: NaN is invalid');
+  }
+
+  // TEST 23: Enriched Multidimensional Nutritional Adequacy Assessment
+  console.log('\n--- TEST 23: Multidimensional Nutritional Adequacy ---');
+  {
+    const patient = createBaseTestPatient();
+    const mockSummary: DayPlanSummary = {
+      calories: 1600,
+      protein_g: 80,
+      carbs_g: 210,
+      fat_g: 45,
+      fiber_g: 28,
+      gl: 45,
+      gl_is_estimated: false,
+      pral: -6,
+      calorie_variance: -50,
+      protein_variance: -2,
+      carbs_variance: -10,
+      fat_variance: 0
+    };
+    const targetMacros = { calories: 1650, protein_g: 82, carbs_g: 220, fat_g: 45 };
+    const adequacy = evaluateNutritionalAdequacy(mockSummary, targetMacros, patient);
+
+    assert(adequacy.is_adequate === true, 'Test 23: Day is adequate for evaluated parameters');
+    assert(adequacy.overall_status === 'adequate_for_evaluated_parameters', 'Test 23: Overall status is adequate_for_evaluated_parameters');
+    assert(adequacy.status_label_en === 'Nutritional Targets Achieved (Evaluated Parameters)', 'Test 23: Truthful status label without unverified blanket claims');
+    assert(adequacy.energy_assessment !== undefined && adequacy.energy_assessment.status === 'adequate', 'Test 23: Energy assessment structured');
+    assert(adequacy.protein_assessment !== undefined && adequacy.protein_assessment.status === 'adequate', 'Test 23: Protein assessment structured');
+    assert(adequacy.macronutrient_balance !== undefined && adequacy.macronutrient_balance.is_balanced === true, 'Test 23: Macronutrient balance evaluated');
+    assert(adequacy.micronutrient_assessment !== undefined && adequacy.micronutrient_assessment.has_incomplete_data === true, 'Test 23: Discloses incomplete micronutrient data transparently');
+    assert(adequacy.data_completeness !== undefined && adequacy.data_completeness.status === 'partial', 'Test 23: Data completeness status is partial');
+  }
+
+  // TEST 24: Invalidation and Approval Synchronize All 7 Days
+  console.log('\n--- TEST 24: Approval & Invalidation Day Synchronization ---');
+  {
+    const pFast = createBaseTestPatient({
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const plan = generateWeeklyDietPlan(pFast, allFoods, baseTrafficLight);
+    const approved = approveWeeklyDietPlan(plan, 'BMDC-TEST-999');
+    for (const day of approved.days) {
+      assert(day.fasting_schedule?.decision_status === 'fasting_approved', `Test 24: Day ${day.day_number} fasting is approved`);
+    }
+
+    const invalidated = invalidateWeeklyPlanApproval(approved, 'Modification performed');
+    for (const day of invalidated.days) {
+      assert(day.fasting_schedule?.decision_status === 'fasting_requires_review', `Test 24: Day ${day.day_number} fasting reset to requires_review`);
+    }
+  }
+
+  // TEST 25: Section 2 Fasting Regeneration and Timing Regression Gate
+  console.log('\n--- TEST 25: Fasting Regeneration & Timing Regression Suite ---');
+  {
+    // 1. Existing fasting plan + newly started insulin -> overridden to non-fasting
+    const pFast = createBaseTestPatient({
+      dietary_preferences: { meal_structure: 'intermittent_fasting_16_8' }
+    });
+    const initialFastPlan = generateWeeklyDietPlan(pFast, allFoods, baseTrafficLight);
+    assert(initialFastPlan.days[0].meal_structure === 'intermittent_fasting_16_8', 'Test 25.1: Initial plan has fasting');
+    assert(!initialFastPlan.days[0].meals.some(m => m.meal_type === 'breakfast'), 'Test 25.1: Initial fasting plan has no breakfast');
+
+    // Patient newly prescribed insulin
+    const pWithInsulin = {
+      ...pFast,
+      active_medications: [...pFast.active_medications, 'med_insulin']
+    };
+    const regPlan = generateWeeklyDietPlan(pWithInsulin, allFoods, baseTrafficLight, null, initialFastPlan, { forceRegenerate: true });
+    assert(regPlan.days[0].meal_structure !== 'intermittent_fasting_16_8', 'Test 25.1: Newly started insulin overrides fasting to safe schedule');
+    assert(regPlan.days[0].meals.some(m => m.meal_type === 'breakfast'), 'Test 25.1: Breakfast reinstated after insulin contraindication');
+
+    // 2. Existing fasting plan + pregnancy contraindication -> breakfast reinstated
+    const pPregnant: PatientProfile = {
+      ...pFast,
+      population_group: 'pregnancy',
+      trimester: 2
+    };
+    const regPregnant = generateWeeklyDietPlan(pPregnant, allFoods, baseTrafficLight, null, initialFastPlan, { forceRegenerate: true });
+    assert(regPregnant.days[0].meals.some(m => m.meal_type === 'breakfast'), 'Test 25.2: Pregnancy contraindication reinstates breakfast');
+    assert(regPregnant.days[0].fasting_schedule?.decision_status === 'fasting_contraindicated', 'Test 25.2: Fasting schedule marked contraindicated');
+
+    // 3. Locked fasting day + contraindication -> exposes conflict in safety_decision: 'HARD_STOP'
+    const lockedFastingDay = {
+      ...initialFastPlan.days[0],
+      is_locked: true
+    };
+    const evaluatedLockedDay = buildDayPlan(
+      1,
+      pWithInsulin,
+      allFoods,
+      baseTrafficLight,
+      initialFastPlan.target_macros,
+      lockedFastingDay,
+      true
+    );
+    assert(evaluatedLockedDay.safety_decision === 'HARD_STOP', 'Test 25.3: Locked fasting day with contraindicated insulin flags HARD_STOP');
+    assert(Boolean(evaluatedLockedDay.safety_notes?.some(n => n.includes('HARD_STOP') || n.includes('Fasting Contraindication'))), 'Test 25.3: Safety notes cite fasting contraindication HARD_STOP');
+
+    // 4. Previously approved fasting plan + regeneration -> invalidates approval
+    const approvedFastingPlan = approveWeeklyDietPlan(initialFastPlan, 'DR_TEST_CLINICIAN');
+    assert(approvedFastingPlan.is_approved === true, 'Test 25.4: Plan approved');
+    const invalidatedRegen = generateWeeklyDietPlan(pFast, allFoods, baseTrafficLight, null, approvedFastingPlan, { forceRegenerate: true });
+    assert(invalidatedRegen.is_approved === false, 'Test 25.4: Invalidation upon full regeneration');
+    assert(invalidatedRegen.status === 'requires_review', 'Test 25.4: Status transitioned to requires_review');
+    assert(invalidatedRegen.fasting_schedule?.decision_status === 'fasting_requires_review', 'Test 25.4: Fasting decision status reset to fasting_requires_review');
+
+    // 5. Safe fasting plan + unchanged clinical info -> fasting preserved
+    const safeRegen = generateWeeklyDietPlan(pFast, allFoods, baseTrafficLight, null, initialFastPlan, { preserveLocks: true });
+    assert(safeRegen.days[0].meal_structure === 'intermittent_fasting_16_8', 'Test 25.5: Safe eligible patient preserves fasting schedule');
+    assert(safeRegen.days[0].fasting_schedule?.is_fasting === true, 'Test 25.5: Fasting remains active');
+
+    // 6. Meal timestamp outside permitted eating window -> flags discrepancy
+    const dayWithOutOfWindowMeal = {
+      ...initialFastPlan.days[0],
+      meals: [
+        {
+          id: 'm_early',
+          meal_type: 'morning_protocol' as const,
+          title_en: 'Early Morning Shake',
+          title_bn: 'ভোরের প্রোটোকল',
+          scheduled_time: '08:00 AM',
+          target_time: '08:00 AM',
+          meal_calories: 250,
+          meal_protein_g: 10,
+          meal_carbs_g: 30,
+          meal_fat_g: 5,
+          meal_gl: 5,
+          meal_gl_is_estimated: false,
+          incompatible_warnings: [],
+          meal_pral: 0,
+          items: [{
+            id: 'it_shake',
+            food_id: 'apple',
+            food_name_en: 'Apple',
+            food_name_bn: 'আপেল',
+            category: 'fruit' as const,
+            prep_note_bn: '',
+            prep_note_en: '',
+            alternatives: [],
+            raw_weight_g: 100,
+            cooked_weight_g: 100,
+            cooked_display_bn: '১০০ গ্রাম',
+            cooked_display_en: '100g',
+            kcal: 52,
+            protein_g: 0.3,
+            carbs_g: 14,
+            fat_g: 0.2,
+            fiber_g: 2.4,
+            traffic_status: 'GREEN' as const
+          }]
+        },
+        ...initialFastPlan.days[0].meals
+      ]
+    };
+    const timingCheckedDay = recalculateDayPlan(dayWithOutOfWindowMeal, initialFastPlan.target_macros, pFast, allFoods);
+    assert(timingCheckedDay.fasting_schedule?.is_intake_within_window === false, 'Test 25.6: Out-of-window meal intake flagged as not within window');
+    assert(Boolean(timingCheckedDay.fasting_schedule?.timing_discrepancies?.length), 'Test 25.6: Timing discrepancies recorded');
   }
 
   console.log('\n=====================================================================');
