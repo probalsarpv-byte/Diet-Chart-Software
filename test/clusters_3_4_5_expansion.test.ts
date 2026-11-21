@@ -10,6 +10,7 @@
 import { DISEASE_RULES } from '../src/engine/diseaseRules';
 import { runDNIEngine, checkSupplementOverlaps } from '../src/engine/dniEngine';
 import { evaluateFastingEligibility } from '../src/clinical-safety/fastingSafetyEngine';
+import { calculateAnthropometrics } from '../src/engine/anthropometrics';
 import { PatientProfile, ClinicalConditionId, CandidateSupplement } from '../src/types';
 import medicinesData from '../src/data/medicines.json';
 import supplementsData from '../src/data/supplements.json';
@@ -28,18 +29,32 @@ function assert(condition: boolean, testName: string, detail?: string) {
 }
 
 function createBasePatient(overrides: Partial<PatientProfile> = {}): PatientProfile {
+  const baseCalc = calculateAnthropometrics(
+    42, 'female', 165, 62, 75, 'sedentary', [], 'adult_standard'
+  );
+
   return {
     schema_version: 2,
     id: 'test_patient_expansion',
     name: 'Clinical Test Patient',
     age: 42,
     gender: 'female',
+    phone: '01711-000000',
+    email: 'clinical.test@example.com',
+    visit_date: '2026-11-21',
+    current_phase: 1,
     height_cm: 165,
     weight_kg: 62,
+    waist_cm: 75,
     activity_level: 'sedentary',
-    population_group: 'general_adult',
-    selected_conditions: [],
+    sleep_hours: 7,
+    shift_worker: false,
+    population_group: 'adult_standard',
+    bmr_floor_strategy: 'clamped_to_bmr',
     confirmed_allergies: [],
+    clinician_disallowed_foods: [],
+    clinician_disallowed_tags: [],
+    selected_conditions: [],
     active_medications: [],
     gut_profile: {
       bloating: 'none',
@@ -52,14 +67,11 @@ function createBasePatient(overrides: Partial<PatientProfile> = {}): PatientProf
     labs: {
       lab_flags: []
     },
-    calculated: {
-      bmi: 22.8,
-      bmi_category_en: 'Normal weight',
-      bmi_category_bn: 'স্বাভাবিক ওজন',
-      ibw_kg: 56.5,
-      adjusted_bw_kg: 57.8,
-      whtr: 0.48
-    },
+    calculated: baseCalc,
+    is_diet_plan_dirty: false,
+    assessment_last_updated_at: '2026-11-21T12:00:00.000Z',
+    diet_plan_generated_at: '2026-11-21T12:00:00.000Z',
+    manual_edits_preserved: false,
     ...overrides
   };
 }
