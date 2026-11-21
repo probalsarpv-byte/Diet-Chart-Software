@@ -5,48 +5,52 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 40% 98%;
-  --foreground: 222 47% 11%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --background: 160 14% 96.7%;       /* #F5F8F7 */
+  --foreground: 202 46% 11.6%;       /* #10212B */
+  --card: 0 0% 100%;                 /* #FFFFFF */
+  --card-elevated: 160 14% 98%;      /* #F9FBFA */
+  --card-foreground: 202 46% 11.6%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --primary: 160 84% 39%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 160 84% 39%;
-  --radius: 0.625rem;
+  --popover-foreground: 202 46% 11.6%;
+  --primary: 163 94% 24.3%;          /* #047857 */
+  --primary-hover: 163 88% 19.8%;    /* #065F46 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 170 12% 93%;          /* Calm surface tint */
+  --secondary-foreground: 202 46% 11.6%;
+  --muted: 170 12% 92%;
+  --muted-foreground: 201 16% 38.2%; /* #526671 */
+  --accent: 163 94% 24.3%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;          /* #DC2626 */
+  --destructive-foreground: 0 0% 100%;
+  --border: 180 13% 89%;             /* #DFE7E7 */
+  --input: 180 13% 89%;
+  --ring: 163 94% 24.3%;
+  --radius: 0.75rem;                 /* 12px card corners */
 }
 
 .dark {
-  --background: 224 71% 4%;
-  --foreground: 210 40% 98%;
-  --card: 222 47% 7%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222 47% 7%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 160 84% 39%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 217.2 32.6% 12%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 12%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 12%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 160 84% 39%;
+  --background: 200 53% 6.7%;        /* #08141A */
+  --foreground: 168 33% 94.1%;       /* #EBF5F3 */
+  --card: 201 45% 11.4%;             /* #10212A */
+  --card-elevated: 198 41% 14.5%;    /* #162B34 */
+  --card-foreground: 168 33% 94.1%;
+  --popover: 201 45% 11.4%;
+  --popover-foreground: 168 33% 94.1%;
+  --primary: 164 58% 49.2%;          /* #35C6A0 */
+  --primary-hover: 164 65% 42%;
+  --primary-foreground: 200 53% 6.7%;
+  --secondary: 198 35% 16%;
+  --secondary-foreground: 168 33% 94.1%;
+  --muted: 198 30% 16%;
+  --muted-foreground: 192 21% 71.2%; /* #A7BEC4 */
+  --accent: 164 58% 49.2%;
+  --accent-foreground: 200 53% 6.7%;
+  --destructive: 350 89% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 198 29% 22.5%;           /* #29404A */
+  --input: 198 29% 22.5%;
+  --ring: 164 58% 49.2%;
 }
 
 * {
@@ -69,8 +73,42 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.clinical-panel {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 1px 3px 0 rgba(16, 33, 43, 0.04), 0 1px 2px -1px rgba(16, 33, 43, 0.02);
+  border-radius: 0.75rem;
+}
+
+.clinical-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 2px 8px -2px rgba(16, 33, 43, 0.05), 0 1px 3px 0 rgba(16, 33, 43, 0.03);
+  border-radius: 0.875rem;
+  transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .clinical-card {
+  background: hsl(var(--card));
+  border-color: hsl(var(--border));
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+.clinical-card-elevated {
+  background: hsl(var(--card-elevated));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 8px 24px -4px rgba(16, 33, 43, 0.07), 0 2px 6px -1px rgba(16, 33, 43, 0.03);
+  border-radius: 1rem;
+}
+
+.dark .clinical-card-elevated {
+  background: hsl(var(--card-elevated));
+  border-color: hsl(var(--border));
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
 .glass-panel {
-  background: hsl(var(--card) / 0.85);
+  background: hsl(var(--card) / 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
@@ -78,18 +116,18 @@ body {
 .glass-card {
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
-  border-radius: 1rem;
+  box-shadow: 0 2px 8px -2px rgba(16, 33, 43, 0.05);
+  border-radius: 0.875rem;
 }
 
 .dark .glass-card {
-  background: hsl(var(--card) / 0.9);
-  border-color: hsl(var(--border) / 0.75);
-  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  background: hsl(var(--card));
+  border-color: hsl(var(--border));
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
 }
 
 .clinical-badge-glow {
-  box-shadow: 0 0 12px -2px currentColor;
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 /* Custom scrollbars */

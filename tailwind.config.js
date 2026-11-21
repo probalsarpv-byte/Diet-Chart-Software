@@ -21,6 +21,7 @@ module.exports = {
         foreground: "hsl(var(--foreground))",
         primary: {
           DEFAULT: "hsl(var(--primary))",
+          hover: "hsl(var(--primary-hover))",
           foreground: "hsl(var(--primary-foreground))",
         },
         secondary: {
@@ -45,36 +46,33 @@ module.exports = {
         },
         card: {
           DEFAULT: "hsl(var(--card))",
+          elevated: "hsl(var(--card-elevated))",
           foreground: "hsl(var(--card-foreground))",
         },
         clinical: {
-          green: "#059669",
-          yellow: "#d97706",
-          red: "#dc2626",
-          blue: "#0284c7",
-          purple: "#7c3aed",
-          emerald: "#10b981",
-          amber: "#f59e0b",
-          rose: "#f43f5e"
+          emerald: "#047857",
+          teal: "#35C6A0",
+          amber: "#D97706",
+          rose: "#DC2626",
+          blue: "#0284C7",
+          slate: "#526671",
         }
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        xl: "var(--radius)",
+        lg: "calc(var(--radius) - 2px)",
+        md: "calc(var(--radius) - 4px)",
+        sm: "calc(var(--radius) - 6px)",
       },
       boxShadow: {
-        'glass': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
-        'glow-emerald': '0 0 20px -5px rgba(16, 185, 129, 0.3)',
-        'glow-primary': '0 0 25px -5px hsl(var(--primary) / 0.35)',
-        'inset-light': 'inset 0 1px 0 0 rgba(255, 255, 255, 0.08)',
-        'card-elevated': '0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04)',
-        'card-elevated-dark': '0 4px 24px -2px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.05)',
+        'subtle': '0 1px 3px 0 rgba(16, 33, 43, 0.04), 0 1px 2px -1px rgba(16, 33, 43, 0.02)',
+        'card': '0 2px 8px -2px rgba(16, 33, 43, 0.05), 0 1px 3px 0 rgba(16, 33, 43, 0.03)',
+        'card-elevated': '0 8px 24px -4px rgba(16, 33, 43, 0.07), 0 2px 6px -1px rgba(16, 33, 43, 0.03)',
+        'card-elevated-dark': '0 8px 24px -4px rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.05)',
+        'dropdown': '0 10px 30px -4px rgba(16, 33, 43, 0.1), 0 4px 8px -2px rgba(16, 33, 43, 0.04)',
       },
-      backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'clinical-glass': 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%)',
-        'subtle-glow': 'radial-gradient(circle at 50% 0%, rgba(5, 150, 105, 0.12), transparent 70%)',
+      transitionDuration: {
+        DEFAULT: '150ms',
       },
     },
   },

@@ -30,23 +30,23 @@ export const AssessmentLeftSidebar: React.FC = () => {
   return (
     <div className="w-full lg:w-72 flex-shrink-0 space-y-4">
       {/* Mode Switcher */}
-      <div className="bg-card border rounded-2xl p-3.5 shadow-sm space-y-3">
+      <div className="bg-card border border-border rounded-2xl p-3.5 shadow-subtle space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
             {bn ? 'অ্যাসেসমেন্ট মোড' : 'Assessment Mode'}
           </span>
-          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
             {mode === 'quick' ? (bn ? 'কুইক' : 'Quick') : (bn ? 'বিস্তারিত' : 'Full')}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-1.5 p-1 bg-muted rounded-xl">
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-secondary rounded-xl">
           <button
             type="button"
             onClick={() => setMode('quick')}
             className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all ${
               mode === 'quick'
-                ? 'bg-card text-foreground shadow-sm font-bold'
+                ? 'bg-card text-foreground shadow-subtle font-bold'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -59,7 +59,7 @@ export const AssessmentLeftSidebar: React.FC = () => {
             onClick={() => setMode('comprehensive')}
             className={`flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold transition-all ${
               mode === 'comprehensive'
-                ? 'bg-card text-foreground shadow-sm font-bold'
+                ? 'bg-card text-foreground shadow-subtle font-bold'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -76,15 +76,15 @@ export const AssessmentLeftSidebar: React.FC = () => {
       </div>
 
       {/* Progress & Safety Banner */}
-      <div className="bg-card border rounded-2xl p-3.5 shadow-sm space-y-3">
+      <div className="bg-card border border-border rounded-2xl p-3.5 shadow-subtle space-y-3">
         <div className="flex items-center justify-between text-xs">
           <span className="font-semibold text-foreground">
             {bn ? 'সামগ্রিক অগ্রগতি' : 'Overall Progress'}
           </span>
-          <span className="font-bold text-primary">{completionPercentage}%</span>
+          <span className="font-bold text-primary tabular-numbers">{completionPercentage}%</span>
         </div>
 
-        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+        <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
           <div
             className="bg-primary h-2 rounded-full transition-all duration-300"
             style={{ width: `${completionPercentage}%` }}
@@ -92,7 +92,7 @@ export const AssessmentLeftSidebar: React.FC = () => {
         </div>
 
         <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1">
-          <span>{bn ? `মোট উত্তর: ${totalAnsweredCount} টি` : `Total answered: ${totalAnsweredCount}`}</span>
+          <span className="tabular-numbers">{bn ? `মোট উত্তর: ${totalAnsweredCount} টি` : `Total answered: ${totalAnsweredCount}`}</span>
           {completionStatus.clinical_safety_completed ? (
             <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -108,7 +108,7 @@ export const AssessmentLeftSidebar: React.FC = () => {
       </div>
 
       {/* Step Navigation List */}
-      <div className="bg-card border rounded-2xl p-2.5 shadow-sm space-y-1">
+      <div className="bg-card border border-border rounded-2xl p-2.5 shadow-subtle space-y-1">
         <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
           {bn ? 'অ্যাসেসমেন্ট ধাপসমূহ (১-৯)' : 'Assessment Steps (1-9)'}
         </div>
@@ -123,16 +123,16 @@ export const AssessmentLeftSidebar: React.FC = () => {
               onClick={() => setCurrentStep(step.id)}
               className={`w-full text-left px-3 py-2.5 rounded-xl flex items-center justify-between text-xs font-medium transition-all ${
                 isActive
-                  ? 'bg-primary text-primary-foreground font-bold shadow-sm'
-                  : 'text-foreground hover:bg-muted/70'
+                  ? 'bg-primary text-primary-foreground font-bold shadow-subtle'
+                  : 'text-foreground hover:bg-secondary'
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <span
                   className={`h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
                     isActive
-                      ? 'bg-white text-primary'
-                      : 'bg-muted text-muted-foreground'
+                      ? 'bg-primary-foreground text-primary'
+                      : 'bg-secondary text-muted-foreground'
                   }`}
                 >
                   {step.stepNumber}

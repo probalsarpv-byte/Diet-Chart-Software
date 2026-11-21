@@ -124,9 +124,9 @@ export const ReportTab: React.FC = () => {
     <div className="space-y-6 pb-12">
       
       {/* Report Selector Header (Hidden in Print) */}
-      <div className="bg-gradient-to-r from-card via-card to-blue-500/[0.04] border border-border/80 rounded-3xl p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle flex flex-col sm:flex-row items-center justify-between gap-4 no-print">
         <div className="flex items-center gap-3.5">
-          <div className="h-11 w-11 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-xs">
+          <div className="h-11 w-11 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-subtle">
             <FileText className="h-5 w-5" />
           </div>
           <div>
@@ -143,7 +143,7 @@ export const ReportTab: React.FC = () => {
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setLanguage(language === 'bn' ? 'en' : 'bn')}
-            className="px-3.5 py-2 rounded-xl border border-border/80 bg-secondary/60 hover:bg-secondary text-xs font-semibold flex items-center gap-1.5 transition text-foreground shadow-2xs"
+            className="px-3.5 py-2 rounded-xl border border-border bg-card hover:bg-secondary text-xs font-semibold flex items-center gap-1.5 transition text-foreground shadow-subtle"
           >
             <Globe className="h-3.5 w-3.5 text-blue-500" />
             <span>{bn ? 'English' : 'বাংলা'}</span>
@@ -152,7 +152,7 @@ export const ReportTab: React.FC = () => {
           <button
             data-testid="btn-print-report"
             onClick={handlePrint}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 text-xs font-bold flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground shadow-subtle text-xs font-bold flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             <Printer className="h-4 w-4" />
             <span>{bn ? 'প্রিন্ট / PDF ডাউনলোড' : 'Print / Export PDF'}</span>
@@ -161,16 +161,16 @@ export const ReportTab: React.FC = () => {
       </div>
 
       {/* Patient & Visit Traceability Header (Hidden in Print) */}
-      <div className="bg-card border border-border/80 rounded-3xl p-5 shadow-sm space-y-3.5 no-print">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-border/60">
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-3.5 no-print">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3.5 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-xs">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-subtle">
               <UserCheck className="h-5 w-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm text-foreground tracking-tight">{patient.name || (bn ? 'নামবিহীন রোগী' : 'Unnamed Patient')}</span>
-                <span className="px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] font-mono font-bold border border-border/60">{patient.id}</span>
+                <span className="font-bold text-sm text-foreground tracking-tight">{patient.name || (bn ? 'নামবিহীন রোগী' : 'Unnamed Patient')}</span>
+                <span className="px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-[10px] font-mono font-bold border border-border">{patient.id}</span>
                 <span className="text-xs text-muted-foreground">• {patient.age}y / {patient.gender === 'female' ? (bn ? 'মহিলা' : 'Female') : (bn ? 'পুরুষ' : 'Male')}</span>
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5">
@@ -188,7 +188,7 @@ export const ReportTab: React.FC = () => {
             <select
               value={activeReportVisit?.visit_id || ''}
               onChange={(e) => selectReportVisit(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-border/80 bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="px-3 py-1.5 rounded-xl border border-border bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-inner"
             >
               {(clinicalVisits && clinicalVisits.length > 0 ? clinicalVisits : [
                 { visit_id: patient.current_visit_id || 'vis_initial', visit_date: patient.visit_date, visit_type: 'baseline_consultation' }

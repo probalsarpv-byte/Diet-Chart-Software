@@ -34,27 +34,29 @@ export const AssessmentTab: React.FC = () => {
     data
   } = useAssessment();
 
+  const [showMobileSnapshot, setShowMobileSnapshot] = React.useState(false);
+
   return (
     <div className="space-y-6 pb-16">
       {/* Top Action & Status Bar */}
-      <div className="bg-card border rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-subtle flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-subtle">
             <ClipboardList className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-base text-foreground">
+              <h2 className="font-bold text-base text-foreground tracking-tight">
                 {bn ? 'অ্যাডাপ্টিভ ফাংশনাল নিউট্রিশন অ্যাসেসমেন্ট' : 'Adaptive Functional Nutrition Assessment'}
               </h2>
               {data.completed && (
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold text-[10px] flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-semibold text-[10px] flex items-center gap-1 border border-primary/20">
                   <CheckCircle2 className="h-3 w-3" />
                   {bn ? 'সম্পন্ন' : 'Completed'}
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground mt-0.5">
               {bn
                 ? `রোগী: ${patient.name || 'Anonymous'} (${patient.age} বছর, ${patient.gender === 'female' ? 'নারী' : 'পুরুষ'}) • উত্তর প্রদান: ${totalAnsweredCount} টি`
                 : `Patient: ${patient.name || 'Anonymous'} (${patient.age}y, ${patient.gender}) • Answered: ${totalAnsweredCount} fields`}
@@ -63,11 +65,20 @@ export const AssessmentTab: React.FC = () => {
         </div>
 
         {/* Global Action Buttons */}
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+          {/* Mobile Snapshot Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setShowMobileSnapshot(!showMobileSnapshot)}
+            className="lg:hidden px-3 py-1.5 rounded-xl border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 shadow-subtle"
+          >
+            <span>{showMobileSnapshot ? (bn ? 'স্ন্যাপশট লুকান' : 'Hide Snapshot') : (bn ? 'লাইভ স্ন্যাপশট' : 'Live Snapshot')}</span>
+          </button>
+
           <button
             type="button"
             onClick={saveDraft}
-            className="px-3 py-1.5 rounded-xl border bg-card text-xs font-semibold text-foreground hover:bg-muted transition-all flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-1.5 rounded-xl border border-border bg-card text-xs font-semibold text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 shadow-subtle"
           >
             <Save className="h-3.5 w-3.5 text-primary" />
             <span>{bn ? 'ড্রাফট সেভ' : 'Save Draft'}</span>
@@ -80,7 +91,7 @@ export const AssessmentTab: React.FC = () => {
                 resetAssessment();
               }
             }}
-            className="px-3 py-1.5 rounded-xl border border-destructive/20 text-xs font-semibold text-destructive hover:bg-destructive/10 transition-all flex items-center gap-1.5"
+            className="px-3 py-1.5 rounded-xl border border-destructive/30 text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors flex items-center gap-1.5 shadow-2xs"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span>{bn ? 'রিসেট' : 'Reset'}</span>
@@ -88,13 +99,20 @@ export const AssessmentTab: React.FC = () => {
         </div>
       </div>
 
+      {/* Mobile Expandable Snapshot Drawer */}
+      {showMobileSnapshot && (
+        <div className="lg:hidden p-4 rounded-2xl bg-card border border-border shadow-dropdown animate-in fade-in duration-150">
+          <AssessmentRightSnapshot />
+        </div>
+      )}
+
       {/* 3-Column Clinical Layout */}
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         {/* Left Column: Step Navigation & Mode */}
         <AssessmentLeftSidebar />
 
         {/* Center Workspace: Current Step View */}
-        <div className="flex-1 min-w-0 bg-card border rounded-2xl p-5 sm:p-6 shadow-sm w-full">
+        <div className="flex-1 min-w-0 bg-card border border-border rounded-2xl p-5 sm:p-6 shadow-subtle w-full">
           {currentStep === 'step_category' && <StepCategoryPathways />}
           {currentStep === 'step_demographics' && <StepDemographicsVitals />}
           {currentStep === 'step_medical_history' && <StepHistorySafety />}
@@ -106,8 +124,10 @@ export const AssessmentTab: React.FC = () => {
           {currentStep === 'step_review' && <StepAssessmentReview />}
         </div>
 
-        {/* Right Column: Live Clinical Snapshot */}
-        <AssessmentRightSnapshot />
+        {/* Right Column: Live Clinical Snapshot (Desktop) */}
+        <div className="hidden lg:block">
+          <AssessmentRightSnapshot />
+        </div>
       </div>
     </div>
   );

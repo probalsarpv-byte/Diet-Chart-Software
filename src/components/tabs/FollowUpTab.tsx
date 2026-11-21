@@ -318,19 +318,19 @@ export const FollowUpTab: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       {/* ── Sub-Navigation Tabs ─────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 border-b pb-2 overflow-x-auto no-scrollbar">
+      <div className="flex items-center gap-2 border-b border-border pb-3 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveSubTab('schedule')}
-          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl transition ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl transition ${
             activeSubTab === 'schedule'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              ? 'bg-primary text-primary-foreground shadow-subtle'
+              : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
           }`}
         >
           <CalendarClock className="h-4 w-4" />
           <span>{bn ? '১. ফলো-আপ শিডিউল ও অ্যাপয়েন্টমেন্ট' : '1. Schedule & Appointments'}</span>
           {followUpAppointments.length > 0 && (
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-background/20 text-current">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 text-current font-bold">
               {followUpAppointments.length}
             </span>
           )}
@@ -338,25 +338,25 @@ export const FollowUpTab: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('phases_progress')}
-          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl transition ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl transition ${
             activeSubTab === 'phases_progress'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              ? 'bg-primary text-primary-foreground shadow-subtle'
+              : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
           }`}
         >
           <Award className="h-4 w-4" />
           <span>{bn ? '২. ৪-পর্যায়ের কেয়ার প্রোগ্রাম ও লগ' : '2. 4-Phase Program & Logs'}</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-background/20 text-current">
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 text-current font-bold">
             Phase {patient.current_phase}
           </span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('comparison_workspace')}
-          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl transition ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl transition ${
             activeSubTab === 'comparison_workspace'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              ? 'bg-primary text-primary-foreground shadow-subtle'
+              : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
           }`}
         >
           <TrendingUp className="h-4 w-4" />
@@ -365,16 +365,16 @@ export const FollowUpTab: React.FC = () => {
 
         <button
           onClick={() => setActiveSubTab('progress_reports')}
-          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl transition ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl transition ${
             activeSubTab === 'progress_reports'
-              ? 'bg-primary text-primary-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+              ? 'bg-primary text-primary-foreground shadow-subtle'
+              : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
           }`}
         >
           <FileText className="h-4 w-4" />
           <span>{bn ? '৪. তুলনামূলক প্রগ্রেস রিপোর্ট (A4)' : '4. Progress Reports (A4)'}</span>
           {progressReports.length > 0 && (
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-background/20 text-current">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 text-current font-bold">
               {progressReports.length}
             </span>
           )}

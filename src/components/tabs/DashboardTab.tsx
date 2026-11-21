@@ -171,9 +171,9 @@ export const DashboardTab: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       {/* ── Top Header / Quick Welcome Banner ───────────────────────── */}
-      <div className="bg-gradient-to-r from-card via-card to-emerald-500/[0.04] border border-border/80 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-card border border-border rounded-2xl p-6 shadow-subtle flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 text-xs font-semibold mb-2 shadow-2xs">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-semibold mb-2 shadow-2xs">
             <Activity className="h-3.5 w-3.5" />
             <span>{bn ? 'শুদ্ধ ফাংশনাল নিউট্রিশন প্ল্যাটফর্ম • ড্যাশবোর্ড' : 'Shuddho Functional Nutrition • Clinical Hub'}</span>
           </div>
@@ -190,7 +190,7 @@ export const DashboardTab: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2.5">
           <button
             onClick={() => setShowRegisterModal(true)}
-            className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 text-xs font-bold flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+            className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground shadow-subtle text-xs font-bold flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             <UserPlus className="h-4 w-4" />
             <span>{bn ? '+ নতুন রোগী নিবন্ধন' : '+ Register Patient'}</span>
@@ -198,7 +198,7 @@ export const DashboardTab: React.FC = () => {
 
           <button
             onClick={loadDemoPatient}
-            className="px-3.5 py-2 rounded-xl border border-border/80 bg-card hover:bg-accent/80 text-xs font-semibold flex items-center gap-1.5 transition text-foreground shadow-2xs"
+            className="px-3.5 py-2 rounded-xl border border-border bg-card hover:bg-secondary text-xs font-semibold flex items-center gap-1.5 transition-colors text-foreground shadow-subtle"
             title="Load Mrs. Nasreen Akhter demonstration consultation"
           >
             <Sparkles className="h-3.5 w-3.5 text-amber-500" />
@@ -210,111 +210,111 @@ export const DashboardTab: React.FC = () => {
       {/* ── 8 Operational KPI Cards (Zero-Safe / Deterministic) ─────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         {/* KPI 1 */}
-        <div className="bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group">
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'মোট রোগী' : 'Total Patients'}</span>
-            <div className="p-1 rounded-lg bg-blue-500/10 text-blue-500">
+            <div className="p-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
               <Users className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className="text-xl font-extrabold text-foreground font-mono tabular-numbers">{kpis.totalPatients}</div>
+          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.totalPatients}</div>
           <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'নিবন্ধিত' : 'Registered'}</div>
         </div>
 
         {/* KPI 2 */}
-        <div className="bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group">
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'চলতি মাসে' : 'This Month'}</span>
-            <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-500">
+            <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <TrendingUp className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className="text-xl font-extrabold text-foreground font-mono tabular-numbers">{kpis.newThisMonth}</div>
+          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.newThisMonth}</div>
           <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">{bn ? 'নতুন রোগী' : 'New intakes'}</div>
         </div>
 
         {/* KPI 3 */}
-        <div className="bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group">
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'আজকের ভিজিট' : 'Visits Today'}</span>
-            <div className="p-1 rounded-lg bg-purple-500/10 text-purple-500">
+            <div className="p-1 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
               <Stethoscope className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className="text-xl font-extrabold text-foreground font-mono tabular-numbers">{kpis.visitsToday}</div>
+          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.visitsToday}</div>
           <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'পরামর্শ সম্পন্ন' : 'Consultations'}</div>
         </div>
 
         {/* KPI 4 */}
-        <div className={`bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group ${kpis.dueToday > 0 ? 'border-amber-500/50 bg-amber-500/[0.04]' : ''}`}>
+        <div className={`bg-card border rounded-xl p-3.5 shadow-subtle hover:shadow-card transition-all space-y-1 relative overflow-hidden group ${kpis.dueToday > 0 ? 'border-amber-500/40 bg-amber-500/[0.04]' : 'border-border hover:border-primary/30'}`}>
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'আজকের ফলো-আপ' : 'Due Today'}</span>
-            <div className={`p-1 rounded-lg ${kpis.dueToday > 0 ? 'bg-amber-500/15 text-amber-500' : 'bg-muted text-muted-foreground'}`}>
+            <div className={`p-1 rounded-lg ${kpis.dueToday > 0 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-secondary text-muted-foreground'}`}>
               <CalendarCheck className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className={`text-xl font-extrabold font-mono tabular-numbers ${kpis.dueToday > 0 ? 'text-amber-500' : 'text-foreground'}`}>
+          <div className={`text-2xl font-bold font-mono tabular-numbers tracking-tight ${kpis.dueToday > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
             {kpis.dueToday}
           </div>
           <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'শিডিউলড' : 'Appointments'}</div>
         </div>
 
         {/* KPI 5 */}
-        <div className="bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group">
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'আসন্ন ৭ দিন' : 'Next 7 Days'}</span>
-            <div className="p-1 rounded-lg bg-indigo-500/10 text-indigo-500">
+            <div className="p-1 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400">
               <CalendarClock className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className="text-xl font-extrabold text-foreground font-mono tabular-numbers">{kpis.upcoming7Days}</div>
+          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.upcoming7Days}</div>
           <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'শিডিউলভুক্ত' : 'Upcoming'}</div>
         </div>
 
         {/* KPI 6 */}
-        <div className={`bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group ${kpis.overdue > 0 ? 'border-rose-500/50 bg-rose-500/[0.04]' : ''}`}>
+        <div className={`bg-card border rounded-xl p-3.5 shadow-subtle hover:shadow-card transition-all space-y-1 relative overflow-hidden group ${kpis.overdue > 0 ? 'border-rose-500/40 bg-rose-500/[0.04]' : 'border-border hover:border-primary/30'}`}>
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'সময়োত্তীর্ণ' : 'Overdue'}</span>
-            <div className={`p-1 rounded-lg ${kpis.overdue > 0 ? 'bg-rose-500/15 text-rose-500' : 'bg-muted text-muted-foreground'}`}>
+            <div className={`p-1 rounded-lg ${kpis.overdue > 0 ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-secondary text-muted-foreground'}`}>
               <AlertCircle className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className={`text-xl font-extrabold font-mono tabular-numbers ${kpis.overdue > 0 ? 'text-rose-500' : 'text-foreground'}`}>
+          <div className={`text-2xl font-bold font-mono tabular-numbers tracking-tight ${kpis.overdue > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}>
             {kpis.overdue}
           </div>
           <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'রি-শিডিউল প্রয়োজন' : 'Needs attention'}</div>
         </div>
 
         {/* KPI 7 */}
-        <div className="bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group">
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'অপেক্ষমান অ্যাসেসমেন্ট' : 'Pending Asmt'}</span>
-            <div className="p-1 rounded-lg bg-orange-500/10 text-orange-500">
+            <div className="p-1 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400">
               <Clock className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className="text-xl font-extrabold text-foreground font-mono tabular-numbers">{kpis.pendingAssessments}</div>
+          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.pendingAssessments}</div>
           <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'অসম্পূর্ণ' : 'Incomplete'}</div>
         </div>
 
         {/* KPI 8 */}
-        <div className="bg-card border border-border/80 rounded-2xl p-3.5 shadow-sm hover:shadow-card-elevated hover:border-emerald-500/30 transition-all space-y-1 relative overflow-hidden group">
+        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-[11px] font-semibold">{bn ? 'অনুমোদন বাকী' : 'Pending Sign-Off'}</span>
-            <div className="p-1 rounded-lg bg-teal-500/10 text-teal-500">
+            <div className="p-1 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400">
               <FileText className="h-3.5 w-3.5" />
             </div>
           </div>
-          <div className="text-xl font-extrabold text-foreground font-mono tabular-numbers">{kpis.pendingReports}</div>
+          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.pendingReports}</div>
           <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'রিপোর্ট রিভিউ' : 'Awaiting review'}</div>
         </div>
       </div>
 
       {/* ── Empty State Banner (Clean & Zero-Safe) ─────────────────── */}
       {savedPatients.length === 0 && (
-        <div className="bg-gradient-to-br from-card via-card to-emerald-500/[0.04] border-2 border-dashed border-emerald-500/30 rounded-3xl p-8 sm:p-10 text-center shadow-sm space-y-4">
-          <div className="mx-auto w-16 h-16 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
-            <Users className="h-8 w-8" />
+        <div className="bg-card border-2 border-dashed border-border rounded-2xl p-8 sm:p-10 text-center shadow-subtle space-y-4">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center">
+            <Users className="h-7 w-7" />
           </div>
           <div className="max-w-md mx-auto space-y-2">
             <h3 className="text-base sm:text-lg font-bold text-foreground tracking-tight">
@@ -329,14 +329,14 @@ export const DashboardTab: React.FC = () => {
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <button
               onClick={() => setShowRegisterModal(true)}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 transition-all hover:scale-[1.02]"
+              className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-bold text-xs flex items-center gap-2 shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
               <UserPlus className="h-4 w-4" />
               <span>{bn ? '+ নতুন রোগী নিবন্ধন' : '+ Register Patient'}</span>
             </button>
             <button
               onClick={loadDemoPatient}
-              className="px-5 py-2.5 rounded-xl border border-border/80 bg-secondary/80 hover:bg-secondary text-foreground font-semibold text-xs flex items-center gap-2 transition shadow-2xs"
+              className="px-5 py-2.5 rounded-xl border border-border bg-card hover:bg-secondary text-foreground font-semibold text-xs flex items-center gap-2 transition-colors shadow-subtle"
             >
               <Sparkles className="h-4 w-4 text-amber-500" />
               <span>{bn ? 'ডেমো কেস লোড করুন' : 'Load Demo Case'}</span>
@@ -349,7 +349,7 @@ export const DashboardTab: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           onClick={() => setActiveTab('assessment')}
-          className="p-4 rounded-2xl border border-border/80 bg-card hover:bg-accent/40 text-left transition-all hover:scale-[1.01] hover:border-emerald-500/30 flex items-start gap-3.5 shadow-sm group"
+          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
         >
           <div className="p-2.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground border border-primary/20 transition-colors">
             <Stethoscope className="h-5 w-5" />
@@ -366,9 +366,9 @@ export const DashboardTab: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('clinical_intelligence')}
-          className="p-4 rounded-2xl border border-border/80 bg-card hover:bg-accent/40 text-left transition-all hover:scale-[1.01] hover:border-emerald-500/30 flex items-start gap-3.5 shadow-sm group"
+          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
         >
-          <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-500 group-hover:bg-purple-600 group-hover:text-white border border-purple-500/20 transition-colors">
+          <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 group-hover:bg-purple-600 group-hover:text-white border border-purple-500/20 transition-colors">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
@@ -383,9 +383,9 @@ export const DashboardTab: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('diet')}
-          className="p-4 rounded-2xl border border-border/80 bg-card hover:bg-accent/40 text-left transition-all hover:scale-[1.01] hover:border-emerald-500/30 flex items-start gap-3.5 shadow-sm group"
+          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
         >
-          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-500 group-hover:bg-emerald-600 group-hover:text-white border border-emerald-500/20 transition-colors">
+          <div className="p-2.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground border border-primary/20 transition-colors">
             <Utensils className="h-5 w-5" />
           </div>
           <div>
@@ -400,9 +400,9 @@ export const DashboardTab: React.FC = () => {
 
         <button
           onClick={() => setActiveTab('followup')}
-          className="p-4 rounded-2xl border border-border/80 bg-card hover:bg-accent/40 text-left transition-all hover:scale-[1.01] hover:border-emerald-500/30 flex items-start gap-3.5 shadow-sm group"
+          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
         >
-          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 group-hover:bg-blue-600 group-hover:text-white border border-blue-500/20 transition-colors">
+          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white border border-blue-500/20 transition-colors">
             <TrendingUp className="h-5 w-5" />
           </div>
           <div>
@@ -423,8 +423,8 @@ export const DashboardTab: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
           
           {/* Today's Follow-Up Schedule Card */}
-          <div className="bg-card border border-border/80 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all space-y-4">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3.5">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-subtle space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3.5">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20">
                   <CalendarCheck className="h-4 w-4" />
@@ -438,13 +438,13 @@ export const DashboardTab: React.FC = () => {
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
                 {todayAppointments.length} {bn ? 'টি সাক্ষাৎকার' : 'Consultations'}
               </span>
             </div>
 
             {todayAppointments.length === 0 ? (
-              <div className="p-8 text-center rounded-2xl bg-secondary/30 border border-dashed border-border/80 text-muted-foreground space-y-2.5">
+              <div className="p-8 text-center rounded-xl bg-secondary/30 border border-dashed border-border text-muted-foreground space-y-2.5">
                 <Calendar className="h-8 w-8 mx-auto opacity-40 text-muted-foreground" />
                 <div className="text-xs font-medium">
                   {bn ? 'আজকের দিনে কোনো শিডিউলড ফলো-আপ অ্যাপয়েন্টমেন্ট নেই।' : 'No follow-up consultations scheduled for today.'}
@@ -462,14 +462,14 @@ export const DashboardTab: React.FC = () => {
                 {todayAppointments.map(apt => (
                   <div
                     key={apt.appointment_id}
-                    className="p-3.5 rounded-xl border border-border/80 bg-secondary/30 hover:bg-secondary/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition shadow-2xs"
+                    className="p-3.5 rounded-xl border border-border bg-secondary/30 hover:bg-secondary/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors shadow-2xs"
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-foreground">
                           {apt.patient_name || apt.patient_id}
                         </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/25">
                           {apt.scheduled_time || 'Morning'}
                         </span>
                         <span className="text-[10px] text-muted-foreground font-mono">
@@ -484,7 +484,7 @@ export const DashboardTab: React.FC = () => {
                     <div className="flex items-center gap-2 shrink-0">
                       <button
                         onClick={() => handleStartFollowUpForAppointment(apt)}
-                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                        className="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
                       >
                         {bn ? 'ভিজিট শুরু করুন' : 'Start Visit'}
                       </button>
@@ -495,7 +495,7 @@ export const DashboardTab: React.FC = () => {
                           setRescheduleDate(apt.scheduled_date);
                           setRescheduleTime(apt.scheduled_time || '11:00 AM');
                         }}
-                        className="px-2.5 py-1.5 rounded-xl border border-border/80 bg-secondary/80 hover:bg-secondary text-xs font-semibold text-foreground transition shadow-2xs"
+                        className="px-2.5 py-1.5 rounded-xl border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground transition-colors shadow-2xs"
                       >
                         {bn ? 'পুনঃনির্ধারণ' : 'Reschedule'}
                       </button>
@@ -507,7 +507,7 @@ export const DashboardTab: React.FC = () => {
                             alert(bn ? 'অ্যাপয়েন্টমেন্ট বাতিল করা যায়নি: স্টোরেজ সীমা বা ত্রুটি।' : 'Failed to cancel appointment: Storage error or quota exceeded.');
                           }
                         }}
-                        className="px-2 py-1.5 rounded-xl border border-border/80 text-rose-500 hover:bg-rose-500/10 text-xs transition shadow-2xs"
+                        className="px-2 py-1.5 rounded-xl border border-border text-destructive hover:bg-destructive/10 text-xs transition-colors shadow-2xs"
                         title={bn ? 'বাতিল করুন' : 'Cancel appointment'}
                       >
                         <XCircle className="h-4 w-4" />
@@ -520,8 +520,8 @@ export const DashboardTab: React.FC = () => {
           </div>
 
           {/* Searchable Recent Patients Table */}
-          <div className="bg-card border border-border/80 rounded-3xl p-6 shadow-sm hover:shadow-md transition-all space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3.5">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-subtle space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3.5">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20">
                   <Users className="h-4 w-4" />
@@ -543,22 +543,22 @@ export const DashboardTab: React.FC = () => {
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   placeholder={bn ? 'রোগী খুঁজুন...' : 'Search patient...'}
-                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border/80 bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
+                  className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
                 />
               </div>
             </div>
 
             {filteredPatients.length === 0 ? (
-              <div className="p-8 text-center rounded-2xl bg-secondary/30 border border-dashed border-border/80 text-muted-foreground">
+              <div className="p-8 text-center rounded-xl bg-secondary/30 border border-dashed border-border text-muted-foreground">
                 <div className="text-xs font-medium">
                   {bn ? 'কোনো রোগী পাওয়া যায়নি।' : 'No patients match the search criteria.'}
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-border/60">
+              <div className="overflow-x-auto rounded-xl border border-border">
                 <table className="w-full text-xs">
-                  <thead className="bg-secondary/40 text-muted-foreground">
-                    <tr className="border-b border-border/60 text-left">
+                  <thead className="bg-secondary/50 text-muted-foreground">
+                    <tr className="border-b border-border text-left">
                       <th className="py-2.5 px-3 font-semibold">{bn ? 'রোগীর নাম ও আইডি' : 'Patient Name & ID'}</th>
                       <th className="py-2.5 px-3 font-semibold">{bn ? 'বয়স / লিঙ্গ' : 'Age/Gender'}</th>
                       <th className="py-2.5 px-3 font-semibold">{bn ? 'জনসংখ্যা ক্যাটাগরি' : 'Population Group'}</th>
@@ -567,16 +567,16 @@ export const DashboardTab: React.FC = () => {
                       <th className="py-2.5 px-3 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/60">
+                  <tbody className="divide-y divide-border">
                     {filteredPatients.map(p => {
                       const isActive = patient.id === p.patient.id;
                       return (
-                        <tr key={p.patient.id} className="hover:bg-accent/40 transition-colors">
+                        <tr key={p.patient.id} className="hover:bg-secondary/40 transition-colors">
                           <td className="py-3 px-3">
-                            <div className="font-bold text-foreground flex items-center gap-1.5">
+                            <div className="font-bold text-foreground flex items-center gap-1.5 text-sm">
                               <span>{p.patient.name}</span>
                               {isActive && (
-                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/25">
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
                                   {bn ? 'সক্রিয়' : 'Active'}
                                 </span>
                               )}
@@ -587,7 +587,7 @@ export const DashboardTab: React.FC = () => {
                             {p.patient.age > 0 ? `${p.patient.age}y` : bn ? 'অনির্ধারিত' : 'Unrecorded'} • {p.patient.gender}
                           </td>
                           <td className="py-3 px-3">
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium border border-border/60">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium border border-border">
                               {p.patient.population_group || 'adult_standard'}
                             </span>
                           </td>
@@ -600,7 +600,7 @@ export const DashboardTab: React.FC = () => {
                           <td className="py-3 px-3 text-right">
                             <button
                               onClick={() => handleOpenPatient(p.patient.id)}
-                              className="px-2.5 py-1 rounded-lg border border-border/80 bg-secondary/60 hover:bg-secondary text-[11px] font-semibold text-foreground transition shadow-2xs"
+                              className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-secondary text-[11px] font-semibold text-foreground transition-colors shadow-2xs"
                             >
                               {bn ? 'প্রবেশ করুন' : 'Open'}
                             </button>
@@ -629,9 +629,9 @@ export const DashboardTab: React.FC = () => {
         <div className="space-y-6">
           
           {/* Pending Tasks & Clinical Governance Card */}
-          <div className="bg-card border border-border/80 rounded-3xl p-6 shadow-sm space-y-4">
-            <div className="flex items-center gap-2 border-b border-border/60 pb-3.5">
-              <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500 border border-amber-500/20">
+          <div className="bg-card border border-border rounded-2xl p-6 shadow-subtle space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-3.5">
+              <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                 <ShieldAlert className="h-4 w-4" />
               </div>
               <h2 className="font-bold text-sm text-foreground tracking-tight">
@@ -641,17 +641,17 @@ export const DashboardTab: React.FC = () => {
 
             <div className="space-y-3">
               {/* Task 1: Allergy & Medication Reconciliation */}
-              <div className="p-3.5 rounded-2xl border border-border/80 bg-secondary/30 space-y-1.5">
+              <div className="p-3.5 rounded-xl border border-border bg-secondary/30 space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-foreground">
                     {bn ? 'অ্যালার্জি ও ওষুধ রিকনসিলিয়েশন' : 'Allergy & Med Reconciliation'}
                   </span>
                   {patient.allergy_reconciliation_status === 'allergies_confirmed' || patient.allergy_reconciliation_status === 'none_confirmed' ? (
-                    <span className="text-[10px] text-emerald-500 font-bold flex items-center gap-0.5">
+                    <span className="text-[10px] text-primary font-bold flex items-center gap-0.5">
                       <CheckCircle2 className="h-3 w-3" /> {bn ? 'যাচাইকৃত' : 'Reconciled'}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-amber-500 font-bold flex items-center gap-0.5">
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-0.5">
                       <AlertCircle className="h-3 w-3" /> {bn ? 'বাকী' : 'Required'}
                     </span>
                   )}
@@ -664,7 +664,7 @@ export const DashboardTab: React.FC = () => {
               </div>
 
               {/* Task 2: P1 Assessment Completion */}
-              <div className="p-3.5 rounded-2xl border border-border/80 bg-secondary/30 space-y-1.5">
+              <div className="p-3.5 rounded-xl border border-border bg-secondary/30 space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-foreground">
                     {bn ? 'P1 ফাংশনাল অ্যাসেসমেন্ট' : 'P1 Functional Assessment'}
@@ -680,19 +680,19 @@ export const DashboardTab: React.FC = () => {
                 </p>
                 <button
                   onClick={() => setActiveTab('assessment')}
-                  className="w-full mt-1 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold transition"
+                  className="w-full mt-1 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-semibold transition-colors"
                 >
                   {bn ? 'অ্যাসেসমেন্ট চালু করুন' : 'Open Assessment Wizard'}
                 </button>
               </div>
 
               {/* Task 3: Printable Progress Reports */}
-              <div className="p-3.5 rounded-2xl border border-border/80 bg-secondary/30 space-y-1.5">
+              <div className="p-3.5 rounded-xl border border-border bg-secondary/30 space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-foreground">
                     {bn ? 'লংগিটিউডিনাল প্রগ্রেস রিপোর্ট' : 'Progress Report Sign-Off'}
                   </span>
-                  <span className="text-[10px] text-blue-500 font-bold px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
+                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
                     A4 PDF
                   </span>
                 </div>
@@ -703,7 +703,7 @@ export const DashboardTab: React.FC = () => {
                 </p>
                 <button
                   onClick={() => setActiveTab('report')}
-                  className="w-full mt-1 py-1.5 rounded-xl border border-border/80 bg-secondary/60 hover:bg-secondary text-foreground text-[11px] font-semibold transition shadow-2xs"
+                  className="w-full mt-1 py-1.5 rounded-xl border border-border bg-card hover:bg-secondary text-foreground text-[11px] font-semibold transition-colors shadow-2xs"
                 >
                   {bn ? 'রিপোর্ট সেন্টারে যান' : 'Go to Report Center'}
                 </button>
@@ -712,8 +712,8 @@ export const DashboardTab: React.FC = () => {
           </div>
 
           {/* Clinical Safety Protocol Notice */}
-          <div className="p-5 rounded-3xl bg-emerald-500/[0.04] border border-emerald-500/25 space-y-2 shadow-2xs">
-            <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+          <div className="p-5 rounded-2xl bg-primary/[0.04] border border-primary/20 space-y-2 shadow-2xs">
+            <div className="flex items-center gap-2 text-primary font-bold text-xs">
               <ShieldAlert className="h-4 w-4" />
               <span>{bn ? 'ক্লিনিক্যাল নির্দেশনা ও নীতিমালা' : 'Clinical Protocol Notice'}</span>
             </div>
@@ -729,9 +729,9 @@ export const DashboardTab: React.FC = () => {
 
       {/* ── Modal: Register New Patient ────────────────────────────── */}
       {showRegisterModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-card border border-border/80 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3.5">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-dropdown space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3.5">
               <div className="flex items-center gap-2 text-foreground font-bold text-sm tracking-tight">
                 <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
                   <UserPlus className="h-4 w-4" />
@@ -740,7 +740,7 @@ export const DashboardTab: React.FC = () => {
               </div>
               <button
                 onClick={() => setShowRegisterModal(false)}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary text-xs transition font-bold"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary text-xs transition-colors font-bold"
               >
                 ✕
               </button>
@@ -756,8 +756,8 @@ export const DashboardTab: React.FC = () => {
                   required
                   value={newName}
                   onChange={e => setNewName(e.target.value)}
-                  placeholder={bn ? 'উদা: মোছাঃ সালমা খাতুন' : 'e.g. Mrs. Salma Khatun'}
-                  className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                  placeholder={bn ? 'উদা: রহিমা বেগম' : 'e.g. Rahima Begum'}
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
@@ -772,8 +772,8 @@ export const DashboardTab: React.FC = () => {
                     max="120"
                     value={newAge}
                     onChange={e => setNewAge(e.target.value ? Number(e.target.value) : '')}
-                    placeholder="45"
-                    className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none tabular-numbers"
+                    placeholder="40"
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none tabular-numbers"
                   />
                 </div>
                 <div>
@@ -783,7 +783,7 @@ export const DashboardTab: React.FC = () => {
                   <select
                     value={newGender}
                     onChange={e => setNewGender(e.target.value as 'male' | 'female')}
-                    className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                   >
                     <option value="female">{bn ? 'নারী (Female)' : 'Female'}</option>
                     <option value="male">{bn ? 'পুরুষ (Male)' : 'Male'}</option>
@@ -800,7 +800,7 @@ export const DashboardTab: React.FC = () => {
                   value={newPhone}
                   onChange={e => setNewPhone(e.target.value)}
                   placeholder="017XX-XXXXXX"
-                  className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
@@ -813,27 +813,27 @@ export const DashboardTab: React.FC = () => {
                   value={newEmail}
                   onChange={e => setNewEmail(e.target.value)}
                   placeholder="patient@example.com"
-                  className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
-              <div className="p-3 rounded-2xl bg-secondary/40 border border-border/50 text-[11px] text-muted-foreground leading-relaxed">
+              <div className="p-3 rounded-xl bg-secondary/50 border border-border text-[11px] text-muted-foreground leading-relaxed">
                 {bn
                   ? 'নিবন্ধনের পর শারীরিক পরিমাপ (উচ্চতা, ওজন, রক্তচাপ) ক্লিনিক্যাল অ্যাসেসমেন্টে রেকর্ড করা হবে। কোনো পূর্বনির্ধারিত কাল্পনিক মান সংরক্ষণ করা হবে না।'
                   : 'Administrative registration only. Clinical baseline anthropometrics will be entered during Step 1 of the assessment wizard without fabricated values.'}
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/60">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowRegisterModal(false)}
-                  className="px-3.5 py-1.5 rounded-xl border border-border/80 bg-secondary/60 hover:bg-secondary text-xs font-semibold text-foreground transition"
+                  className="px-3.5 py-1.5 rounded-xl border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground transition-colors"
                 >
                   {bn ? 'বাতিল' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 transition-all hover:scale-[1.02]"
+                  className="px-4 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-bold text-xs shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
                 >
                   {bn ? 'নিবন্ধন ও অ্যাসেসমেন্ট শুরু' : 'Register & Start Assessment'}
                 </button>
@@ -845,15 +845,15 @@ export const DashboardTab: React.FC = () => {
 
       {/* ── Modal: Reschedule Appointment ──────────────────────────── */}
       {showRescheduleModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-card border border-border/80 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-border/60 pb-3">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl max-w-sm w-full p-6 shadow-dropdown space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="font-bold text-sm text-foreground tracking-tight">
                 {bn ? 'ফলো-আপ পুনঃনির্ধারণ' : 'Reschedule Follow-Up'}
               </div>
               <button 
                 onClick={() => setShowRescheduleModal(null)} 
-                className="w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary text-xs transition font-bold"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary text-xs transition-colors font-bold"
               >
                 ✕
               </button>
@@ -868,7 +868,7 @@ export const DashboardTab: React.FC = () => {
                   type="date"
                   value={rescheduleDate}
                   onChange={e => setRescheduleDate(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
@@ -881,7 +881,7 @@ export const DashboardTab: React.FC = () => {
                   value={rescheduleTime}
                   onChange={e => setRescheduleTime(e.target.value)}
                   placeholder="11:00 AM"
-                  className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
@@ -894,22 +894,22 @@ export const DashboardTab: React.FC = () => {
                   value={rescheduleReason}
                   onChange={e => setRescheduleReason(e.target.value)}
                   placeholder={bn ? 'রোগীর অনুরোধ বা চিকিৎসকের সময় পরিবর্তন...' : 'Patient request or clinician availability...'}
-                  className="w-full px-3.5 py-2 rounded-xl border border-border/80 bg-background text-foreground focus:ring-2 focus:ring-primary/40 focus:outline-none resize-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none resize-none"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/60">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowRescheduleModal(null)}
-                  className="px-3.5 py-1.5 rounded-xl border border-border/80 bg-secondary/60 hover:bg-secondary text-xs font-semibold text-foreground transition"
+                  className="px-3.5 py-1.5 rounded-xl border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground transition-colors"
                 >
                   {bn ? 'বাতিল' : 'Cancel'}
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmReschedule}
-                  className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-sm shadow-emerald-900/20 ring-1 ring-emerald-500/30 transition-all hover:scale-[1.02]"
+                  className="px-4 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-bold text-xs shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
                 >
                   {bn ? 'নিশ্চিত করুন' : 'Confirm'}
                 </button>

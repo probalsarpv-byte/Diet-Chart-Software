@@ -61,10 +61,12 @@ export const DNITab: React.FC = () => {
     <div className="space-y-6 pb-12">
       
       {/* 1. Medication Selector Grid */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
-          <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
-            <Pill className="h-4 w-4 text-primary" />
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3.5">
+          <div className="flex items-center gap-2.5 text-foreground font-bold text-sm">
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <Pill className="h-4 w-4" />
+            </div>
             <span>{bn ? 'প্রেসক্রিপশন ওষুধ নির্বাচন (Medex & Bangladesh Generic Data)' : 'Active Prescription Medications (Medex BD)'}</span>
           </div>
           <span className="text-xs text-muted-foreground">
@@ -74,7 +76,7 @@ export const DNITab: React.FC = () => {
 
         {/* MediNutrition V5 Fast Search Bar (32,461 Brands, 2,189 Generics) */}
         <div className="relative">
-          <div className="flex items-center gap-2 px-3 py-2 border rounded-xl bg-background focus-within:ring-2 focus-within:ring-primary/40">
+          <div className="flex items-center gap-2 px-3.5 py-2 border border-border rounded-xl bg-background focus-within:ring-2 focus-within:ring-primary/40 shadow-inner">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <input
               type="text"
@@ -97,7 +99,7 @@ export const DNITab: React.FC = () => {
 
           {/* Search Dropdown Results */}
           {searchResults.length > 0 && (
-            <div className="absolute z-20 left-0 right-0 mt-1.5 bg-card border rounded-xl shadow-lg max-h-72 overflow-y-auto p-1.5 space-y-1">
+            <div className="absolute z-20 left-0 right-0 mt-1.5 bg-card border border-border rounded-xl shadow-dropdown max-h-72 overflow-y-auto p-1.5 space-y-1">
               {searchResults.map((res, i) => {
                 const isSelected = patient.active_medications.some(m => 
                   m.toLowerCase() === res.name.toLowerCase() || m.toLowerCase() === res.generic_name.toLowerCase()
@@ -110,34 +112,34 @@ export const DNITab: React.FC = () => {
                       setMedSearchQuery('');
                       setSearchResults([]);
                     }}
-                    className={`p-2.5 rounded-lg border text-left cursor-pointer transition-colors flex items-center justify-between ${
+                    className={`p-2.5 rounded-xl border text-left cursor-pointer transition-colors flex items-center justify-between ${
                       isSelected 
-                        ? 'bg-primary/10 border-primary' 
+                        ? 'bg-primary/10 border-primary shadow-2xs' 
                         : 'hover:bg-muted/60 border-transparent'
                     }`}
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-xs text-foreground">{res.name}</span>
-                        <span className="text-[10px] uppercase font-semibold px-1.5 py-0.2 rounded bg-muted text-muted-foreground">
+                        <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground border border-border/60">
                           {res.type}
                         </span>
                         {res.strength && (
-                          <span className="text-[10px] text-muted-foreground">({res.strength} {res.dosage_form})</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">({res.strength} {res.dosage_form})</span>
                         )}
                       </div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">
-                        <span className="font-medium text-foreground/80">{res.generic_name}</span>
+                        <span className="font-semibold text-foreground/80">{res.generic_name}</span>
                         {res.manufacturer && <span> • {res.manufacturer}</span>}
                       </div>
                       <div className="text-[10px] text-muted-foreground mt-0.5 italic">
                         {bn ? res.clinical_coverage_note_bn : res.clinical_coverage_note_en}
                       </div>
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-1 rounded-md ${
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg shadow-2xs ${
                       isSelected 
                         ? 'bg-primary text-primary-foreground' 
-                        : 'bg-secondary text-secondary-foreground'
+                        : 'bg-secondary text-secondary-foreground border border-border/60'
                     }`}>
                       {isSelected ? (bn ? 'যুক্ত করা আছে' : 'Active') : (bn ? '+ যোগ করুন' : '+ Add')}
                     </span>
@@ -160,22 +162,22 @@ export const DNITab: React.FC = () => {
                 onClick={() => toggleMedication(med.id)}
                 className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
                   isSelected 
-                    ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary/40' 
-                    : 'bg-background hover:bg-secondary/40 text-muted-foreground'
+                    ? 'bg-primary/10 border-primary shadow-subtle ring-1 ring-primary/40' 
+                    : 'bg-card hover:bg-secondary/40 border-border text-muted-foreground'
                 }`}
               >
                 <div>
                   <div className="flex justify-between items-start mb-1">
-                    <span className={`font-semibold text-xs ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                    <span className={`font-bold text-xs ${isSelected ? 'text-primary' : 'text-foreground'}`}>
                       {med.generic_name}
                     </span>
                     <span className={`h-4 w-4 rounded-full flex items-center justify-center text-[10px] ${
-                      isSelected ? 'bg-primary text-white' : 'border border-muted-foreground/30'
+                      isSelected ? 'bg-primary text-primary-foreground font-bold' : 'border border-border'
                     }`}>
                       {isSelected ? '✓' : ''}
                     </span>
                   </div>
-                  <div className="text-[10px] text-muted-foreground mb-1.5 font-medium">
+                  <div className="text-[10px] text-muted-foreground mb-1.5 font-semibold">
                     {med.drug_class}
                   </div>
                   <p className="text-[11px] text-muted-foreground line-clamp-2">
@@ -183,7 +185,7 @@ export const DNITab: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="mt-2 pt-2 border-t border-border/50 text-[10px] text-muted-foreground">
+                <div className="mt-2.5 pt-2 border-t border-border/60 text-[10px] text-muted-foreground">
                   <span className="font-semibold text-foreground">{bn ? 'বাংলাদেশি ব্র্যান্ড:' : 'BD Brands:'} </span>
                   {med.brand_names_bd.slice(0, 4).join(', ')}
                 </div>

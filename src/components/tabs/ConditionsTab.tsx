@@ -65,10 +65,12 @@ export const ConditionsTab: React.FC = () => {
     <div className="space-y-6 pb-12">
       
       {/* 1. Condition Selector Grid */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3">
-          <div className="flex items-center gap-2 text-foreground font-semibold text-sm">
-            <Flame className="h-4 w-4 text-primary" />
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3.5">
+          <div className="flex items-center gap-2.5 text-foreground font-bold text-sm">
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <Flame className="h-4 w-4" />
+            </div>
             <span>{bn ? 'মাল্টি-ডিজিজ ও মেটাবলিক সিন্ড্রোম নির্বাচন' : 'Concurrent Clinical Conditions Selection'}</span>
           </div>
           <span className="text-xs text-muted-foreground">
@@ -86,17 +88,17 @@ export const ConditionsTab: React.FC = () => {
                 onClick={() => toggleCondition(rule.id)}
                 className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
                   isSelected 
-                    ? 'bg-primary/10 border-primary shadow-sm ring-1 ring-primary/40' 
-                    : 'bg-background hover:bg-secondary/40 text-muted-foreground'
+                    ? 'bg-primary/10 border-primary shadow-subtle ring-1 ring-primary/40' 
+                    : 'bg-card hover:bg-secondary/40 border-border text-muted-foreground'
                 }`}
               >
                 <div>
                   <div className="flex justify-between items-start mb-1.5">
-                    <span className={`font-semibold text-xs leading-tight ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+                    <span className={`font-bold text-xs leading-tight ${isSelected ? 'text-primary' : 'text-foreground'}`}>
                       {bn ? rule.name_bn : rule.name_en}
                     </span>
                     <span className={`h-4 w-4 rounded-full flex items-center justify-center text-[10px] ${
-                      isSelected ? 'bg-primary text-white' : 'border border-muted-foreground/30'
+                      isSelected ? 'bg-primary text-primary-foreground font-bold' : 'border border-border'
                     }`}>
                       {isSelected ? '✓' : ''}
                     </span>
@@ -106,9 +108,9 @@ export const ConditionsTab: React.FC = () => {
                   </p>
                 </div>
 
-                <div className="mt-2 pt-2 border-t border-border/50 flex flex-wrap gap-1">
+                <div className="mt-2.5 pt-2 border-t border-border/60 flex flex-wrap gap-1">
                   {rule.redTags.slice(0, 2).map((t, idx) => (
-                    <span key={idx} className="text-[9px] px-1.5 py-0.2 rounded bg-rose-500/10 text-rose-500 border border-rose-500/20">
+                    <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-medium">
                       avoid: {t}
                     </span>
                   ))}
@@ -123,8 +125,8 @@ export const ConditionsTab: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Strictest-Wins Priority Alert */}
-        <div className="lg:col-span-2 bg-secondary/30 border rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-2 text-rose-500 font-semibold text-xs">
+        <div className="lg:col-span-2 bg-secondary/30 border border-border rounded-2xl p-5 space-y-3 shadow-subtle">
+          <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-bold text-xs">
             <ShieldAlert className="h-4 w-4" />
             <span>
               {bn ? 'স্ট্রিক্টেস্ট-উইন্স (Strictest-Wins) ইন্টারসেকশন প্রায়োরিটি নীতি: RED > YELLOW > GREEN' : 'Strictest-Wins Rule Priority: RED > YELLOW > GREEN'}
@@ -138,14 +140,14 @@ export const ConditionsTab: React.FC = () => {
 
           {/* Active Timing Rules */}
           {activeRules.length > 0 && (
-            <div className="pt-2 border-t space-y-2">
-              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+            <div className="pt-2 border-t border-border space-y-2">
+              <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5 text-amber-500" />
                 <span>{bn ? 'রোগ সমন্বিত খাদ্য গ্রহণের সময়বিধি ও প্রোটোকল:' : 'Integrated Meal Timing Protocols:'}</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {activeRules.flatMap(r => r.mealTimingRules).map((rule, idx) => (
-                  <div key={idx} className="p-2.5 rounded-lg border bg-background text-[11px] text-muted-foreground">
+                  <div key={idx} className="p-2.5 rounded-xl border border-border bg-card text-[11px] text-muted-foreground shadow-2xs">
                     {bn ? rule.rule_bn : rule.rule_en}
                   </div>
                 ))}
@@ -155,16 +157,16 @@ export const ConditionsTab: React.FC = () => {
         </div>
 
         {/* Combined Macronutrient Target Guidance */}
-        <div className="bg-card border rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-2 text-foreground font-semibold text-xs border-b pb-2">
+        <div className="bg-card border border-border rounded-2xl p-5 space-y-3 shadow-subtle">
+          <div className="flex items-center gap-2 text-foreground font-bold text-xs border-b border-border pb-2.5">
             <Sparkles className="h-4 w-4 text-emerald-500" />
             <span>{bn ? 'রোগ সমন্বিত ম্যাক্রো অনুপাত' : 'Condition Macro Adjustments'}</span>
           </div>
           <div className="space-y-2 text-xs">
             {activeRules.map(r => (
-              <div key={r.id} className="p-2.5 rounded-lg border bg-background/50 space-y-1">
-                <span className="font-semibold text-foreground">{bn ? r.name_bn : r.name_en}</span>
-                <div className="flex justify-between text-[11px] text-muted-foreground">
+              <div key={r.id} className="p-2.5 rounded-xl border border-border bg-secondary/20 space-y-1 shadow-2xs">
+                <span className="font-bold text-foreground">{bn ? r.name_bn : r.name_en}</span>
+                <div className="flex justify-between text-[11px] text-muted-foreground font-mono tabular-numbers">
                   <span>Carbs: {r.macroAdjustment.carb_pct_range[0]}-{r.macroAdjustment.carb_pct_range[1]}%</span>
                   <span>Protein: {r.macroAdjustment.protein_g_per_kg[0]}-{r.macroAdjustment.protein_g_per_kg[1]} g/kg</span>
                   <span>Fat: {r.macroAdjustment.fat_pct_range[0]}-{r.macroAdjustment.fat_pct_range[1]}%</span>
@@ -177,52 +179,52 @@ export const ConditionsTab: React.FC = () => {
       </div>
 
       {/* 3. Interactive Traffic Light Browser */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-5">
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-5">
         
         {/* Tab Controls & Counts */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
           <div className="flex items-center gap-2">
             <button
               onClick={() => setActiveTrafficTab('GREEN')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-subtle ${
                 activeTrafficTab === 'GREEN'
                   ? 'bg-emerald-600 text-white shadow-md'
-                  : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20'
+                  : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20'
               }`}
             >
               <CheckCircle className="h-4 w-4" />
               <span>{bn ? 'সবুজ: স্বাচ্ছন্দ্যে গ্রহণীয়' : 'Green: Eat Freely'}</span>
-              <span className="ml-1 px-2 py-0.2 rounded-full bg-white/20 text-[10px] font-bold">
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-bold">
                 {trafficLight.green.length}
               </span>
             </button>
 
             <button
               onClick={() => setActiveTrafficTab('YELLOW')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-subtle ${
                 activeTrafficTab === 'YELLOW'
-                  ? 'bg-amber-500 text-white shadow-md'
-                  : 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20'
+                  ? 'bg-amber-600 text-white shadow-md'
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20'
               }`}
             >
               <AlertTriangle className="h-4 w-4" />
               <span>{bn ? 'হলুদ: পরিমিত ও শর্তসাপেক্ষে' : 'Yellow: Conditional'}</span>
-              <span className="ml-1 px-2 py-0.2 rounded-full bg-white/20 text-[10px] font-bold">
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-bold">
                 {trafficLight.yellow.length}
               </span>
             </button>
 
             <button
               onClick={() => setActiveTrafficTab('RED')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition shadow-subtle ${
                 activeTrafficTab === 'RED'
                   ? 'bg-rose-600 text-white shadow-md'
-                  : 'bg-rose-500/10 text-rose-600 hover:bg-rose-500/20'
+                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20 border border-rose-500/20'
               }`}
             >
               <XCircle className="h-4 w-4" />
               <span>{bn ? 'লাল: সম্পূর্ণ বর্জনীয়' : 'Red: Strictly Avoid'}</span>
-              <span className="ml-1 px-2 py-0.2 rounded-full bg-white/20 text-[10px] font-bold">
+              <span className="ml-1 px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-bold">
                 {trafficLight.red.length}
               </span>
             </button>
@@ -236,7 +238,7 @@ export const ConditionsTab: React.FC = () => {
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               placeholder={bn ? 'খাবারের নাম বা ট্যাগ দিয়ে খুঁজুন...' : 'Search by food or tag...'}
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-background border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-background border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/40 text-foreground"
             />
           </div>
         </div>

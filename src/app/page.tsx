@@ -20,9 +20,9 @@ export default function Home() {
   const { activeTab } = usePractice();
 
   return (
-    <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors selection:bg-emerald-500/20 selection:text-emerald-400 relative overflow-x-hidden">
+    <div className="min-h-screen flex flex-col bg-background text-foreground transition-colors selection:bg-primary/20 selection:text-primary relative overflow-x-hidden font-sans">
       {/* Subtle ambient clinical lighting */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[350px] bg-gradient-radial from-emerald-500/[0.04] via-teal-500/[0.01] to-transparent pointer-events-none -z-10 blur-2xl" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1200px] h-[360px] bg-[radial-gradient(ellipse_at_top,_hsl(var(--primary)/0.04),transparent_70%)] pointer-events-none -z-10 blur-2xl" />
       <Header />
       <NavigationTabs />
       <PersistentPatientBar />

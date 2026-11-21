@@ -130,6 +130,29 @@ export const DietChartTab: React.FC = () => {
   const currentFasting = currentDayPlan?.fasting_schedule || weeklyDietPlan?.fasting_schedule;
   const currentAdequacy = currentDayPlan?.nutritional_adequacy || weeklyDietPlan?.nutritional_adequacy;
 
+  // Dynamic fasting schedule formatters (never hard-code 12 PM - 8 PM unless provided in schedule)
+  const fastingScheduleTextEn = useMemo(() => {
+    if (!currentFasting) return '';
+    const start = currentFasting.eating_window_start || currentFasting.first_meal_time;
+    const end = currentFasting.eating_window_end || currentFasting.last_meal_time;
+    const hours = currentFasting.planned_fasting_hours || currentFasting.actual_fasting_hours || 16;
+    if (start && end) {
+      return `${start} – ${end} (${hours}h Fast)`;
+    }
+    return '(Schedule to be set with patient)';
+  }, [currentFasting]);
+
+  const fastingScheduleTextBn = useMemo(() => {
+    if (!currentFasting) return '';
+    const start = currentFasting.eating_window_start || currentFasting.first_meal_time;
+    const end = currentFasting.eating_window_end || currentFasting.last_meal_time;
+    const hours = currentFasting.planned_fasting_hours || currentFasting.actual_fasting_hours || 16;
+    if (start && end) {
+      return `${start} – ${end} (${hours} ঘণ্টা উপবাস)`;
+    }
+    return '(রোগীর সাথে সময় নির্ধারণ সাপেক্ষ)';
+  }, [currentFasting]);
+
   const structureLabels: Record<string, { en: string; bn: string }> = {
     '3_meals': { en: '3 Regular Meals', bn: '৩টি নিয়মিত প্রধান আহার' },
     '3_meals_1_snack': { en: '3 Meals + 1 Snack', bn: '৩টি আহার + ১টি নাস্তা' },
@@ -259,21 +282,21 @@ export const DietChartTab: React.FC = () => {
     <div className="space-y-6 pb-12" data-testid="diet-chart-workspace">
       
       {/* ── Top Clinical Traceability Bar ────────────────────────────────────────── */}
-      <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-3" data-testid="clinical-traceability-bar">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b pb-3">
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-3.5" data-testid="clinical-traceability-bar">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-border pb-3.5">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-subtle">
               <Calendar className="h-5 w-5" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-base font-bold text-foreground">
+                <h1 className="text-base font-bold text-foreground tracking-tight">
                   {patient.name}
                 </h1>
-                <span className="text-xs px-2 py-0.5 rounded-md bg-secondary text-muted-foreground font-mono">
+                <span className="text-xs px-2 py-0.5 rounded-md bg-secondary text-muted-foreground font-mono border border-border">
                   {patient.id}
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded-md bg-primary/15 text-primary font-semibold">
+                <span className="text-xs px-2 py-0.5 rounded-md bg-primary/10 text-primary font-semibold border border-primary/20">
                   {bn ? `পর্যায় ${patient.current_phase || 1}` : `Phase ${patient.current_phase || 1}`}
                 </span>
               </div>
@@ -284,18 +307,18 @@ export const DietChartTab: React.FC = () => {
                 </span>
                 <span>•</span>
                 <span>
-                  <strong>{bn ? 'তারিখ:' : 'Date:'}</strong> {patient.visit_date}
+                  <strong>{bn ? 'তারিখ:' : 'Date:'}</strong> <span className="tabular-numbers">{patient.visit_date}</span>
                 </span>
                 <span>•</span>
                 <span>
                   <strong>{bn ? 'পি২ অবস্থা:' : 'P2 Status:'}</strong>{' '}
                   {p2AnalysisResult?.report?.isApproved ? (
-                    <span className="text-emerald-500 font-semibold inline-flex items-center gap-1">
+                    <span className="text-primary font-semibold inline-flex items-center gap-1">
                       <Check className="h-3 w-3" />
                       {bn ? `অনুমোদিত (${p2AnalysisResult.report.approvedBy})` : `Approved (${p2AnalysisResult.report.approvedBy})`}
                     </span>
                   ) : (
-                    <span className="text-amber-500 font-semibold">
+                    <span className="text-amber-600 dark:text-amber-400 font-semibold">
                       {bn ? 'খসড়া / ড্রাফট' : 'Pending / Draft'}
                     </span>
                   )}
@@ -306,26 +329,26 @@ export const DietChartTab: React.FC = () => {
 
           {/* Target Macros Badge Matrix */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="px-2.5 py-1 rounded-lg border bg-background text-xs">
-              <span className="text-muted-foreground block text-[10px]">{bn ? 'ক্যালোরি লক্ষ্য' : 'Target Cal'}</span>
-              <span className="font-bold text-foreground">{targetKcal} kcal</span>
+            <div className="px-3 py-1.5 rounded-xl border border-border bg-card text-xs shadow-2xs">
+              <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{bn ? 'ক্যালোরি লক্ষ্য' : 'Target Cal'}</span>
+              <span className="font-bold text-foreground font-mono tabular-numbers">{targetKcal} kcal</span>
             </div>
-            <div className="px-2.5 py-1 rounded-lg border bg-background text-xs">
-              <span className="text-muted-foreground block text-[10px]">{bn ? 'প্রোটিন লক্ষ্য' : 'Target Protein'}</span>
-              <span className="font-bold text-emerald-500">{targetProtein}g</span>
+            <div className="px-3 py-1.5 rounded-xl border border-border bg-card text-xs shadow-2xs">
+              <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{bn ? 'প্রোটিন লক্ষ্য' : 'Target Protein'}</span>
+              <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-numbers">{targetProtein}g</span>
             </div>
-            <div className="px-2.5 py-1 rounded-lg border bg-background text-xs">
-              <span className="text-muted-foreground block text-[10px]">{bn ? 'শর্করা লক্ষ্য' : 'Target Carbs'}</span>
-              <span className="font-bold text-blue-500">{targetCarbs}g</span>
+            <div className="px-3 py-1.5 rounded-xl border border-border bg-card text-xs shadow-2xs">
+              <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{bn ? 'শর্করা লক্ষ্য' : 'Target Carbs'}</span>
+              <span className="font-bold text-blue-600 dark:text-blue-400 font-mono tabular-numbers">{targetCarbs}g</span>
             </div>
-            <div className="px-2.5 py-1 rounded-lg border bg-background text-xs">
-              <span className="text-muted-foreground block text-[10px]">{bn ? 'চর্বি লক্ষ্য' : 'Target Fat'}</span>
-              <span className="font-bold text-amber-500">{targetFat}g</span>
+            <div className="px-3 py-1.5 rounded-xl border border-border bg-card text-xs shadow-2xs">
+              <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{bn ? 'চর্বি লক্ষ্য' : 'Target Fat'}</span>
+              <span className="font-bold text-amber-600 dark:text-amber-400 font-mono tabular-numbers">{targetFat}g</span>
             </div>
-            <div className="px-2.5 py-1 rounded-lg border bg-background text-xs">
-              <span className="text-muted-foreground block text-[10px]">{bn ? 'নিরাপত্তা স্থিতি' : 'Safety Status'}</span>
-              <span className={`font-bold uppercase text-[10px] px-1.5 py-0.5 rounded ${
-                hasHardStop ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'
+            <div className="px-3 py-1.5 rounded-xl border border-border bg-card text-xs shadow-2xs">
+              <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{bn ? 'নিরাপত্তা স্থিতি' : 'Safety Status'}</span>
+              <span className={`font-bold uppercase text-[10px] px-2 py-0.5 rounded-md ${
+                hasHardStop ? 'bg-destructive text-destructive-foreground' : 'bg-primary/10 text-primary border border-primary/20'
               }`}>
                 {weeklyDietPlan?.overall_safety_status || clinicalSafetyEvaluation.overallDecision}
               </span>
@@ -552,13 +575,13 @@ export const DietChartTab: React.FC = () => {
                   {currentFasting?.decision_status === 'fasting_contraindicated'
                     ? (bn ? `উপবাস নিষিদ্ধ: ${currentFasting.reasons_bn?.[0] || 'ঝুঁকিপূর্ণ'}` : `Fasting Contraindicated: ${currentFasting.reasons_en?.[0] || 'High Risk'}`)
                     : currentFasting?.decision_status === 'fasting_approved'
-                    ? (bn ? '১৬:৮ উপবাস অনুমোদিত: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : '16:8 Fasting Approved: 12:00 PM – 08:00 PM (16h Fast)')
+                    ? (bn ? `১৬:৮ উপবাস অনুমোদিত: ${fastingScheduleTextBn}` : `16:8 Fasting Approved: ${fastingScheduleTextEn}`)
                     : currentFasting?.decision_status === 'fasting_requires_review'
                     ? (bn ? 'উপবাস চিকিৎসকের রিভিউ প্রয়োজন' : 'Fasting Requires Clinician Review')
                     : currentFasting?.decision_status === 'fasting_proposed_draft'
-                    ? (bn ? '১৬:৮ উপবাস প্রস্তাবিত (খসড়া - চিকিৎসকের অনুমোদন বাকি)' : '16:8 Fasting Proposed (Draft - Clinician Sign-Off Required)')
+                    ? (bn ? `১৬:৮ উপবাস প্রস্তাবিত (খসড়া): ${fastingScheduleTextBn}` : `16:8 Fasting Proposed (Draft): ${fastingScheduleTextEn}`)
                     : (currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8')
-                    ? (bn ? 'উপবাস সক্রিয়: দুপুর ১২:০০ - রাত ০৮:০০ (১৬ ঘণ্টা)' : 'Active 16:8 Window: 12:00 PM – 08:00 PM (16h Fast)')
+                    ? (bn ? `উপবাস সক্রিয়: ${fastingScheduleTextBn}` : `Active 16:8 Window: ${fastingScheduleTextEn}`)
                     : (bn ? 'নিয়মিত আহার (উপবাস পরিহার্য)' : 'Regular Schedule (No Fasting)')}
                 </span>
               </div>
@@ -631,17 +654,17 @@ export const DietChartTab: React.FC = () => {
             {currentStructure === 'intermittent_fasting_16_8' || currentFasting?.is_fasting ? (
               <div 
                 className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-amber-400 via-emerald-500 to-teal-400 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[50%] w-[33.33%]"
-                title="12:00 PM – 08:00 PM (8h Active Eating Window)"
+                title={fastingScheduleTextEn || "Intermittent Fasting Window"}
               >
                 <div className="flex items-center gap-1 px-1 truncate">
                   <Sun className="h-3 w-3 shrink-0 text-amber-950" />
-                  <span className="truncate">{bn ? 'খাবার উইন্ডো (৮ ঘণ্টা)' : 'Eating Window (8h)'}</span>
+                  <span className="truncate">{bn ? (fastingScheduleTextBn || 'খাবার উইন্ডো (৮ ঘণ্টা)') : (fastingScheduleTextEn || 'Eating Window (8h)')}</span>
                 </div>
               </div>
             ) : (
               <div 
                 className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-emerald-500/80 via-teal-400/80 to-emerald-500/80 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[29.16%] w-[58.33%]"
-                title="07:00 AM – 09:00 PM (Regular Intake Schedule)"
+                title="Regular Intake Schedule"
               >
                 <div className="flex items-center gap-1 px-1 truncate">
                   <Sun className="h-3 w-3 shrink-0 text-amber-950" />

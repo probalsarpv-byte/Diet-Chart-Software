@@ -138,11 +138,11 @@ export const PatientsTab: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       {/* ── Top Header / Registry Control Bar ──────────────────────── */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
-            <h1 className="font-bold text-base sm:text-lg text-foreground">
+            <h1 className="font-bold text-base sm:text-lg text-foreground tracking-tight">
               {bn ? 'রোগী নিবন্ধন ও ভিজিট ব্যবস্থাপনা কেন্দ্র' : 'Patient Registry & Visit Management'}
             </h1>
           </div>
@@ -155,7 +155,7 @@ export const PatientsTab: React.FC = () => {
 
         <button
           onClick={() => setShowRegisterModal(true)}
-          className="px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:opacity-90 text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
+          className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
         >
           <UserPlus className="h-4 w-4" />
           <span>{bn ? '+ নতুন রোগী নিবন্ধন' : '+ Register Patient'}</span>
@@ -163,21 +163,23 @@ export const PatientsTab: React.FC = () => {
       </div>
 
       {/* ── Active Patient Overview Card ───────────────────────────── */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
-          <div className="flex items-center gap-2">
-            <UserCheck className="h-5 w-5 text-primary" />
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3.5">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-subtle">
+              <UserCheck className="h-5 w-5 text-primary" />
+            </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-bold text-sm text-foreground">{patient.name}</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold">
+                <h2 className="font-bold text-base text-foreground tracking-tight">{patient.name}</h2>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
                   {bn ? 'সক্রিয় রোগী' : 'Active Patient'}
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium text-foreground">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-mono text-muted-foreground border border-border">
                   ID: {patient.id}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5 tabular-numbers">
                 {patient.age > 0 ? `${patient.age}y` : (bn ? 'বয়স অনির্ধারিত' : 'Age Unrecorded')} • {patient.gender === 'female' ? (bn ? 'নারী' : 'Female') : (bn ? 'পুরুষ' : 'Male')} • {patient.phone || (bn ? 'ফোন নেই' : 'No phone')}
               </p>
             </div>
@@ -186,7 +188,7 @@ export const PatientsTab: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={handleStartNewVisit}
-              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
+              className="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>{bn ? 'নতুন পরামর্শ শুরু করুন' : 'Start New Visit'}</span>
@@ -195,15 +197,15 @@ export const PatientsTab: React.FC = () => {
         </div>
 
         {/* Current Active Visit Banner */}
-        <div className="p-3.5 rounded-xl bg-muted/20 border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+        <div className="p-3.5 rounded-xl bg-secondary/40 border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Calendar className="h-4 w-4 text-primary" />
             <span>
               {bn ? 'বর্তমান সক্রিয় ভিজিট সেশন:' : 'Current Active Visit Session:'}{' '}
-              <strong className="text-foreground">{patient.current_visit_id || currentVisit?.visit_id || 'Initial Session'}</strong>
+              <strong className="text-foreground font-mono">{patient.current_visit_id || currentVisit?.visit_id || 'Initial Session'}</strong>
             </span>
             <span>•</span>
-            <span>{patient.visit_date}</span>
+            <span className="tabular-numbers">{patient.visit_date}</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -230,59 +232,59 @@ export const PatientsTab: React.FC = () => {
           </div>
 
           {patientVisits.length === 0 ? (
-            <div className="p-4 text-center rounded-xl bg-muted/10 border border-dashed text-xs text-muted-foreground">
+            <div className="p-4 text-center rounded-xl bg-secondary/30 border border-dashed border-border text-xs text-muted-foreground">
               {bn ? 'এই রোগীর কোনো পূর্ববর্তী পরামর্শ সংরক্ষিত নেই।' : 'No previous visits logged for this patient.'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-xl border border-border">
               <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-muted-foreground text-left">
-                    <th className="pb-2 font-medium">{bn ? 'ভিজিট আইডি' : 'Visit ID'}</th>
-                    <th className="pb-2 font-medium">{bn ? 'তারিখ' : 'Date'}</th>
-                    <th className="pb-2 font-medium">{bn ? 'পরামর্শের ধরন' : 'Type'}</th>
-                    <th className="pb-2 font-medium">{bn ? 'অবস্থা' : 'Status'}</th>
-                    <th className="pb-2 font-medium">{bn ? 'ক্লিনিক্যাল নোট' : 'Clinical Summary'}</th>
-                    <th className="pb-2 font-medium text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
+                <thead className="bg-secondary/40">
+                  <tr className="border-b border-border text-muted-foreground text-left">
+                    <th className="py-2.5 px-3 font-semibold">{bn ? 'ভিজিট আইডি' : 'Visit ID'}</th>
+                    <th className="py-2.5 px-3 font-semibold">{bn ? 'তারিখ' : 'Date'}</th>
+                    <th className="py-2.5 px-3 font-semibold">{bn ? 'পরামর্শের ধরন' : 'Type'}</th>
+                    <th className="py-2.5 px-3 font-semibold">{bn ? 'অবস্থা' : 'Status'}</th>
+                    <th className="py-2.5 px-3 font-semibold">{bn ? 'ক্লিনিক্যাল নোট' : 'Clinical Summary'}</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/60">
+                <tbody className="divide-y divide-border">
                   {patientVisits.map((v, idx) => {
                     const isCurrent = v.visit_id === patient.current_visit_id || v.id === patient.current_visit_id;
                     return (
-                      <tr key={v.visit_id || v.id || idx} className="hover:bg-muted/10 transition">
-                        <td className="py-2.5 font-semibold text-foreground">
+                      <tr key={v.visit_id || v.id || idx} className="hover:bg-secondary/30 transition-colors">
+                        <td className="py-2.5 px-3 font-semibold text-foreground font-mono">
                           {v.visit_id || v.id}
                           {isCurrent && (
-                            <span className="ml-2 text-[9px] px-1.5 py-0.2 rounded-full bg-primary/15 text-primary font-bold">
+                            <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
                               {bn ? 'সক্রিয়' : 'Current'}
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 text-muted-foreground">{v.visit_date}</td>
-                        <td className="py-2.5">
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium">
+                        <td className="py-2.5 px-3 text-muted-foreground tabular-numbers">{v.visit_date}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium border border-border">
                             {v.visit_type}
                           </span>
                         </td>
-                        <td className="py-2.5">
+                        <td className="py-2.5 px-3">
                           {v.status === 'completed' ? (
-                            <span className="text-emerald-500 font-semibold flex items-center gap-1 text-[11px]">
-                              <CheckCircle2 className="h-3 w-3" /> {bn ? 'সম্পন্ন' : 'Completed'}
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 text-[11px]">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> {bn ? 'সম্পন্ন' : 'Completed'}
                             </span>
                           ) : (
-                            <span className="text-amber-500 font-semibold flex items-center gap-1 text-[11px]">
-                              <Clock className="h-3 w-3" /> {bn ? 'চলমান' : 'In Progress'}
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 text-[11px]">
+                              <Clock className="h-3.5 w-3.5" /> {bn ? 'চলমান' : 'In Progress'}
                             </span>
                           )}
                         </td>
-                        <td className="py-2.5 text-muted-foreground max-w-xs truncate">
+                        <td className="py-2.5 px-3 text-muted-foreground max-w-xs truncate">
                           {v.clinical_notes || v.clinical_summary || v.notes || (bn ? 'নিয়মিত পরামর্শ' : 'Routine consultation')}
                         </td>
-                        <td className="py-2.5 text-right space-x-1">
+                        <td className="py-2.5 px-3 text-right space-x-1">
                           <button
                             onClick={() => handleInspectSnapshot(v)}
-                            className="px-2 py-1 rounded-lg border bg-secondary/40 hover:bg-secondary text-[11px] font-semibold text-foreground transition inline-flex items-center gap-1"
+                            className="px-2 py-1 rounded-lg border border-border bg-card hover:bg-secondary text-[11px] font-semibold text-foreground transition-colors shadow-2xs inline-flex items-center gap-1"
                             title={bn ? 'স্ন্যাপশট দেখুন (রিড-অনলি)' : 'Inspect historical snapshot (read-only)'}
                           >
                             <Eye className="h-3 w-3" />
@@ -291,7 +293,7 @@ export const PatientsTab: React.FC = () => {
 
                           <button
                             onClick={() => handleOpenVisitWorkspace(v)}
-                            className="px-2 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-[11px] font-semibold transition inline-flex items-center gap-1"
+                            className="px-2 py-1 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors shadow-2xs inline-flex items-center gap-1"
                           >
                             <span>{bn ? 'ওয়ার্কস্পেস' : 'Open'}</span>
                           </button>
@@ -307,11 +309,11 @@ export const PatientsTab: React.FC = () => {
       </div>
 
       {/* ── All Saved Patients Directory ───────────────────────────── */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3.5">
           <div className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
-            <h2 className="font-bold text-sm text-foreground">
+            <h2 className="font-bold text-sm text-foreground tracking-tight">
               {bn ? 'সকল রোগীর ডিরেক্টরি' : 'All Patients Directory'}
             </h2>
           </div>
@@ -320,7 +322,7 @@ export const PatientsTab: React.FC = () => {
             <select
               value={selectedPopulationFilter}
               onChange={e => setSelectedPopulationFilter(e.target.value)}
-              className="px-2.5 py-1.5 rounded-xl border bg-background text-xs text-foreground focus:outline-none"
+              className="px-3 py-1.5 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="all">{bn ? 'সকল ক্যাটাগরি' : 'All Population Groups'}</option>
               <option value="adult_standard">{bn ? 'প্রাপ্তবয়স্ক (Adult)' : 'Adult Standard'}</option>
@@ -338,71 +340,71 @@ export const PatientsTab: React.FC = () => {
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 placeholder={bn ? 'নাম, আইডি বা ফোন...' : 'Search by name, ID, phone...'}
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
               />
             </div>
           </div>
         </div>
 
         {filteredPatients.length === 0 ? (
-          <div className="p-8 text-center rounded-xl bg-muted/20 border border-dashed text-muted-foreground">
+          <div className="p-8 text-center rounded-xl bg-secondary/30 border border-dashed border-border text-muted-foreground">
             {bn ? 'কোনো রোগী পাওয়া যায়নি।' : 'No patients registered matching the filter.'}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b text-muted-foreground text-left">
-                  <th className="pb-2 font-medium">{bn ? 'রোগীর বিবরণ' : 'Patient Information'}</th>
-                  <th className="pb-2 font-medium">{bn ? 'যোগাযোগ' : 'Contact'}</th>
-                  <th className="pb-2 font-medium">{bn ? 'ক্লিনিক্যাল গ্রুপ' : 'Clinical Group'}</th>
-                  <th className="pb-2 font-medium">{bn ? 'ফেজ' : 'Phase'}</th>
-                  <th className="pb-2 font-medium">{bn ? 'নিবন্ধনের তারিখ' : 'Registration Date'}</th>
-                  <th className="pb-2 font-medium text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
+              <thead className="bg-secondary/40">
+                <tr className="border-b border-border text-muted-foreground text-left">
+                  <th className="py-2.5 px-3 font-semibold">{bn ? 'রোগীর বিবরণ' : 'Patient Information'}</th>
+                  <th className="py-2.5 px-3 font-semibold">{bn ? 'যোগাযোগ' : 'Contact'}</th>
+                  <th className="py-2.5 px-3 font-semibold">{bn ? 'ক্লিনিক্যাল গ্রুপ' : 'Clinical Group'}</th>
+                  <th className="py-2.5 px-3 font-semibold">{bn ? 'ফেজ' : 'Phase'}</th>
+                  <th className="py-2.5 px-3 font-semibold">{bn ? 'নিবন্ধনের তারিখ' : 'Registration Date'}</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/60">
+              <tbody className="divide-y divide-border">
                 {filteredPatients.map(p => {
                   const isActive = patient.id === p.patient.id;
                   return (
-                    <tr key={p.patient.id} className="hover:bg-muted/10 transition">
-                      <td className="py-3">
-                        <div className="font-bold text-foreground flex items-center gap-1.5">
+                    <tr key={p.patient.id} className="hover:bg-secondary/30 transition-colors">
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-foreground flex items-center gap-1.5 text-sm">
                           <span>{p.patient.name}</span>
                           {isActive && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-primary/15 text-primary font-bold">
+                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
                               {bn ? 'সক্রিয়' : 'Active'}
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] text-muted-foreground">
+                        <div className="text-[10px] text-muted-foreground font-mono mt-0.5 tabular-numbers">
                           ID: {p.patient.id} • {p.patient.age > 0 ? `${p.patient.age}y` : (bn ? 'অনির্ধারিত' : 'Unrecorded')} • {p.patient.gender}
                         </div>
                       </td>
-                      <td className="py-3 text-muted-foreground">
+                      <td className="py-3 px-3 text-muted-foreground">
                         <div>{p.patient.phone || 'N/A'}</div>
                         <div className="text-[10px]">{p.patient.email || ''}</div>
                       </td>
-                      <td className="py-3">
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium text-foreground">
+                      <td className="py-3 px-3">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium text-foreground border border-border">
                           {p.patient.population_group || 'adult_standard'}
                         </span>
                       </td>
-                      <td className="py-3 font-semibold text-primary">
+                      <td className="py-3 px-3 font-semibold text-primary">
                         Phase {p.patient.current_phase || 1}
                       </td>
-                      <td className="py-3 text-muted-foreground">
+                      <td className="py-3 px-3 text-muted-foreground tabular-numbers">
                         {p.patient.visit_date || 'N/A'}
                       </td>
-                      <td className="py-3 text-right">
+                      <td className="py-3 px-3 text-right">
                         <button
                           onClick={() => {
                             loadPatient(p.patient.id);
                           }}
-                          className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition ${
+                          className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all shadow-2xs ${
                             isActive
-                              ? 'bg-primary/10 text-primary border border-primary/20'
-                              : 'border bg-secondary/50 hover:bg-secondary text-foreground'
+                              ? 'bg-primary/10 text-primary border border-primary/30 font-bold'
+                              : 'border border-border bg-card hover:bg-secondary text-foreground'
                           }`}
                         >
                           {isActive ? (bn ? 'বর্তমানে সক্রিয়' : 'Currently Active') : (bn ? 'নির্বাচন করুন' : 'Select Patient')}
@@ -419,17 +421,17 @@ export const PatientsTab: React.FC = () => {
 
       {/* ── Modal: Register New Patient ────────────────────────────── */}
       {showRegisterModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-dropdown space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3.5">
               <div className="flex items-center gap-2 text-foreground font-bold text-sm">
                 <UserPlus className="h-4 w-4 text-primary" />
                 <span>{bn ? 'নতুন রোগী প্রাথমিক নিবন্ধন' : 'Register New Patient'}</span>
               </div>
-              <button onClick={() => setShowRegisterModal(false)} className="text-muted-foreground text-xs">✕</button>
+              <button onClick={() => setShowRegisterModal(false)} className="text-muted-foreground hover:text-foreground text-xs font-bold">✕</button>
             </div>
 
-            <form onSubmit={handleRegisterSubmit} className="space-y-3 text-xs">
+            <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-xs">
               <div>
                 <label className="font-semibold text-foreground block mb-1">
                   {bn ? 'রোগীর পুরো নাম *' : 'Patient Full Name *'}
@@ -440,7 +442,7 @@ export const PatientsTab: React.FC = () => {
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder={bn ? 'উদা: রহিমা বেগম' : 'e.g. Rahima Begum'}
-                  className="w-full px-3 py-2 rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
@@ -456,7 +458,7 @@ export const PatientsTab: React.FC = () => {
                     value={age}
                     onChange={e => setAge(e.target.value ? Number(e.target.value) : '')}
                     placeholder="40"
-                    className="w-full px-3 py-2 rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none tabular-numbers"
                   />
                 </div>
                 <div>
@@ -466,7 +468,7 @@ export const PatientsTab: React.FC = () => {
                   <select
                     value={gender}
                     onChange={e => setGender(e.target.value as 'female' | 'male')}
-                    className="w-full px-3 py-2 rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                    className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                   >
                     <option value="female">{bn ? 'নারী (Female)' : 'Female'}</option>
                     <option value="male">{bn ? 'পুরুষ (Male)' : 'Male'}</option>
@@ -481,7 +483,7 @@ export const PatientsTab: React.FC = () => {
                 <select
                   value={populationGroup}
                   onChange={e => setPopulationGroup(e.target.value as PopulationGroup)}
-                  className="w-full px-3 py-2 rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 >
                   <option value="adult_standard">{bn ? 'সাধারণ প্রাপ্তবয়স্ক (Adult Standard)' : 'Adult Standard'}</option>
                   <option value="pregnancy">{bn ? 'গর্ভকালীন (Pregnancy)' : 'Pregnancy'}</option>
@@ -502,7 +504,7 @@ export const PatientsTab: React.FC = () => {
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
                   placeholder="017XX-XXXXXX"
-                  className="w-full px-3 py-2 rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
@@ -515,21 +517,21 @@ export const PatientsTab: React.FC = () => {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="patient@example.com"
-                  className="w-full px-3 py-2 rounded-xl border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                  className="w-full px-3.5 py-2 rounded-xl border border-border bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
                 <button
                   type="button"
                   onClick={() => setShowRegisterModal(false)}
-                  className="px-3 py-1.5 rounded-xl border bg-secondary/50 text-xs font-semibold"
+                  className="px-3.5 py-1.5 rounded-xl border border-border bg-card hover:bg-secondary text-xs font-semibold text-foreground transition-colors"
                 >
                   {bn ? 'বাতিল' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground font-bold text-xs"
+                  className="px-4 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground font-bold text-xs shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
                 >
                   {bn ? 'নিবন্ধন ও অ্যাসেসমেন্ট শুরু' : 'Register & Start Assessment'}
                 </button>
@@ -541,9 +543,9 @@ export const PatientsTab: React.FC = () => {
 
       {/* ── Modal: Read-Only Historical Snapshot Viewer ────────────── */}
       {selectedSnapshot && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-card border rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl max-w-2xl w-full p-6 shadow-dropdown space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-3">
               <div className="flex items-center gap-2">
                 <Lock className="h-4 w-4 text-primary" />
                 <div>
@@ -557,7 +559,7 @@ export const PatientsTab: React.FC = () => {
               </div>
               <button
                 onClick={() => setSelectedSnapshot(null)}
-                className="text-muted-foreground hover:text-foreground text-xs"
+                className="text-muted-foreground hover:text-foreground text-xs font-bold"
               >
                 ✕
               </button>
@@ -565,7 +567,7 @@ export const PatientsTab: React.FC = () => {
 
             <div className="space-y-4 text-xs">
               {/* Anthropometrics */}
-              <div className="p-3 rounded-xl bg-muted/20 border space-y-2">
+              <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-2">
                 <div className="font-bold text-foreground">
                   {bn ? 'শারীরিক পরিমাপ (Anthropometrics)' : 'Anthropometrics'}
                 </div>
@@ -590,13 +592,13 @@ export const PatientsTab: React.FC = () => {
               </div>
 
               {/* Biomarkers / Key Labs */}
-              <div className="p-3 rounded-xl bg-muted/20 border space-y-2">
+              <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-2">
                 <div className="font-bold text-foreground">
                   {bn ? 'বায়োমার্কার ও ল্যাব পর্যবেক্ষণ' : 'Biomarkers & Laboratory Values'}
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {selectedSnapshot.biomarkers && Object.entries(selectedSnapshot.biomarkers).filter(([_, v]) => v !== undefined).map(([k, v]) => (
-                    <div key={k} className="p-1.5 rounded-lg bg-background border text-[11px]">
+                    <div key={k} className="p-1.5 rounded-lg bg-card border border-border text-[11px]">
                       <span className="text-muted-foreground uppercase">{k}:</span> <strong>{v}</strong>
                     </div>
                   ))}
@@ -604,7 +606,7 @@ export const PatientsTab: React.FC = () => {
               </div>
 
               {/* Ayurvedic State */}
-              <div className="p-3 rounded-xl bg-muted/20 border space-y-2">
+              <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-2">
                 <div className="font-bold text-foreground">
                   {bn ? 'আয়ুর্বেদিক ও পরিপাক অগ্নির অবস্থা' : 'Ayurvedic & Agni Status'}
                 </div>
@@ -621,7 +623,7 @@ export const PatientsTab: React.FC = () => {
               </div>
 
               {/* Clinical Safety & Sign-Off Status */}
-              <div className="p-3 rounded-xl bg-muted/20 border space-y-1">
+              <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-1">
                 <div className="font-bold text-foreground">
                   {bn ? 'নিরাপত্তা পর্যালোচনা ও রিপোর্ট অনুমোদন' : 'Safety & Approval Status'}
                 </div>
@@ -635,10 +637,10 @@ export const PatientsTab: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t">
+            <div className="flex justify-end pt-3 border-t border-border">
               <button
                 onClick={() => setSelectedSnapshot(null)}
-                className="px-4 py-1.5 rounded-xl bg-secondary hover:bg-secondary/80 text-xs font-semibold text-foreground"
+                className="px-4 py-1.5 rounded-xl bg-card border border-border hover:bg-secondary text-xs font-semibold text-foreground transition-colors"
               >
                 {bn ? 'বন্ধ করুন' : 'Close'}
               </button>

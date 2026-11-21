@@ -36,15 +36,15 @@ export const IntakeTab: React.FC = () => {
   return (
     <div className="space-y-6 pb-12 max-w-7xl mx-auto">
       {/* Unified Architecture Informational Banner */}
-      <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="p-4 rounded-2xl bg-primary/5 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-subtle">
         <div className="flex items-start gap-3">
-          <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0 mt-0.5">
+          <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0 mt-0.5">
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div>
             <div className="text-xs font-bold text-foreground flex items-center gap-2">
               <span>{bn ? 'একীভূত ক্লিনিক্যাল ডেটা ব্যবস্থাপনা ও পর্যবেক্ষণ' : 'Unified Clinical Assessment Overview'}</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 font-semibold">
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
                 {bn ? 'একক সত্যের উৎস' : 'Single Source of Truth'}
               </span>
             </div>
@@ -60,7 +60,7 @@ export const IntakeTab: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab('patients')}
-            className="px-3 py-2 text-xs font-bold rounded-xl border bg-card hover:bg-muted text-foreground transition-all flex items-center gap-1.5 shadow-sm"
+            className="px-3 py-2 text-xs font-bold rounded-xl border border-border bg-card hover:bg-secondary text-foreground transition-all flex items-center gap-1.5 shadow-subtle"
           >
             <User className="h-3.5 w-3.5 text-primary" />
             <span>{bn ? 'রোগী রেজিস্ট্রি' : 'Patient Registry'}</span>
@@ -69,7 +69,7 @@ export const IntakeTab: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab('assessment')}
-            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-primary text-primary-foreground hover:opacity-90 transition-all flex items-center gap-1.5 shadow-sm"
+            className="px-3.5 py-2 text-xs font-bold rounded-xl bg-primary text-primary-foreground hover:opacity-90 transition-all flex items-center gap-1.5 shadow-subtle"
           >
             <Stethoscope className="h-3.5 w-3.5" />
             <span>{bn ? 'অ্যাসেসমেন্ট উইজার্ড' : 'Assessment Wizard'}</span>
@@ -80,10 +80,10 @@ export const IntakeTab: React.FC = () => {
 
       {/* Population Precaution Banner */}
       {calculated.population_warning && (
-        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 shadow-subtle">
           <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
-            <div className="text-xs font-bold text-amber-500">
+            <div className="text-xs font-bold text-amber-600 dark:text-amber-400">
               {bn ? 'ক্লিনিক্যাল পপুলেশন সতর্কতা' : 'Clinical Population Precaution'}
             </div>
             <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
@@ -94,10 +94,12 @@ export const IntakeTab: React.FC = () => {
       )}
 
       {/* 1. Patient Demographics & Identification (Read-Only) */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b pb-3">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-primary" />
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
+        <div className="flex items-center justify-between border-b border-border pb-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <User className="h-4 w-4" />
+            </div>
             <span className="text-xs font-bold text-foreground uppercase tracking-wider">
               {bn ? 'রোগীর মৌলিক তথ্য (রেজিস্ট্রি নিয়ন্ত্রিত)' : 'Patient Demographics (Registry Controlled)'}
             </span>
@@ -113,38 +115,38 @@ export const IntakeTab: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-3.5 rounded-xl bg-muted/40 border">
-            <span className="text-[10px] font-semibold text-muted-foreground block">
+          <div className="p-3.5 rounded-xl bg-secondary/40 border border-border shadow-2xs">
+            <span className="text-[10px] font-semibold text-muted-foreground block uppercase">
               {bn ? 'রোগীর পুরো নাম' : 'Full Name'}
             </span>
-            <span className="text-xs font-bold text-foreground mt-1 block truncate">
+            <span className="text-sm font-bold text-foreground mt-1 block truncate">
               {patient.name || (bn ? 'নামহীন রোগী' : 'Unnamed Patient')}
             </span>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-muted/40 border">
-            <span className="text-[10px] font-semibold text-muted-foreground block">
+          <div className="p-3.5 rounded-xl bg-secondary/40 border border-border shadow-2xs">
+            <span className="text-[10px] font-semibold text-muted-foreground block uppercase">
               {bn ? 'বয়স ও জৈবিক লিঙ্গ' : 'Age & Gender'}
             </span>
-            <span className="text-xs font-bold text-foreground mt-1 block capitalize">
+            <span className="text-sm font-bold text-foreground mt-1 block capitalize">
               {patient.age} {bn ? 'বছর' : 'y'} • {patient.gender === 'female' ? (bn ? 'নারী' : 'Female') : (bn ? 'পুরুষ' : 'Male')}
             </span>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-muted/40 border">
-            <span className="text-[10px] font-semibold text-muted-foreground block">
+          <div className="p-3.5 rounded-xl bg-secondary/40 border border-border shadow-2xs">
+            <span className="text-[10px] font-semibold text-muted-foreground block uppercase">
               {bn ? 'পপুলেশন গ্রুপ' : 'Population Group'}
             </span>
-            <span className="text-xs font-bold text-primary mt-1 block uppercase tracking-wide">
+            <span className="text-sm font-bold text-primary mt-1 block uppercase tracking-wide">
               {patient.population_group?.replace(/_/g, ' ')}
             </span>
           </div>
 
-          <div className="p-3.5 rounded-xl bg-muted/40 border">
-            <span className="text-[10px] font-semibold text-muted-foreground block">
+          <div className="p-3.5 rounded-xl bg-secondary/40 border border-border shadow-2xs">
+            <span className="text-[10px] font-semibold text-muted-foreground block uppercase">
               {bn ? 'যোগাযোগ নম্বর' : 'Phone / Contact'}
             </span>
-            <span className="text-xs font-bold text-foreground mt-1 block truncate">
+            <span className="text-sm font-bold text-foreground mt-1 block truncate font-mono">
               {patient.phone || 'N/A'}
             </span>
           </div>
@@ -152,10 +154,12 @@ export const IntakeTab: React.FC = () => {
       </div>
 
       {/* 2. Anthropometrics & Energy Architecture (Read-Only) */}
-      <div className="bg-card border rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between border-b pb-3">
-          <div className="flex items-center gap-2">
-            <Scale className="h-4 w-4 text-primary" />
+      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
+        <div className="flex items-center justify-between border-b border-border pb-3.5">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
+              <Scale className="h-4 w-4" />
+            </div>
             <span className="text-xs font-bold text-foreground uppercase tracking-wider">
               {bn ? 'শারীরিক পরিমাপ ও মেটাবলিক সূচক (ধাপ ২ উইজার্ড নিয়ন্ত্রিত)' : 'Anthropometrics & Metabolic Indices (Step 2 Wizard Controlled)'}
             </span>
@@ -171,57 +175,57 @@ export const IntakeTab: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3 text-center">
-          <div className="p-3 rounded-xl bg-muted/40 border">
+          <div className="p-3 rounded-xl bg-secondary/40 border border-border shadow-2xs">
             <span className="text-[10px] text-muted-foreground font-semibold block">{bn ? 'উচ্চতা' : 'Height'}</span>
-            <span className="text-sm font-bold text-foreground mt-0.5 block">{patient.height_cm || '—'} cm</span>
+            <span className="text-sm font-bold text-foreground mt-0.5 block font-mono tabular-numbers">{patient.height_cm || '—'} cm</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-muted/40 border">
+          <div className="p-3 rounded-xl bg-secondary/40 border border-border shadow-2xs">
             <span className="text-[10px] text-muted-foreground font-semibold block">{bn ? 'ওজন' : 'Weight'}</span>
-            <span className="text-sm font-bold text-foreground mt-0.5 block">{patient.weight_kg || '—'} kg</span>
+            <span className="text-sm font-bold text-foreground mt-0.5 block font-mono tabular-numbers">{patient.weight_kg || '—'} kg</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-muted/40 border">
+          <div className="p-3 rounded-xl bg-secondary/40 border border-border shadow-2xs">
             <span className="text-[10px] text-muted-foreground font-semibold block">{bn ? 'কোমর পরিধি' : 'Waist'}</span>
-            <span className="text-sm font-bold text-foreground mt-0.5 block">{patient.waist_cm || '—'} cm</span>
+            <span className="text-sm font-bold text-foreground mt-0.5 block font-mono tabular-numbers">{patient.waist_cm || '—'} cm</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-muted/40 border">
+          <div className="p-3 rounded-xl bg-secondary/40 border border-border shadow-2xs">
             <span className="text-[10px] text-muted-foreground font-semibold block">BMI (kg/m²)</span>
-            <span className={`text-sm font-bold mt-0.5 block ${calculated.bmi >= 25 ? 'text-rose-500' : 'text-emerald-500'}`}>
+            <span className={`text-sm font-bold mt-0.5 block font-mono tabular-numbers ${calculated.bmi >= 25 ? 'text-rose-500' : 'text-emerald-500'}`}>
               {calculated.bmi || '—'}
             </span>
             <span className="text-[9px] text-muted-foreground">{calculated.bmi_category_en || 'Standard'}</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-muted/40 border">
+          <div className="p-3 rounded-xl bg-secondary/40 border border-border shadow-2xs">
             <span className="text-[10px] text-muted-foreground font-semibold block">WHtR</span>
-            <span className={`text-sm font-bold mt-0.5 block ${calculated.whtr >= 0.5 ? 'text-amber-500' : 'text-emerald-500'}`}>
+            <span className={`text-sm font-bold mt-0.5 block font-mono tabular-numbers ${calculated.whtr >= 0.5 ? 'text-amber-500' : 'text-emerald-500'}`}>
               {calculated.whtr || '—'}
             </span>
             <span className="text-[9px] text-muted-foreground">{calculated.whtr >= 0.5 ? 'Central Risk' : 'Healthy'}</span>
           </div>
 
-          <div className="p-3 rounded-xl bg-muted/40 border">
+          <div className="p-3 rounded-xl bg-secondary/40 border border-border shadow-2xs">
             <span className="text-[10px] text-muted-foreground font-semibold block">{bn ? 'টার্গেট ক্যালোরি' : 'Target Calories'}</span>
-            <span className="text-sm font-bold text-primary mt-0.5 block">{calculated.target_calories || '—'} kcal</span>
-            <span className="text-[9px] text-muted-foreground">BMR: {calculated.bmr} kcal</span>
+            <span className="text-sm font-bold text-primary mt-0.5 block font-mono tabular-numbers">{calculated.target_calories || '—'} kcal</span>
+            <span className="text-[9px] text-muted-foreground font-mono">BMR: {calculated.bmr} kcal</span>
           </div>
         </div>
 
         {/* Macro Distribution Badges */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-          <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-between">
+          <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex items-center justify-between shadow-2xs">
             <span className="text-xs font-semibold text-foreground">{bn ? 'প্রোটিন বরাদ্দ' : 'Target Protein'}</span>
-            <span className="text-xs font-bold text-emerald-600">{calculated.target_protein_g} gm ({Math.round((calculated.target_protein_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 font-mono tabular-numbers">{calculated.target_protein_g} gm ({Math.round((calculated.target_protein_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
           </div>
-          <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20 flex items-center justify-between">
+          <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/20 flex items-center justify-between shadow-2xs">
             <span className="text-xs font-semibold text-foreground">{bn ? 'শর্করা বরাদ্দ' : 'Target Carbs'}</span>
-            <span className="text-xs font-bold text-blue-600">{calculated.target_carbs_g} gm ({Math.round((calculated.target_carbs_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
+            <span className="text-xs font-bold text-blue-600 dark:text-blue-400 font-mono tabular-numbers">{calculated.target_carbs_g} gm ({Math.round((calculated.target_carbs_g * 4 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
           </div>
-          <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-center justify-between">
+          <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 flex items-center justify-between shadow-2xs">
             <span className="text-xs font-semibold text-foreground">{bn ? 'স্নেহ বরাদ্দ' : 'Target Fat'}</span>
-            <span className="text-xs font-bold text-amber-600">{calculated.target_fat_g} gm ({Math.round((calculated.target_fat_g * 9 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
+            <span className="text-xs font-bold text-amber-600 dark:text-amber-400 font-mono tabular-numbers">{calculated.target_fat_g} gm ({Math.round((calculated.target_fat_g * 9 / Math.max(1, calculated.target_calories)) * 100)}%)</span>
           </div>
         </div>
       </div>

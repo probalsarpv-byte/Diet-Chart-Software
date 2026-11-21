@@ -124,7 +124,7 @@ export const NavigationTabs: React.FC = () => {
   const isSecondaryActive = ['intake', 'conditions', 'dni'].includes(activeTab);
 
   return (
-    <div className="border-b border-border/80 bg-card/90 backdrop-blur-xl px-4 lg:px-8 overflow-x-auto no-scrollbar no-print shadow-[0_1px_2px_0_rgba(0,0,0,0.03)]">
+    <div className="border-b border-border bg-card/90 backdrop-blur-md px-4 lg:px-8 overflow-x-auto no-scrollbar no-print shadow-subtle">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-1 sm:gap-2">
         
         {/* 7 Primary Navigation Tabs */}
@@ -137,21 +137,21 @@ export const NavigationTabs: React.FC = () => {
                 key={tab.id}
                 data-testid={`nav-tab-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
-                className={`relative flex items-center gap-2 px-3 py-3 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition-all rounded-t-lg ${
+                className={`relative flex items-center gap-2 px-3.5 py-3 text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap transition-colors rounded-t-lg ${
                   isActive 
-                    ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/[0.05]' 
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/40 hover:border-border/80'
+                    ? 'border-primary text-primary font-bold bg-primary/[0.05]' 
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/50'
                 }`}
               >
-                <Icon className={`h-4 w-4 transition-colors ${isActive ? 'text-emerald-500' : 'text-muted-foreground'}`} />
+                <Icon className={`h-4 w-4 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
                 <span className="tracking-tight">{language === 'bn' ? tab.label_bn : tab.label_en}</span>
                 {tab.badge && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border border-current/20 shadow-2xs tabular-numbers ${tab.badgeColor}`}>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border border-current/20 tabular-numbers ${tab.badgeColor}`}>
                     {tab.badge}
                   </span>
                 )}
                 {isActive && (
-                  <span className="absolute bottom-[-2px] left-1/2 -translate-x-1/2 w-6 h-[2px] bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                  <span className="absolute bottom-[-2px] left-1/2 -translate-x-1/2 w-8 h-[2px] bg-primary rounded-full" />
                 )}
               </button>
             );
@@ -163,20 +163,20 @@ export const NavigationTabs: React.FC = () => {
           <button
             data-testid="nav-tools-menu"
             onClick={() => setShowSecondaryMenu(!showSecondaryMenu)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all hover:scale-[1.02] shadow-2xs ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all hover:scale-[1.02] shadow-subtle ${
               isSecondaryActive 
-                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 font-bold' 
-                : 'bg-secondary/60 hover:bg-secondary text-muted-foreground hover:text-foreground border-border/80'
+                ? 'bg-primary/10 border-primary/30 text-primary font-bold' 
+                : 'bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground border-border'
             }`}
           >
             <span>{language === 'bn' ? 'অতিরিক্ত টুলস' : 'Advanced Tools'}</span>
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${showSecondaryMenu ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-150 ${showSecondaryMenu ? 'rotate-180' : ''}`} />
           </button>
 
           {showSecondaryMenu && (
             <div 
               onMouseLeave={() => setShowSecondaryMenu(false)}
-              className="absolute right-0 top-full mt-1.5 w-68 bg-card/95 backdrop-blur-2xl border border-border/80 rounded-2xl shadow-2xl p-2 z-50 space-y-1.5 divide-y divide-border/60 animate-in fade-in zoom-in-95 duration-150"
+              className="absolute right-0 top-full mt-1.5 w-68 bg-card border border-border rounded-xl shadow-dropdown p-2 z-50 space-y-1.5 divide-y divide-border"
             >
               <div className="text-[10px] font-bold text-muted-foreground uppercase px-2.5 py-1 tracking-wider">
                 {language === 'bn' ? 'সাপোর্টিং ক্লিনিক্যাল মডিউল' : 'Supporting Clinical Modules'}
@@ -194,8 +194,8 @@ export const NavigationTabs: React.FC = () => {
                         setActiveTab(tab.id);
                         setShowSecondaryMenu(false);
                       }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all ${
-                        isActive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold' : 'hover:bg-accent text-foreground'
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors ${
+                        isActive ? 'bg-primary/10 text-primary font-bold' : 'hover:bg-secondary text-foreground'
                       }`}
                     >
                       <div className="flex items-center gap-2.5">
