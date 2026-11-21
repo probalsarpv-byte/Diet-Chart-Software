@@ -122,12 +122,12 @@ async function runStep03BrowserE2E() {
     const emptyBanner = page.locator('text=/No Patients Registered Yet|প্র্যাকটিসে কোনো রোগী নিবন্ধিত নেই/');
     assert((await emptyBanner.count()) > 0, 'Zero-safe Empty Practice hero card is displayed');
 
-    // Verify all 8 KPI cards show 0
-    const kpiCards = page.locator('.grid.grid-cols-2.sm\\:grid-cols-4.lg\\:grid-cols-8 > div');
+    // Verify all 4 executive KPI cards show 0 (redesigned with max 4 cards per row)
+    const kpiCards = page.locator('.grid.grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-4 > div');
     const kpiCount = await kpiCards.count();
-    assert(kpiCount === 8, `Exactly 8 KPI cards rendered (found: ${kpiCount})`);
+    assert(kpiCount === 4, `4 executive KPI cards rendered (found: ${kpiCount})`);
 
-    const firstKpiText = await kpiCards.first().locator('.text-xl.font-extrabold').textContent();
+    const firstKpiText = await kpiCards.first().locator('.text-3xl.font-extrabold, .text-xl.font-extrabold').textContent();
     assert(firstKpiText?.trim() === '0', `Total Patients KPI is 0 (actual: ${firstKpiText?.trim()})`);
 
     // -------------------------------------------------------------------
@@ -171,7 +171,7 @@ async function runStep03BrowserE2E() {
     assert((await activePatientBadge.count()) > 0, 'Mrs. Nasreen Akhter demo case loaded successfully');
 
     // Verify KPIs updated dynamically
-    const updatedTotalPatients = await kpiCards.first().locator('.text-xl.font-extrabold').textContent();
+    const updatedTotalPatients = await kpiCards.first().locator('.text-3xl.font-extrabold, .text-xl.font-extrabold').textContent();
     const totalNum = parseInt(updatedTotalPatients?.trim() || '0', 10);
     assert(totalNum >= 1, `Total Patients KPI dynamically updated to >= 1 (actual: ${totalNum})`);
 
@@ -319,8 +319,8 @@ async function runStep03BrowserE2E() {
     await returnDashboardBtn.click();
     await page.waitForTimeout(400);
 
-    const reloadedKpis = page.locator('.grid.grid-cols-2.sm\\:grid-cols-4.lg\\:grid-cols-8 > div');
-    const totalAfterReload = await reloadedKpis.first().locator('.text-xl.font-extrabold').textContent();
+    const reloadedKpis = page.locator('.grid.grid-cols-1.sm\\:grid-cols-2.lg\\:grid-cols-4 > div');
+    const totalAfterReload = await reloadedKpis.first().locator('.text-3xl.font-extrabold, .text-xl.font-extrabold').textContent();
     assert(parseInt(totalAfterReload?.trim() || '0', 10) >= 1, `KPIs persisted across reload without data loss (count: ${totalAfterReload?.trim()})`);
 
     // -------------------------------------------------------------------
@@ -368,7 +368,7 @@ async function runStep03BrowserE2E() {
     await page.waitForTimeout(400);
 
     // 5. Locate Patient B's appointment card on Dashboard and click Start Visit
-    const patientBCard = page.locator('div.border.rounded-xl').filter({ hasText: 'Tariqul Islam' }).first();
+    const patientBCard = page.locator('[data-testid="appointment-card"], div.border.rounded-xl:has(button:has-text("Start Visit")), div.border.rounded-xl:has(button:has-text("ভিজিট শুরু করুন"))').filter({ hasText: 'Tariqul Islam' }).first();
     assert((await patientBCard.count()) > 0, 'Patient B appointment card visible on Dashboard');
 
     const startVisitFromDashBtn = patientBCard.locator('button:has-text("ভিজিট শুরু করুন"), button:has-text("Start Visit")').first();

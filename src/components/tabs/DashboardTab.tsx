@@ -207,106 +207,114 @@ export const DashboardTab: React.FC = () => {
         </div>
       </div>
 
-      {/* ── 8 Operational KPI Cards (Zero-Safe / Deterministic) ─────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-        {/* KPI 1 */}
-        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
+      {/* ── 4 Executive Clinical KPI Cards (Zero-Safe / Monospace Numbers) ─────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+        {/* KPI 1: Active Census & Inflow */}
+        <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all flex flex-col justify-between space-y-3 group">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'মোট রোগী' : 'Total Patients'}</span>
-            <div className="p-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
-              <Users className="h-3.5 w-3.5" />
+            <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
+              {bn ? 'মোট নিবন্ধিত রোগী' : 'Active Patient Census'}
+            </span>
+            <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 group-hover:scale-105 transition-transform">
+              <Users className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.totalPatients}</div>
-          <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'নিবন্ধিত' : 'Registered'}</div>
+          <div className="space-y-1">
+            <div className="text-3xl font-extrabold text-foreground font-mono tabular-numbers tracking-tight">
+              {kpis.totalPatients}
+            </div>
+            <div className="flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-bold">
+                +{kpis.newThisMonth} {bn ? 'চলতি মাসে' : 'this month'}
+              </span>
+              <span className="text-muted-foreground text-[11px]">{bn ? 'নতুন রোগী নিবন্ধন' : 'intake growth'}</span>
+            </div>
+          </div>
         </div>
 
-        {/* KPI 2 */}
-        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
+        {/* KPI 2: Today's Clinical Consultations */}
+        <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all flex flex-col justify-between space-y-3 group">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'চলতি মাসে' : 'This Month'}</span>
-            <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <TrendingUp className="h-3.5 w-3.5" />
+            <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
+              {bn ? 'আজকের ক্লিনিক্যাল ভিজিট' : "Today's Consultations"}
+            </span>
+            <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 group-hover:scale-105 transition-transform">
+              <Stethoscope className="h-4 w-4" />
             </div>
           </div>
-          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.newThisMonth}</div>
-          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">{bn ? 'নতুন রোগী' : 'New intakes'}</div>
+          <div className="space-y-1">
+            <div className="text-3xl font-extrabold text-foreground font-mono tabular-numbers tracking-tight">
+              {kpis.visitsToday}
+            </div>
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                kpis.dueToday > 0 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30' : 'bg-secondary text-muted-foreground'
+              }`}>
+                {kpis.dueToday} {bn ? 'ফলো-আপ শিডিউলড' : 'due today'}
+              </span>
+              <span className="text-muted-foreground text-[11px]">{bn ? 'এশিয়া/ঢাকা' : 'Asia/Dhaka'}</span>
+            </div>
+          </div>
         </div>
 
-        {/* KPI 3 */}
-        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
+        {/* KPI 3: Follow-Up & Attention Queue */}
+        <div className={`bg-card border rounded-2xl p-5 shadow-subtle hover:shadow-card transition-all flex flex-col justify-between space-y-3 group ${
+          kpis.overdue > 0 ? 'border-rose-500/40 bg-rose-500/[0.03]' : 'border-border hover:border-primary/30'
+        }`}>
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'আজকের ভিজিট' : 'Visits Today'}</span>
-            <div className="p-1 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
-              <Stethoscope className="h-3.5 w-3.5" />
+            <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
+              {bn ? 'ফলো-আপ মনোযোগ কিউ' : 'Follow-Up Queue'}
+            </span>
+            <div className={`p-2.5 rounded-xl group-hover:scale-105 transition-transform ${
+              kpis.overdue > 0 
+                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30' 
+                : 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20'
+            }`}>
+              {kpis.overdue > 0 ? <AlertCircle className="h-4 w-4" /> : <CalendarClock className="h-4 w-4" />}
             </div>
           </div>
-          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.visitsToday}</div>
-          <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'পরামর্শ সম্পন্ন' : 'Consultations'}</div>
+          <div className="space-y-1">
+            <div className={`text-3xl font-extrabold font-mono tabular-numbers tracking-tight ${
+              kpis.overdue > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'
+            }`}>
+              {kpis.overdue}
+            </div>
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                kpis.overdue > 0 ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300' : 'bg-secondary text-muted-foreground'
+              }`}>
+                {kpis.overdue > 0 ? (bn ? 'সময়োত্তীর্ণ ফলো-আপ' : 'Overdue visits') : (bn ? 'সময়মতো' : 'On schedule')}
+              </span>
+              <span className="text-muted-foreground text-[11px]">
+                {kpis.upcoming7Days} {bn ? 'আগামী ৭ দিনে' : 'in next 7d'}
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* KPI 4 */}
-        <div className={`bg-card border rounded-xl p-3.5 shadow-subtle hover:shadow-card transition-all space-y-1 relative overflow-hidden group ${kpis.dueToday > 0 ? 'border-amber-500/40 bg-amber-500/[0.04]' : 'border-border hover:border-primary/30'}`}>
+        {/* KPI 4: Governance & Quality Gate */}
+        <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all flex flex-col justify-between space-y-3 group">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'আজকের ফলো-আপ' : 'Due Today'}</span>
-            <div className={`p-1 rounded-lg ${kpis.dueToday > 0 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-secondary text-muted-foreground'}`}>
-              <CalendarCheck className="h-3.5 w-3.5" />
+            <span className="text-xs font-semibold tracking-wide uppercase text-muted-foreground">
+              {bn ? 'ক্লিনিক্যাল কোয়ালিটি গেট' : 'Quality & Sign-Off Gate'}
+            </span>
+            <div className="p-2.5 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 group-hover:scale-105 transition-transform">
+              <FileText className="h-4 w-4" />
             </div>
           </div>
-          <div className={`text-2xl font-bold font-mono tabular-numbers tracking-tight ${kpis.dueToday > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'}`}>
-            {kpis.dueToday}
-          </div>
-          <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'শিডিউলড' : 'Appointments'}</div>
-        </div>
-
-        {/* KPI 5 */}
-        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'আসন্ন ৭ দিন' : 'Next 7 Days'}</span>
-            <div className="p-1 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400">
-              <CalendarClock className="h-3.5 w-3.5" />
+          <div className="space-y-1">
+            <div className="text-3xl font-extrabold text-foreground font-mono tabular-numbers tracking-tight">
+              {kpis.pendingAssessments}
+            </div>
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 text-[11px] font-bold">
+                {kpis.pendingAssessments} {bn ? 'অসম্পূর্ণ' : 'pending asmt'}
+              </span>
+              <span className="text-muted-foreground text-[11px]">
+                {kpis.pendingReports} {bn ? 'রিভিউ বাকী' : 'sign-off req.'}
+              </span>
             </div>
           </div>
-          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.upcoming7Days}</div>
-          <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'শিডিউলভুক্ত' : 'Upcoming'}</div>
-        </div>
-
-        {/* KPI 6 */}
-        <div className={`bg-card border rounded-xl p-3.5 shadow-subtle hover:shadow-card transition-all space-y-1 relative overflow-hidden group ${kpis.overdue > 0 ? 'border-rose-500/40 bg-rose-500/[0.04]' : 'border-border hover:border-primary/30'}`}>
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'সময়োত্তীর্ণ' : 'Overdue'}</span>
-            <div className={`p-1 rounded-lg ${kpis.overdue > 0 ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400' : 'bg-secondary text-muted-foreground'}`}>
-              <AlertCircle className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className={`text-2xl font-bold font-mono tabular-numbers tracking-tight ${kpis.overdue > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}>
-            {kpis.overdue}
-          </div>
-          <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'রি-শিডিউল প্রয়োজন' : 'Needs attention'}</div>
-        </div>
-
-        {/* KPI 7 */}
-        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'অপেক্ষমান অ্যাসেসমেন্ট' : 'Pending Asmt'}</span>
-            <div className="p-1 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400">
-              <Clock className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.pendingAssessments}</div>
-          <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'অসম্পূর্ণ' : 'Incomplete'}</div>
-        </div>
-
-        {/* KPI 8 */}
-        <div className="bg-card border border-border rounded-xl p-3.5 shadow-subtle hover:shadow-card hover:border-primary/30 transition-all space-y-1 relative overflow-hidden group">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold">{bn ? 'অনুমোদন বাকী' : 'Pending Sign-Off'}</span>
-            <div className="p-1 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400">
-              <FileText className="h-3.5 w-3.5" />
-            </div>
-          </div>
-          <div className="text-2xl font-bold text-foreground font-mono tabular-numbers tracking-tight">{kpis.pendingReports}</div>
-          <div className="text-[10px] text-muted-foreground font-medium">{bn ? 'রিপোর্ট রিভিউ' : 'Awaiting review'}</div>
         </div>
       </div>
 
@@ -345,72 +353,106 @@ export const DashboardTab: React.FC = () => {
         </div>
       )}
 
-      {/* ── Quick Action Launcher ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* ── 6 Clinical Quick Action Launchers ──────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <button
           onClick={() => setActiveTab('assessment')}
-          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
+          className="p-4 rounded-2xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex flex-col justify-between gap-3 shadow-subtle group hover:scale-[1.02] active:scale-[0.98]"
         >
-          <div className="p-2.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground border border-primary/20 transition-colors">
+          <div className="p-2.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground border border-primary/20 transition-colors w-fit">
             <Stethoscope className="h-5 w-5" />
           </div>
           <div>
             <div className="text-xs font-bold text-foreground tracking-tight">
-              {bn ? 'ক্লিনিক্যাল অ্যাসেসমেন্ট' : 'Start Assessment'}
+              {bn ? 'ক্লিনিক্যাল অ্যাসেসমেন্ট' : 'Assessment'}
             </div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              {bn ? '১৪-ডোমেন ও ৭ দিনের FFQ' : 'P1 9-Step adaptive wizard'}
+            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+              {bn ? '১৪ ডোমেন ও FFQ' : '9-Step adaptive wizard'}
             </div>
           </div>
         </button>
 
         <button
           onClick={() => setActiveTab('clinical_intelligence')}
-          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
+          className="p-4 rounded-2xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex flex-col justify-between gap-3 shadow-subtle group hover:scale-[1.02] active:scale-[0.98]"
         >
-          <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 group-hover:bg-purple-600 group-hover:text-white border border-purple-500/20 transition-colors">
+          <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 group-hover:bg-purple-600 group-hover:text-white border border-purple-500/20 transition-colors w-fit">
             <Sparkles className="h-5 w-5" />
           </div>
           <div>
             <div className="text-xs font-bold text-foreground tracking-tight">
               {bn ? 'রুট-কজ ইন্টেলিজেন্স' : 'Root-Cause Matrix'}
             </div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              {bn ? 'P2 ৫-স্তরীয় রোগনির্ণয়' : 'Hypotheses & diagnostic map'}
+            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+              {bn ? 'P2 ৫-স্তরীয় রোগনির্ণয়' : 'Hypotheses map'}
             </div>
           </div>
         </button>
 
         <button
           onClick={() => setActiveTab('diet')}
-          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
+          className="p-4 rounded-2xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex flex-col justify-between gap-3 shadow-subtle group hover:scale-[1.02] active:scale-[0.98]"
         >
-          <div className="p-2.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground border border-primary/20 transition-colors">
+          <div className="p-2.5 rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground border border-primary/20 transition-colors w-fit">
             <Utensils className="h-5 w-5" />
           </div>
           <div>
             <div className="text-xs font-bold text-foreground tracking-tight">
-              {bn ? 'অটো-স্কেলড ডায়েট চার্ট' : 'Scaled Diet Chart'}
+              {bn ? 'অটো-স্কেলড ডায়েট' : 'Diet Planner'}
             </div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              {bn ? 'ট্রাফিক লাইট ও পরিমাপ' : 'Macronutrients & exchanges'}
+            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+              {bn ? '৭-দিনের মিল প্ল্যানার' : '7-Day meal rotation'}
             </div>
           </div>
         </button>
 
         <button
           onClick={() => setActiveTab('followup')}
-          className="p-4 rounded-xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex items-start gap-3.5 shadow-subtle group"
+          className="p-4 rounded-2xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex flex-col justify-between gap-3 shadow-subtle group hover:scale-[1.02] active:scale-[0.98]"
         >
-          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white border border-blue-500/20 transition-colors">
+          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:bg-blue-600 group-hover:text-white border border-blue-500/20 transition-colors w-fit">
             <TrendingUp className="h-5 w-5" />
           </div>
           <div>
             <div className="text-xs font-bold text-foreground tracking-tight">
-              {bn ? 'ফলো-আপ ও অগ্রগতি' : 'Follow-Up Tracking'}
+              {bn ? 'ফলো-আপ ও অগ্রগতি' : 'Follow-Up'}
             </div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              {bn ? 'লংগিটিউডিনাল অ্যানালাইসিস' : 'Comparison & scheduling'}
+            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+              {bn ? 'লংগিটিউডিনাল ট্র্যাকিং' : 'Longitudinal analytics'}
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('patients')}
+          className="p-4 rounded-2xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex flex-col justify-between gap-3 shadow-subtle group hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 group-hover:bg-emerald-600 group-hover:text-white border border-emerald-500/20 transition-colors w-fit">
+            <Users className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-foreground tracking-tight">
+              {bn ? 'রোগী রেজিস্ট্রি' : 'Patient Registry'}
+            </div>
+            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+              {bn ? 'প্রোফাইল ও ভিজিট হিস্ট্রি' : 'Dossiers & visits'}
+            </div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('report')}
+          className="p-4 rounded-2xl border border-border bg-card hover:bg-secondary/60 text-left transition-all hover:border-primary/40 flex flex-col justify-between gap-3 shadow-subtle group hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <div className="p-2.5 rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 group-hover:bg-teal-600 group-hover:text-white border border-teal-500/20 transition-colors w-fit">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-foreground tracking-tight">
+              {bn ? 'ক্লিনিক্যাল রিপোর্ট' : 'Reports & Sign-Off'}
+            </div>
+            <div className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+              {bn ? 'A4 প্রেসক্রিপশন প্রিন্ট' : 'A4 PDF exports'}
             </div>
           </div>
         </button>
@@ -462,6 +504,7 @@ export const DashboardTab: React.FC = () => {
                 {todayAppointments.map(apt => (
                   <div
                     key={apt.appointment_id}
+                    data-testid="appointment-card"
                     className="p-3.5 rounded-xl border border-border bg-secondary/30 hover:bg-secondary/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors shadow-2xs"
                   >
                     <div className="space-y-1">

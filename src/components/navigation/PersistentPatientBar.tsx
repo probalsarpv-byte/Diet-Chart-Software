@@ -88,7 +88,7 @@ export const PersistentPatientBar: React.FC = () => {
 
   return (
     <div className="bg-card/95 backdrop-blur-md text-foreground border-b border-border shadow-subtle px-4 lg:px-8 py-2 text-xs no-print transition-colors">
-      <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div className="w-full flex flex-wrap items-center justify-between gap-3">
         
         {/* Patient Identity & Demographics */}
         <div className="flex items-center gap-3">

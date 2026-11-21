@@ -162,126 +162,255 @@ export const PatientsTab: React.FC = () => {
         </button>
       </div>
 
-      {/* ── Active Patient Overview Card ───────────────────────────── */}
-      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3.5">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-subtle">
-              <UserCheck className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold text-base text-foreground tracking-tight">{patient.name}</h2>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
-                  {bn ? 'সক্রিয় রোগী' : 'Active Patient'}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-mono text-muted-foreground border border-border">
-                  ID: {patient.id}
-                </span>
+      {/* ── Asymmetric Clinical Split Layout: Directory (60%) vs Dossier & Timeline (40%) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* ── Left Column (7 cols): All Saved Patients Directory ── */}
+        <div className="lg:col-span-7 space-y-6">
+          <div className="bg-card border border-border rounded-2xl p-5 sm:p-6 shadow-subtle space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20">
+                  <Users className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-sm sm:text-base text-foreground tracking-tight">
+                    {bn ? 'সকল রোগীর ডিরেক্টরি' : 'All Patients Directory'}
+                  </h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {bn ? `${filteredPatients.length} জন রোগী অন্তর্ভুক্ত` : `${filteredPatients.length} patient records found`}
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5 tabular-numbers">
-                {patient.age > 0 ? `${patient.age}y` : (bn ? 'বয়স অনির্ধারিত' : 'Age Unrecorded')} • {patient.gender === 'female' ? (bn ? 'নারী' : 'Female') : (bn ? 'পুরুষ' : 'Male')} • {patient.phone || (bn ? 'ফোন নেই' : 'No phone')}
-              </p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleStartNewVisit}
-              className="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>{bn ? 'নতুন পরামর্শ শুরু করুন' : 'Start New Visit'}</span>
-            </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={selectedPopulationFilter}
+                  onChange={e => setSelectedPopulationFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+                >
+                  <option value="all">{bn ? 'সকল ক্যাটাগরি' : 'All Groups'}</option>
+                  <option value="adult_standard">{bn ? 'প্রাপ্তবয়স্ক (Adult)' : 'Adult Standard'}</option>
+                  <option value="pregnancy">{bn ? 'গর্ভবতী (Pregnancy)' : 'Pregnancy'}</option>
+                  <option value="pediatric">{bn ? 'শিশু (Pediatric)' : 'Pediatric'}</option>
+                  <option value="geriatric">{bn ? 'প্রবীণ (Geriatric)' : 'Geriatric'}</option>
+                  <option value="oncology">{bn ? 'অনকোলজি (Oncology)' : 'Oncology'}</option>
+                  <option value="renal">{bn ? 'রেনাল (Renal)' : 'Renal'}</option>
+                </select>
+
+                <div className="relative w-full sm:w-56">
+                  <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder={bn ? 'নাম, আইডি বা ফোন...' : 'Search records...'}
+                    className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary text-foreground shadow-2xs"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {filteredPatients.length === 0 ? (
+              <div className="p-8 text-center rounded-2xl bg-secondary/30 border border-dashed border-border text-muted-foreground">
+                <div className="text-xs font-medium">
+                  {bn ? 'কোনো রোগী পাওয়া যায়নি।' : 'No patients registered matching the filter.'}
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-secondary/40 text-muted-foreground">
+                    <tr className="border-b border-border text-left">
+                      <th className="py-3 px-3.5 font-semibold">{bn ? 'রোগীর বিবরণ' : 'Patient Information'}</th>
+                      <th className="py-3 px-3.5 font-semibold">{bn ? 'ক্লিনিক্যাল গ্রুপ' : 'Clinical Group'}</th>
+                      <th className="py-3 px-3.5 font-semibold">{bn ? 'ফেজ' : 'Phase'}</th>
+                      <th className="py-3 px-3.5 font-semibold">{bn ? 'শেষ ভিজিট' : 'Last Visit'}</th>
+                      <th className="py-3 px-3.5 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredPatients.map(p => {
+                      const isActive = patient.id === p.patient.id;
+                      return (
+                        <tr key={p.patient.id} className="hover:bg-secondary/30 transition-colors">
+                          <td className="py-3.5 px-3.5">
+                            <div className="font-bold text-foreground flex items-center gap-1.5 text-sm">
+                              <span>{p.patient.name}</span>
+                              {isActive && (
+                                <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
+                                  {bn ? 'সক্রিয়' : 'Active'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground font-mono mt-0.5 tabular-numbers">
+                              ID: {p.patient.id} • {p.patient.age > 0 ? `${p.patient.age}y` : (bn ? 'অনির্ধারিত' : 'Unrecorded')} • {p.patient.gender}
+                            </div>
+                            {p.patient.phone && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5">{p.patient.phone}</div>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-3.5">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium text-foreground border border-border">
+                              {p.patient.population_group || 'adult_standard'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3.5 font-semibold text-primary">
+                            Phase {p.patient.current_phase || 1}
+                          </td>
+                          <td className="py-3.5 px-3.5 text-muted-foreground tabular-numbers">
+                            {p.patient.visit_date || 'N/A'}
+                          </td>
+                          <td className="py-3.5 px-3.5 text-right">
+                            <button
+                              onClick={() => {
+                                loadPatient(p.patient.id);
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all shadow-2xs ${
+                                isActive
+                                  ? 'bg-primary/10 text-primary border border-primary/30 font-bold'
+                                  : 'border border-border bg-card hover:bg-secondary text-foreground'
+                              }`}
+                            >
+                              {isActive ? (bn ? 'বর্তমানে সক্রিয়' : 'Currently Active') : (bn ? 'নির্বাচন করুন' : 'Select Patient')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Current Active Visit Banner */}
-        <div className="p-3.5 rounded-xl bg-secondary/40 border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <Calendar className="h-4 w-4 text-primary" />
-            <span>
-              {bn ? 'বর্তমান সক্রিয় ভিজিট সেশন:' : 'Current Active Visit Session:'}{' '}
-              <strong className="text-foreground font-mono">{patient.current_visit_id || currentVisit?.visit_id || 'Initial Session'}</strong>
-            </span>
-            <span>•</span>
-            <span className="tabular-numbers">{patient.visit_date}</span>
-          </div>
+        {/* ── Right Column (5 cols): Active Patient Dossier & Visit History Timeline ── */}
+        <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-6">
+          {/* Active Patient Dossier Card */}
+          <div className="bg-card border border-border rounded-2xl p-5 sm:p-6 shadow-subtle space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
+              <div className="flex items-center gap-3">
+                <div className="h-11 w-11 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold shadow-subtle">
+                  <UserCheck className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-bold text-base text-foreground tracking-tight">{patient.name}</h2>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
+                      {bn ? 'সক্রিয় ডসিয়ার' : 'Active Dossier'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 tabular-numbers font-mono">
+                    ID: {patient.id} • {patient.age > 0 ? `${patient.age}y` : (bn ? 'বয়স অনির্ধারিত' : 'Unrecorded')} • {patient.gender === 'female' ? (bn ? 'নারী' : 'Female') : (bn ? 'পুরুষ' : 'Male')}
+                  </p>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('assessment')}
-              className="text-primary font-semibold hover:underline inline-flex items-center gap-1"
-            >
-              <span>{bn ? 'অ্যাসেসমেন্ট উইজার্ডে যান' : 'Continue Assessment'}</span>
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Chronological Visits History Table */}
-        <div className="space-y-2 pt-2">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-xs text-foreground flex items-center gap-1.5">
-              <History className="h-4 w-4 text-muted-foreground" />
-              <span>{bn ? 'কালানুক্রমিক ভিজিট ও পরামর্শ ইতিহাস' : 'Chronological Visit History'}</span>
-            </h3>
-            <span className="text-[11px] text-muted-foreground">
-              {patientVisits.length} {bn ? 'টি পরামর্শ রেকর্ড' : 'Visits Recorded'}
-            </span>
-          </div>
-
-          {patientVisits.length === 0 ? (
-            <div className="p-4 text-center rounded-xl bg-secondary/30 border border-dashed border-border text-xs text-muted-foreground">
-              {bn ? 'এই রোগীর কোনো পূর্ববর্তী পরামর্শ সংরক্ষিত নেই।' : 'No previous visits logged for this patient.'}
+              <button
+                onClick={handleStartNewVisit}
+                className="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-primary-foreground text-xs font-bold flex items-center gap-1.5 shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>{bn ? 'নতুন ভিজিট' : 'Start New Visit'}</span>
+              </button>
             </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-border">
-              <table className="w-full text-xs">
-                <thead className="bg-secondary/40">
-                  <tr className="border-b border-border text-muted-foreground text-left">
-                    <th className="py-2.5 px-3 font-semibold">{bn ? 'ভিজিট আইডি' : 'Visit ID'}</th>
-                    <th className="py-2.5 px-3 font-semibold">{bn ? 'তারিখ' : 'Date'}</th>
-                    <th className="py-2.5 px-3 font-semibold">{bn ? 'পরামর্শের ধরন' : 'Type'}</th>
-                    <th className="py-2.5 px-3 font-semibold">{bn ? 'অবস্থা' : 'Status'}</th>
-                    <th className="py-2.5 px-3 font-semibold">{bn ? 'ক্লিনিক্যাল নোট' : 'Clinical Summary'}</th>
-                    <th className="py-2.5 px-3 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {patientVisits.map((v, idx) => {
-                    const isCurrent = v.visit_id === patient.current_visit_id || v.id === patient.current_visit_id;
-                    return (
-                      <tr key={v.visit_id || v.id || idx} className="hover:bg-secondary/30 transition-colors">
-                        <td className="py-2.5 px-3 font-semibold text-foreground font-mono">
-                          {v.visit_id || v.id}
+
+            {/* Quick Metadata Matrix */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-xl bg-secondary/40 border border-border space-y-0.5">
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold">{bn ? 'ক্লিনিক্যাল গ্রুপ' : 'Population Group'}</span>
+                <div className="font-bold text-foreground capitalize">{patient.population_group || 'Adult Standard'}</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-secondary/40 border border-border space-y-0.5">
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold">{bn ? 'বর্তমান ফেজ' : 'Clinical Phase'}</span>
+                <div className="font-bold text-primary">Phase {patient.current_phase || 1}</div>
+              </div>
+            </div>
+
+            {/* Current Session Banner */}
+            <div className="p-3.5 rounded-xl bg-secondary/40 border border-border flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Calendar className="h-4 w-4 text-primary shrink-0" />
+                <div>
+                  <span className="text-[11px] block font-medium">
+                    {bn ? 'সক্রিয় সেশন:' : 'Active Session:'} <strong className="text-foreground font-mono">{patient.current_visit_id || currentVisit?.visit_id || 'Initial Session'}</strong>
+                  </span>
+                  <span className="text-[10px] tabular-numbers">{patient.visit_date}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveTab('assessment')}
+                className="text-primary text-xs font-semibold hover:underline inline-flex items-center gap-1 shrink-0"
+              >
+                <span>{bn ? 'অ্যাসেসমেন্ট' : 'Continue'}</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Chronological Visits History Timeline */}
+          <div className="bg-card border border-border rounded-2xl p-5 sm:p-6 shadow-subtle space-y-4">
+            <div className="flex items-center justify-between border-b border-border pb-3.5">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20">
+                  <History className="h-4 w-4" />
+                </div>
+                <h3 className="font-bold text-sm text-foreground tracking-tight">
+                  {bn ? 'কালানুক্রমিক ভিজিট হিস্ট্রি' : 'Chronological Visit History'}
+                </h3>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-secondary border border-border text-muted-foreground">
+                {patientVisits.length} {bn ? 'টি রেকর্ড' : 'Visits'}
+              </span>
+            </div>
+
+            {patientVisits.length === 0 ? (
+              <div className="p-6 text-center rounded-xl bg-secondary/30 border border-dashed border-border text-xs text-muted-foreground">
+                {bn ? 'এই রোগীর কোনো পূর্ববর্তী পরামর্শ সংরক্ষিত নেই।' : 'No previous visits logged for this patient.'}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {patientVisits.map((v, idx) => {
+                  const isCurrent = v.visit_id === patient.current_visit_id || v.id === patient.current_visit_id;
+                  return (
+                    <div
+                      key={v.visit_id || v.id || idx}
+                      className={`p-3.5 rounded-xl border transition-all ${
+                        isCurrent
+                          ? 'border-primary/40 bg-primary/[0.03] shadow-2xs'
+                          : 'border-border bg-card hover:bg-secondary/40'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs font-mono text-foreground">{v.visit_id || v.id}</span>
                           {isCurrent && (
-                            <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
+                            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
                               {bn ? 'সক্রিয়' : 'Current'}
                             </span>
                           )}
-                        </td>
-                        <td className="py-2.5 px-3 text-muted-foreground tabular-numbers">{v.visit_date}</td>
-                        <td className="py-2.5 px-3">
+                        </div>
+                        <span className="text-[11px] text-muted-foreground tabular-numbers">{v.visit_date}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 mt-2">
+                        <div className="flex items-center gap-2">
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium border border-border">
                             {v.visit_type}
                           </span>
-                        </td>
-                        <td className="py-2.5 px-3">
                           {v.status === 'completed' ? (
-                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 text-[11px]">
-                              <CheckCircle2 className="h-3.5 w-3.5" /> {bn ? 'সম্পন্ন' : 'Completed'}
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 text-[10px]">
+                              <CheckCircle2 className="h-3 w-3" /> {bn ? 'সম্পন্ন' : 'Completed'}
                             </span>
                           ) : (
-                            <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 text-[11px]">
-                              <Clock className="h-3.5 w-3.5" /> {bn ? 'চলমান' : 'In Progress'}
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-1 text-[10px]">
+                              <Clock className="h-3 w-3" /> {bn ? 'চলমান' : 'In Progress'}
                             </span>
                           )}
-                        </td>
-                        <td className="py-2.5 px-3 text-muted-foreground max-w-xs truncate">
-                          {v.clinical_notes || v.clinical_summary || v.notes || (bn ? 'নিয়মিত পরামর্শ' : 'Routine consultation')}
-                        </td>
-                        <td className="py-2.5 px-3 text-right space-x-1">
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => handleInspectSnapshot(v)}
                             className="px-2 py-1 rounded-lg border border-border bg-card hover:bg-secondary text-[11px] font-semibold text-foreground transition-colors shadow-2xs inline-flex items-center gap-1"
@@ -293,130 +422,25 @@ export const PatientsTab: React.FC = () => {
 
                           <button
                             onClick={() => handleOpenVisitWorkspace(v)}
-                            className="px-2 py-1 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors shadow-2xs inline-flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-hover text-primary-foreground text-[11px] font-semibold transition-colors shadow-2xs inline-flex items-center gap-1"
                           >
                             <span>{bn ? 'ওয়ার্কস্পেস' : 'Open'}</span>
                           </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── All Saved Patients Directory ───────────────────────────── */}
-      <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3.5">
-          <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" />
-            <h2 className="font-bold text-sm text-foreground tracking-tight">
-              {bn ? 'সকল রোগীর ডিরেক্টরি' : 'All Patients Directory'}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={selectedPopulationFilter}
-              onChange={e => setSelectedPopulationFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              <option value="all">{bn ? 'সকল ক্যাটাগরি' : 'All Population Groups'}</option>
-              <option value="adult_standard">{bn ? 'প্রাপ্তবয়স্ক (Adult)' : 'Adult Standard'}</option>
-              <option value="pregnancy">{bn ? 'গর্ভবতী (Pregnancy)' : 'Pregnancy'}</option>
-              <option value="pediatric">{bn ? 'শিশু (Pediatric)' : 'Pediatric'}</option>
-              <option value="geriatric">{bn ? 'প্রবীণ (Geriatric)' : 'Geriatric'}</option>
-              <option value="oncology">{bn ? 'অনকোলজি (Oncology)' : 'Oncology'}</option>
-              <option value="renal">{bn ? 'রেনাল (Renal)' : 'Renal'}</option>
-            </select>
-
-            <div className="relative w-full sm:w-64">
-              <Search className="h-3.5 w-3.5 absolute left-3 top-2.5 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                placeholder={bn ? 'নাম, আইডি বা ফোন...' : 'Search by name, ID, phone...'}
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
-              />
-            </div>
-          </div>
-        </div>
-
-        {filteredPatients.length === 0 ? (
-          <div className="p-8 text-center rounded-xl bg-secondary/30 border border-dashed border-border text-muted-foreground">
-            {bn ? 'কোনো রোগী পাওয়া যায়নি।' : 'No patients registered matching the filter.'}
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-border">
-            <table className="w-full text-xs">
-              <thead className="bg-secondary/40">
-                <tr className="border-b border-border text-muted-foreground text-left">
-                  <th className="py-2.5 px-3 font-semibold">{bn ? 'রোগীর বিবরণ' : 'Patient Information'}</th>
-                  <th className="py-2.5 px-3 font-semibold">{bn ? 'যোগাযোগ' : 'Contact'}</th>
-                  <th className="py-2.5 px-3 font-semibold">{bn ? 'ক্লিনিক্যাল গ্রুপ' : 'Clinical Group'}</th>
-                  <th className="py-2.5 px-3 font-semibold">{bn ? 'ফেজ' : 'Phase'}</th>
-                  <th className="py-2.5 px-3 font-semibold">{bn ? 'নিবন্ধনের তারিখ' : 'Registration Date'}</th>
-                  <th className="py-2.5 px-3 font-semibold text-right">{bn ? 'অ্যাকশন' : 'Action'}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredPatients.map(p => {
-                  const isActive = patient.id === p.patient.id;
-                  return (
-                    <tr key={p.patient.id} className="hover:bg-secondary/30 transition-colors">
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-foreground flex items-center gap-1.5 text-sm">
-                          <span>{p.patient.name}</span>
-                          {isActive && (
-                            <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20">
-                              {bn ? 'সক্রিয়' : 'Active'}
-                            </span>
-                          )}
                         </div>
-                        <div className="text-[10px] text-muted-foreground font-mono mt-0.5 tabular-numbers">
-                          ID: {p.patient.id} • {p.patient.age > 0 ? `${p.patient.age}y` : (bn ? 'অনির্ধারিত' : 'Unrecorded')} • {p.patient.gender}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3 text-muted-foreground">
-                        <div>{p.patient.phone || 'N/A'}</div>
-                        <div className="text-[10px]">{p.patient.email || ''}</div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-secondary font-medium text-foreground border border-border">
-                          {p.patient.population_group || 'adult_standard'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 font-semibold text-primary">
-                        Phase {p.patient.current_phase || 1}
-                      </td>
-                      <td className="py-3 px-3 text-muted-foreground tabular-numbers">
-                        {p.patient.visit_date || 'N/A'}
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          onClick={() => {
-                            loadPatient(p.patient.id);
-                          }}
-                          className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all shadow-2xs ${
-                            isActive
-                              ? 'bg-primary/10 text-primary border border-primary/30 font-bold'
-                              : 'border border-border bg-card hover:bg-secondary text-foreground'
-                          }`}
-                        >
-                          {isActive ? (bn ? 'বর্তমানে সক্রিয়' : 'Currently Active') : (bn ? 'নির্বাচন করুন' : 'Select Patient')}
-                        </button>
-                      </td>
-                    </tr>
+                      </div>
+
+                      {(v.clinical_notes || v.clinical_summary || v.notes) && (
+                        <p className="text-[11px] text-muted-foreground mt-2 line-clamp-2 border-t border-border/50 pt-1.5">
+                          {v.clinical_notes || v.clinical_summary || v.notes}
+                        </p>
+                      )}
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── Modal: Register New Patient ────────────────────────────── */}

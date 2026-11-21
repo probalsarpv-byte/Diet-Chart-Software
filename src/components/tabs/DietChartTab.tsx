@@ -519,418 +519,101 @@ export const DietChartTab: React.FC = () => {
         </div>
       )}
 
-      {/* ── Clinical Meal Architecture, Fasting Schedule & Nutritional Adequacy ── */}
-      <div className="p-5 rounded-2xl bg-card border border-border/80 shadow-sm space-y-4">
-        {/* Top Badges Row */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Left: Meal Structure & Fasting Window */}
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Meal Structure */}
-            <div 
-              data-testid="meal-structure-badge"
-              className="px-3.5 py-1.5 rounded-xl border border-border/80 bg-secondary/50 text-xs font-semibold flex items-center gap-2.5 shadow-2xs"
-            >
-              <Utensils className="h-4 w-4 text-emerald-500 shrink-0" />
-              <div>
-                <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
-                  {bn ? 'খাবারের কাঠামো' : 'Meal Structure'}
-                </span>
-                <span className="text-foreground font-bold">
-                  {bn ? (structureLabels[currentStructure]?.bn || currentStructure) : (structureLabels[currentStructure]?.en || currentStructure)}
-                </span>
-              </div>
-            </div>
-
-            {/* Fasting Schedule & Safety Panel */}
-            <div
-              data-testid="fasting-status-badge"
-              className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2.5 shadow-2xs transition-all ${
-                currentFasting?.decision_status === 'fasting_contraindicated' || (currentFasting?.reasons_en && currentFasting.reasons_en.length > 0 && !currentFasting.is_fasting)
-                  ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
-                  : currentFasting?.decision_status === 'fasting_approved'
-                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                  : currentFasting?.decision_status === 'fasting_requires_review'
-                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                  : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft'
-                  ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
-                  : 'border-slate-500/20 bg-secondary/30 text-muted-foreground'
-              }`}
-            >
-              {currentFasting?.decision_status === 'fasting_contraindicated' ? (
-                <AlertOctagon className="h-4 w-4 text-rose-500 shrink-0" />
-              ) : currentFasting?.decision_status === 'fasting_approved' ? (
-                <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
-              ) : currentFasting?.decision_status === 'fasting_requires_review' ? (
-                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-              ) : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft' ? (
-                <Clock className="h-4 w-4 text-purple-500 shrink-0" />
-              ) : (
-                <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
-              )}
-              <div>
-                <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
-                  {bn ? 'উপবাস মূল্যায়ন ও সময়সূচি' : 'Fasting Status & Window'}
-                </span>
-                <span className="font-bold">
-                  {currentFasting?.decision_status === 'fasting_contraindicated'
-                    ? (bn ? `উপবাস নিষিদ্ধ: ${currentFasting.reasons_bn?.[0] || 'ঝুঁকিপূর্ণ'}` : `Fasting Contraindicated: ${currentFasting.reasons_en?.[0] || 'High Risk'}`)
-                    : currentFasting?.decision_status === 'fasting_approved'
-                    ? (bn ? `১৬:৮ উপবাস অনুমোদিত: ${fastingScheduleTextBn}` : `16:8 Fasting Approved: ${fastingScheduleTextEn}`)
-                    : currentFasting?.decision_status === 'fasting_requires_review'
-                    ? (bn ? 'উপবাস চিকিৎসকের রিভিউ প্রয়োজন' : 'Fasting Requires Clinician Review')
-                    : currentFasting?.decision_status === 'fasting_proposed_draft'
-                    ? (bn ? `১৬:৮ উপবাস প্রস্তাবিত (খসড়া): ${fastingScheduleTextBn}` : `16:8 Fasting Proposed (Draft): ${fastingScheduleTextEn}`)
-                    : (currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8')
-                    ? (bn ? `উপবাস সক্রিয়: ${fastingScheduleTextBn}` : `Active 16:8 Window: ${fastingScheduleTextEn}`)
-                    : (bn ? 'নিয়মিত আহার (উপবাস পরিহার্য)' : 'Regular Schedule (No Fasting)')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Nutritional Adequacy Status Badge */}
-          <div className="flex items-center gap-2">
-            <div
-              data-testid="nutritional-adequacy-badge"
-              className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2.5 shadow-2xs ${
-                currentAdequacy?.is_adequate !== false
-                  ? 'border-emerald-500/30 bg-emerald-600/15 text-emerald-700 dark:text-emerald-300'
-                  : 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
-              }`}
-              title={currentAdequacy?.deficits && currentAdequacy.deficits.length > 0 ? currentAdequacy.deficits.join('\n') : undefined}
-            >
-              {currentAdequacy?.is_adequate !== false ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
-              )}
-              <div>
-                <span className="text-[10px] opacity-80 block uppercase tracking-wider font-semibold">
-                  {bn ? 'পুষ্টি পর্যাপ্ততা' : 'Nutritional Adequacy'}
-                </span>
-                <span>
-                  {currentAdequacy?.status_label_en
-                    ? (bn ? (currentAdequacy.status_label_bn || currentAdequacy.status_label_en) : currentAdequacy.status_label_en)
-                    : (currentAdequacy?.is_adequate !== false
-                      ? (bn ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়েছে' : 'Nutritional Targets Achieved (Evaluated Parameters)')
-                      : (bn ? `পুষ্টির লক্ষ্যমাত্রা অর্জিত হয়নি (${currentAdequacy?.deficits_bn?.[0] || 'ঘাটতি'})` : `Nutritional Targets Not Achieved: ${currentAdequacy?.deficits?.[0] || 'Deficit'}`))}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Visual Circadian 24-Hour Timeline Bar */}
-        <div className="pt-2 border-t border-border/60 space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1.5 font-semibold text-foreground">
-              <Clock className="h-3.5 w-3.5 text-emerald-500" />
-              <span>{bn ? 'সার্কেডিয়ান রিদম ও খাদ্য গ্রহণ উইন্ডো (২৪ ঘণ্টা)' : 'Circadian Rhythm & Intake Timeline (24h)'}</span>
-            </span>
-            <div className="flex items-center gap-3 text-[10px]">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-amber-400" />
-                <span>{bn ? 'খাদ্য গ্রহণ উইন্ডো' : 'Eating Window'}</span>
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-indigo-900 border border-indigo-700" />
-                <span>{bn ? 'উপবাস পর্ব' : 'Fasting Interval'}</span>
-              </span>
-            </div>
-          </div>
-
-          {/* 24-hour visual progress bar */}
-          <div className="relative h-6 bg-slate-900/90 dark:bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center p-0.5 shadow-inner">
-            {/* Hour marker background grid */}
-            <div className="absolute inset-0 flex justify-between px-2 text-[8px] font-mono text-slate-500 pointer-events-none select-none items-center">
-              <span>12 AM</span>
-              <span>6 AM</span>
-              <span>12 PM</span>
-              <span>6 PM</span>
-              <span>12 AM</span>
-            </div>
-
-            {/* Active Eating Window highlight */}
-            {currentStructure === 'intermittent_fasting_16_8' || currentFasting?.is_fasting ? (
-              <div 
-                className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-amber-400 via-emerald-500 to-teal-400 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[50%] w-[33.33%]"
-                title={fastingScheduleTextEn || "Intermittent Fasting Window"}
-              >
-                <div className="flex items-center gap-1 px-1 truncate">
-                  <Sun className="h-3 w-3 shrink-0 text-amber-950" />
-                  <span className="truncate">{bn ? (fastingScheduleTextBn || 'খাবার উইন্ডো (৮ ঘণ্টা)') : (fastingScheduleTextEn || 'Eating Window (8h)')}</span>
-                </div>
-              </div>
-            ) : (
-              <div 
-                className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-emerald-500/80 via-teal-400/80 to-emerald-500/80 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[29.16%] w-[58.33%]"
-                title="Regular Intake Schedule"
-              >
-                <div className="flex items-center gap-1 px-1 truncate">
-                  <Sun className="h-3 w-3 shrink-0 text-amber-950" />
-                  <span className="truncate">{bn ? 'নিয়মিত খাদ্য গ্রহণ (সকাল ৭:০০ - রাত ৯:০০)' : 'Regular Intake (7 AM – 9 PM)'}</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── 7-Day Navigation Tabs ────────────────────────────────────────────────── */}
-      <div className="bg-card border border-border/80 rounded-2xl p-2.5 shadow-sm">
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" role="tablist">
-          {[1, 2, 3, 4, 5, 6, 7].map(dayNum => {
-            const dayData = weeklyDietPlan?.days?.find(d => d.day_number === dayNum);
-            const isActive = activeDayNumber === dayNum;
-            const isLocked = Boolean(dayData?.is_locked || lockState.locked_days.includes(dayNum));
-            const calories = dayData?.summary?.calories ?? 0;
-            const variance = dayData?.summary?.calorie_variance ?? 0;
-
-            const nameBn = dayData?.day_name_bn || `${dayNum}ম দিন`;
-            const nameEn = dayData?.day_name_en || `Day ${dayNum}`;
-
-            return (
-              <button
-                key={dayNum}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                data-testid={`day-tab-${dayNum}`}
-                onClick={() => setActiveDayNumber(dayNum)}
-                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[76px] ${
-                  isActive
-                    ? 'border-emerald-500 bg-emerald-500/10 shadow-md ring-2 ring-emerald-500/30'
-                    : 'border-border/70 bg-card hover:bg-secondary/50 hover:border-border'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1 w-full">
-                  <span className={`text-xs font-bold truncate ${isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground'}`}>
-                    {bn ? nameBn : nameEn}
-                  </span>
-                  {isLocked && (
-                    <span title="Day locked" className="p-0.5 rounded bg-amber-500/10 border border-amber-500/30">
-                      <Lock className="h-3 w-3 text-amber-500 shrink-0" />
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-2 flex items-baseline justify-between w-full">
-                  <span className="text-sm font-extrabold text-foreground tabular-numbers">
-                    {calories > 0 ? calories : '—'}{' '}
-                    <span className="text-[10px] font-normal text-muted-foreground">kcal</span>
-                  </span>
-                  {calories > 0 && (
-                    <span className={`text-[10px] font-semibold tabular-numbers ${
-                      Math.abs(variance) <= 50 ? 'text-emerald-500' : 'text-amber-500'
-                    }`}>
-                      {variance > 0 ? `+${variance}` : variance}
-                    </span>
-                  )}
-                </div>
-
-                {dayData?.safety_decision === 'HARD_STOP' && (
-                  <span className="absolute bottom-0 left-0 right-0 h-1 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" title="Clinical Hard Stop" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Active Day Macro Targets & Nutritional Highlights ────────────────────── */}
-      <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Utensils className="h-4 w-4 text-emerald-500" />
-              <h2 className="font-bold text-sm text-foreground">
-                {bn 
-                  ? `${currentDayPlan?.day_name_bn || `দিন ${activeDayNumber}`} — পুষ্টি উপাদান ও পারিবারিক পরিমাপ`
-                  : `${currentDayPlan?.day_name_en || `Day ${activeDayNumber}`} — Nutritional Matrix & Household Portions`}
-              </h2>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {bn 
-                ? 'কাঁচা গ্রাম (Raw) ও রান্না করা পারিবারিক পাত্রের মাপ (Cooked) উভয় প্রদর্শিত হচ্ছে।' 
-                : 'Raw grams and cooked household portions side-by-side with 1-click food exchanges.'}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            <span className="text-xs text-muted-foreground">
-              {bn ? 'সক্রিয় দিন:' : 'Active Day:'} <strong className="text-foreground">{activeDayNumber} / 7</strong>
-            </span>
-          </div>
-        </div>
-
-        {/* Continuous Segmented Macro Balance Bar */}
-        <div className="p-3.5 rounded-xl bg-secondary/30 border border-border/80 space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
-              <Sliders className="h-3.5 w-3.5 text-primary" />
-              <span>{bn ? 'ম্যাক্রো অনুপাত বিভাজন (Carb : Protein : Fat)' : 'Macronutrient Energy Distribution'}</span>
-            </span>
-            <div className="flex items-center gap-3 text-[11px] font-mono tabular-numbers">
-              <span className="text-blue-500 font-bold">{Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}% C</span>
-              <span className="text-emerald-500 font-bold">{Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}% P</span>
-              <span className="text-amber-500 font-bold">{Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}% F</span>
-            </div>
-          </div>
-          <div className="h-2 w-full rounded-full overflow-hidden flex bg-secondary/60 shadow-inner">
-            <div 
-              style={{ width: `${Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}%` }} 
-              className="bg-blue-500 h-full transition-all duration-300" 
-              title={`Carbs: ${Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}%`}
-            />
-            <div 
-              style={{ width: `${Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}%` }} 
-              className="bg-emerald-500 h-full transition-all duration-300" 
-              title={`Protein: ${Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}%`}
-            />
-            <div 
-              style={{ width: `${Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}%` }} 
-              className="bg-amber-500 h-full transition-all duration-300" 
-              title={`Fat: ${Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}%`}
-            />
-          </div>
-        </div>
-
-        {/* Macro Bars Matrix */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+      {/* ── Studio Layout: Main Meal Planner (65%) vs Sticky Inspector Rail (35%) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* ── Left Column: Main Meal Planning Studio (8 cols / ~65%) ── */}
+        <div className="lg:col-span-8 space-y-6">
           
-          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
-              <span>{bn ? 'মোট ক্যালোরি:' : 'Total Calories:'}</span>
-              <Flame className="h-3.5 w-3.5 text-amber-500" />
+          {/* 7-Day Rotation Rail Tabs */}
+          <div className="bg-card border border-border/80 rounded-2xl p-3 shadow-subtle">
+            <div className="flex items-center justify-between mb-2.5 px-1">
+              <span className="text-xs font-bold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                <Calendar className="h-3.5 w-3.5 text-primary" />
+                <span>{bn ? '৭-দিনের সাইক্লিক্যাল ডায়েট রোটেশন' : '7-Day Rotation Rail'}</span>
+              </span>
+              <span className="text-[11px] text-muted-foreground font-mono">
+                {bn ? `সক্রিয় দিন: ${activeDayNumber} / ৭` : `Active: Day ${activeDayNumber} / 7`}
+              </span>
             </div>
-            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
-              <span>{totalKcal} <span className="text-xs font-normal text-muted-foreground">kcal</span></span>
-              <span className="text-[10px] text-muted-foreground">/ {targetKcal}</span>
-            </div>
-            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
-              <div 
-                className={`h-full transition-all duration-300 ${Math.abs(totalKcal - targetKcal) <= 50 ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                style={{ width: `${Math.min(100, (totalKcal / Math.max(1, targetKcal)) * 100)}%` }}
-              />
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" role="tablist">
+              {[1, 2, 3, 4, 5, 6, 7].map(dayNum => {
+                const dayData = weeklyDietPlan?.days?.find(d => d.day_number === dayNum);
+                const isActive = activeDayNumber === dayNum;
+                const isLocked = Boolean(dayData?.is_locked || lockState.locked_days.includes(dayNum));
+                const calories = dayData?.summary?.calories ?? 0;
+                const variance = dayData?.summary?.calorie_variance ?? 0;
+
+                const nameBn = dayData?.day_name_bn || `${dayNum}ম দিন`;
+                const nameEn = dayData?.day_name_en || `Day ${dayNum}`;
+
+                return (
+                  <button
+                    key={dayNum}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    data-testid={`day-tab-${dayNum}`}
+                    onClick={() => setActiveDayNumber(dayNum)}
+                    className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between min-h-[76px] ${
+                      isActive
+                        ? 'border-primary bg-primary/10 shadow-subtle ring-2 ring-primary/20'
+                        : 'border-border bg-card hover:bg-secondary/60 hover:border-border'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 w-full">
+                      <span className={`text-xs font-bold truncate ${isActive ? 'text-primary' : 'text-foreground'}`}>
+                        {bn ? nameBn : nameEn}
+                      </span>
+                      {isLocked && (
+                        <span title="Day locked" className="p-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+                          <Lock className="h-3 w-3 text-amber-500 shrink-0" />
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-2 flex items-baseline justify-between w-full">
+                      <span className="text-sm font-extrabold text-foreground tabular-numbers font-mono">
+                        {calories > 0 ? calories : '—'}{' '}
+                        <span className="text-[10px] font-normal text-muted-foreground font-sans">kcal</span>
+                      </span>
+                      {calories > 0 && (
+                        <span className={`text-[10px] font-semibold tabular-numbers font-mono ${
+                          Math.abs(variance) <= 50 ? 'text-emerald-500' : 'text-amber-500'
+                        }`}>
+                          {variance > 0 ? `+${variance}` : variance}
+                        </span>
+                      )}
+                    </div>
+
+                    {dayData?.safety_decision === 'HARD_STOP' && (
+                      <span className="absolute bottom-0 left-0 right-0 h-1 bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" title="Clinical Hard Stop" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
-              <span>{bn ? 'মোট প্রোটিন:' : 'Protein Target:'}</span>
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-            </div>
-            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
-              <span className="text-emerald-500">{totalProtein} <span className="text-xs font-normal text-muted-foreground">g</span></span>
-              <span className="text-[10px] text-muted-foreground">/ {targetProtein}g</span>
-            </div>
-            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
-              <div 
-                className="bg-emerald-500 h-full transition-all duration-300"
-                style={{ width: `${Math.min(100, (totalProtein / Math.max(1, targetProtein)) * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
-              <span>{bn ? 'মোট শর্করা:' : 'Carbs Target:'}</span>
-              <span className="h-2 w-2 rounded-full bg-blue-500" />
-            </div>
-            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
-              <span className="text-blue-500">{totalCarbs} <span className="text-xs font-normal text-muted-foreground">g</span></span>
-              <span className="text-[10px] text-muted-foreground">/ {targetCarbs}g</span>
-            </div>
-            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
-              <div 
-                className="bg-blue-500 h-full transition-all duration-300"
-                style={{ width: `${Math.min(100, (totalCarbs / Math.max(1, targetCarbs)) * 100)}%` }}
-              />
+          {/* Active Day Section Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+            <div>
+              <h2 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
+                <CookingPot className="h-4 w-4 text-primary" />
+                <span>
+                  {bn 
+                    ? `${currentDayPlan?.day_name_bn || `দিন ${activeDayNumber}`} — আহার সময়সূচি ও পরিমাণ`
+                    : `${currentDayPlan?.day_name_en || `Day ${activeDayNumber}`} — Meal Plan Studio`}
+                </span>
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {bn 
+                  ? 'কাঁচা গ্রাম (Raw) ও রান্না করা পারিবারিক পাত্রের মাপ (Cooked) উভয় প্রদর্শিত হচ্ছে।' 
+                  : 'Raw grams and cooked household portions side-by-side with 1-click food exchanges.'}
+              </p>
             </div>
           </div>
-
-          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
-              <span>{bn ? 'স্বাস্থ্যকর চর্বি:' : 'Fat Target:'}</span>
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-            </div>
-            <div className="text-base font-bold flex items-baseline justify-between tabular-numbers">
-              <span className="text-amber-500">{totalFat} <span className="text-xs font-normal text-muted-foreground">g</span></span>
-              <span className="text-[10px] text-muted-foreground">/ {targetFat}g</span>
-            </div>
-            <div className="w-full bg-secondary/80 h-1.5 rounded-full overflow-hidden shadow-inner">
-              <div 
-                className="bg-amber-500 h-full transition-all duration-300"
-                style={{ width: `${Math.min(100, (totalFat / Math.max(1, targetFat)) * 100)}%` }}
-              />
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
-              <span>{bn ? 'আনুমানিক GL (প্রাক্কলিত):' : 'Estimated GL:'}</span>
-              <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-            </div>
-            <div className="text-base font-bold text-purple-500 tabular-numbers">{avgGl}</div>
-            <div className="text-[10px] text-muted-foreground font-medium">
-              {avgGl < 50 ? (bn ? 'লো গ্লাইসেমিক (আদর্শ)' : 'Low (Optimal)') : (bn ? 'মাঝারি' : 'Moderate')}
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-border/80 bg-background/80 space-y-1.5 shadow-2xs">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-between">
-              <span>{bn ? 'PRAL স্কোর:' : 'PRAL Score:'}</span>
-              <span className={`h-2 w-2 rounded-full ${totalPral < 0 ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-            </div>
-            <div className={`text-base font-bold tabular-numbers ${totalPral < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-              {totalPral}
-            </div>
-            <div className="text-[10px] text-muted-foreground font-medium">
-              {totalPral < 0 ? (bn ? 'ক্ষারীয় (Alkaline)' : 'Alkaline (Optimal)') : (bn ? 'অ্যাসিডিক (Acidic)' : 'Net Acidic')}
-            </div>
-          </div>
-
-        </div>
-
-        {/* P0 Foundations: BMR Energy Floor, Discretionary Oil/Ghee, Salt & Fluid */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t">
-          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
-            <span className="text-muted-foreground block text-[10px]">{bn ? 'বিএমআর নিরাপদ সীমা (BMR Floor):' : 'BMR Energy Floor:'}</span>
-            <span className="font-bold text-foreground">{patient.calculated.bmr} kcal/day</span>
-            <span className={`text-[10px] font-medium block mt-0.5 ${
-              totalKcal >= patient.calculated.bmr ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
-            }`}>
-              {totalKcal >= patient.calculated.bmr 
-                ? (bn ? '✓ বিএমআরের চেয়ে বেশি (নিরাপদ)' : '✓ Met (>= BMR)')
-                : (bn ? `⚠️ ঘাটতি: ${patient.calculated.bmr - totalKcal} kcal` : `⚠️ Deficit: ${patient.calculated.bmr - totalKcal} kcal`)}
-            </span>
-          </div>
-
-          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
-            <span className="text-muted-foreground block text-[10px]">{bn ? 'রান্নার তেল/ঘি বরাদ্দ:' : 'Discretionary Oil/Ghee:'}</span>
-            <span className="font-bold text-foreground">15g (~135 kcal)</span>
-            <span className="text-[10px] text-muted-foreground block mt-0.5">
-              {bn ? 'সরিষার তেল / খাঁটি দেশি ঘি' : 'Mustard Oil / Pure Ghee'}
-            </span>
-          </div>
-
-          <div className="p-2.5 rounded-xl bg-muted/40 border text-xs">
-            <span className="text-muted-foreground block text-[10px]">{bn ? 'দৈনিক বাড়তি লবণ (Discretionary Salt):' : 'Added Cooking Salt:'}</span>
-            <span className="font-bold text-foreground">5g salt (~1967 mg Na)</span>
-            <span className="text-[10px] text-muted-foreground block mt-0.5">
-              {bn ? '১ চা চামচ সমান' : '1 level teaspoon daily limit'}
-            </span>
-          </div>
-
-          <div className={`p-2.5 rounded-xl border text-xs ${fluidBadgeColor}`} data-testid="hydration-guidance-card">
-            <span className="text-muted-foreground block text-[10px]">{fluidTitle}</span>
-            <span className="font-bold text-foreground">{fluidDisplayText}</span>
-            <span className="text-[10px] text-muted-foreground block mt-0.5">
-              {fluidSubText}
-            </span>
-          </div>
-        </div>
-      </div>
 
       {/* ── Structured Meals Workspace for Selected Day ─────────────────────────── */}
       <div className="space-y-5" data-testid="active-day-meals">
@@ -1300,6 +983,344 @@ export const DietChartTab: React.FC = () => {
           </table>
         </div>
       </div>
+
+    </div>
+
+    {/* ── Right Column: Sticky Nutrition & Safety Inspector (4 cols / ~35%) ── */}
+    <div className="lg:col-span-4 space-y-5 lg:sticky lg:top-6">
+      
+      {/* Card 1: Macro Targets & Energy Distribution */}
+      <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-subtle space-y-4">
+        <div className="flex items-center justify-between border-b border-border/60 pb-3">
+          <div className="flex items-center gap-2">
+            <Utensils className="h-4 w-4 text-primary" />
+            <h3 className="font-bold text-sm text-foreground tracking-tight">
+              {bn ? 'ম্যাক্রো টার্গেট ও এনার্জি বিভাজন' : 'Macro Targets & Energy'}
+            </h3>
+          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-secondary text-muted-foreground border border-border">
+            {bn ? `দিন ${activeDayNumber}` : `Day ${activeDayNumber}`}
+          </span>
+        </div>
+
+        {/* Continuous Segmented Macro Balance Bar */}
+        <div className="p-3 rounded-xl bg-secondary/30 border border-border/80 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[11px] font-semibold text-foreground flex items-center gap-1">
+              <Sliders className="h-3 w-3 text-primary" />
+              <span>{bn ? 'শক্তি বিভাজন' : 'Energy Split'}</span>
+            </span>
+            <div className="flex items-center gap-2 text-[11px] font-mono tabular-numbers">
+              <span className="text-blue-500 font-bold">{Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}% C</span>
+              <span className="text-emerald-500 font-bold">{Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}% P</span>
+              <span className="text-amber-500 font-bold">{Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}% F</span>
+            </div>
+          </div>
+          <div className="h-2 w-full rounded-full overflow-hidden flex bg-secondary/60 shadow-inner">
+            <div 
+              style={{ width: `${Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}%` }} 
+              className="bg-blue-500 h-full transition-all duration-300" 
+              title={`Carbs: ${Math.round((totalCarbs * 4 / Math.max(1, totalKcal)) * 100)}%`}
+            />
+            <div 
+              style={{ width: `${Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}%` }} 
+              className="bg-emerald-500 h-full transition-all duration-300" 
+              title={`Protein: ${Math.round((totalProtein * 4 / Math.max(1, totalKcal)) * 100)}%`}
+            />
+            <div 
+              style={{ width: `${Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}%` }} 
+              className="bg-amber-500 h-full transition-all duration-300" 
+              title={`Fat: ${Math.round((totalFat * 9 / Math.max(1, totalKcal)) * 100)}%`}
+            />
+          </div>
+        </div>
+
+        {/* Target vs Actual Grid */}
+        <div className="grid grid-cols-2 gap-2.5">
+          {/* Calories */}
+          <div className="p-3 rounded-xl border border-border bg-background space-y-1 shadow-2xs">
+            <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'ক্যালোরি' : 'Calories'}</span>
+              <Flame className="h-3 w-3 text-amber-500" />
+            </div>
+            <div className="text-sm font-bold font-mono tabular-numbers text-foreground flex items-baseline justify-between">
+              <span>{totalKcal}</span>
+              <span className="text-[10px] text-muted-foreground font-normal">/ {targetKcal}</span>
+            </div>
+            <div className="w-full bg-secondary h-1 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-300 ${Math.abs(totalKcal - targetKcal) <= 50 ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                style={{ width: `${Math.min(100, (totalKcal / Math.max(1, targetKcal)) * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Protein */}
+          <div className="p-3 rounded-xl border border-border bg-background space-y-1 shadow-2xs">
+            <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'প্রোটিন' : 'Protein'}</span>
+              <ShieldCheck className="h-3 w-3 text-emerald-500" />
+            </div>
+            <div className="text-sm font-bold font-mono tabular-numbers text-emerald-500 flex items-baseline justify-between">
+              <span>{totalProtein}g</span>
+              <span className="text-[10px] text-muted-foreground font-normal">/ {targetProtein}g</span>
+            </div>
+            <div className="w-full bg-secondary h-1 rounded-full overflow-hidden">
+              <div 
+                className="bg-emerald-500 h-full transition-all duration-300"
+                style={{ width: `${Math.min(100, (totalProtein / Math.max(1, targetProtein)) * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Carbs */}
+          <div className="p-3 rounded-xl border border-border bg-background space-y-1 shadow-2xs">
+            <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'শর্করা' : 'Carbs'}</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+            </div>
+            <div className="text-sm font-bold font-mono tabular-numbers text-blue-500 flex items-baseline justify-between">
+              <span>{totalCarbs}g</span>
+              <span className="text-[10px] text-muted-foreground font-normal">/ {targetCarbs}g</span>
+            </div>
+            <div className="w-full bg-secondary h-1 rounded-full overflow-hidden">
+              <div 
+                className="bg-blue-500 h-full transition-all duration-300"
+                style={{ width: `${Math.min(100, (totalCarbs / Math.max(1, targetCarbs)) * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Fat */}
+          <div className="p-3 rounded-xl border border-border bg-background space-y-1 shadow-2xs">
+            <div className="text-[10px] text-muted-foreground flex items-center justify-between">
+              <span>{bn ? 'ফ্যাট' : 'Fat'}</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            </div>
+            <div className="text-sm font-bold font-mono tabular-numbers text-amber-500 flex items-baseline justify-between">
+              <span>{totalFat}g</span>
+              <span className="text-[10px] text-muted-foreground font-normal">/ {targetFat}g</span>
+            </div>
+            <div className="w-full bg-secondary h-1 rounded-full overflow-hidden">
+              <div 
+                className="bg-amber-500 h-full transition-all duration-300"
+                style={{ width: `${Math.min(100, (totalFat / Math.max(1, targetFat)) * 100)}%` }}
+              />
+            </div>
+          </div>
+
+          {/* GL Score */}
+          <div className="p-3 rounded-xl border border-border bg-background space-y-0.5 shadow-2xs">
+            <div className="text-[10px] text-muted-foreground">{bn ? 'গ্লাইসেমিক লোড (GL)' : 'Glycemic Load (GL)'}</div>
+            <div className="text-sm font-bold font-mono tabular-numbers text-purple-500">{avgGl}</div>
+            <div className="text-[9px] text-muted-foreground">
+              {avgGl < 50 ? (bn ? 'লো GL (আদর্শ)' : 'Low (Optimal)') : (bn ? 'মাঝারি' : 'Moderate')}
+            </div>
+          </div>
+
+          {/* PRAL Score */}
+          <div className="p-3 rounded-xl border border-border bg-background space-y-0.5 shadow-2xs">
+            <div className="text-[10px] text-muted-foreground">PRAL Score</div>
+            <div className={`text-sm font-bold font-mono tabular-numbers ${totalPral < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+              {totalPral}
+            </div>
+            <div className="text-[9px] text-muted-foreground">
+              {totalPral < 0 ? (bn ? 'ক্ষারীয় (Alkaline)' : 'Alkaline') : (bn ? 'অ্যাসিডিক' : 'Net Acidic')}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Card 2: Meal Architecture & Circadian Fasting Timeline */}
+      <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-subtle space-y-3.5">
+        <div className="flex items-center justify-between border-b border-border/60 pb-3">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-primary" />
+            <h3 className="font-bold text-sm text-foreground tracking-tight">
+              {bn ? 'সার্কেডিয়ান উইন্ডো ও আহার আর্কিটেকচার' : 'Circadian & Fasting Window'}
+            </h3>
+          </div>
+        </div>
+
+        {/* Badges */}
+        <div className="space-y-2">
+          {/* Meal Structure */}
+          <div 
+            data-testid="meal-structure-badge"
+            className="p-2.5 rounded-xl border border-border bg-secondary/40 text-xs font-semibold flex items-center gap-2.5"
+          >
+            <Utensils className="h-4 w-4 text-emerald-500 shrink-0" />
+            <div>
+              <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
+                {bn ? 'খাবারের কাঠামো' : 'Meal Structure'}
+              </span>
+              <span className="text-foreground font-bold">
+                {bn ? (structureLabels[currentStructure]?.bn || currentStructure) : (structureLabels[currentStructure]?.en || currentStructure)}
+              </span>
+            </div>
+          </div>
+
+          {/* Fasting Schedule & Safety Panel */}
+          <div
+            data-testid="fasting-status-badge"
+            className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-2.5 transition-all ${
+              currentFasting?.decision_status === 'fasting_contraindicated' || (currentFasting?.reasons_en && currentFasting.reasons_en.length > 0 && !currentFasting.is_fasting)
+                ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                : currentFasting?.decision_status === 'fasting_approved'
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : currentFasting?.decision_status === 'fasting_requires_review'
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft'
+                ? 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-300'
+                : 'border-slate-500/20 bg-secondary/30 text-muted-foreground'
+            }`}
+          >
+            {currentFasting?.decision_status === 'fasting_contraindicated' ? (
+              <AlertOctagon className="h-4 w-4 text-rose-500 shrink-0" />
+            ) : currentFasting?.decision_status === 'fasting_approved' ? (
+              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+            ) : currentFasting?.decision_status === 'fasting_requires_review' ? (
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            ) : currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8' || currentFasting?.decision_status === 'fasting_proposed_draft' ? (
+              <Clock className="h-4 w-4 text-purple-500 shrink-0" />
+            ) : (
+              <ShieldCheck className="h-4 w-4 text-emerald-500 shrink-0" />
+            )}
+            <div>
+              <span className="text-[10px] text-muted-foreground block uppercase font-bold tracking-wider">
+                {bn ? 'উপবাস স্থিতি' : 'Fasting Status'}
+              </span>
+              <span className="font-bold">
+                {currentFasting?.decision_status === 'fasting_contraindicated'
+                  ? (bn ? `উপবাস নিষিদ্ধ: ${currentFasting.reasons_bn?.[0] || 'ঝুঁকিপূর্ণ'}` : `Contraindicated: ${currentFasting.reasons_en?.[0] || 'High Risk'}`)
+                  : currentFasting?.decision_status === 'fasting_approved'
+                  ? (bn ? `১৬:৮ অনুমোদিত: ${fastingScheduleTextBn}` : `16:8 Approved: ${fastingScheduleTextEn}`)
+                  : currentFasting?.decision_status === 'fasting_requires_review'
+                  ? (bn ? 'উপবাস চিকিৎসকের রিভিউ প্রয়োজন' : 'Requires Clinician Review')
+                  : currentFasting?.decision_status === 'fasting_proposed_draft'
+                  ? (bn ? `১৬:৮ প্রস্তাবিত: ${fastingScheduleTextBn}` : `16:8 Proposed: ${fastingScheduleTextEn}`)
+                  : (currentFasting?.is_fasting || currentStructure === 'intermittent_fasting_16_8')
+                  ? (bn ? `উপবাস সক্রিয়: ${fastingScheduleTextBn}` : `Active 16:8: ${fastingScheduleTextEn}`)
+                  : (bn ? 'নিয়মিত আহার (উপবাস পরিহার্য)' : 'Regular Schedule')}
+              </span>
+            </div>
+          </div>
+
+          {/* Nutritional Adequacy */}
+          <div
+            data-testid="nutritional-adequacy-badge"
+            className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-2.5 ${
+              currentAdequacy?.is_adequate !== false
+                ? 'border-emerald-500/30 bg-emerald-600/15 text-emerald-700 dark:text-emerald-300'
+                : 'border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+            }`}
+          >
+            {currentAdequacy?.is_adequate !== false ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            )}
+            <div>
+              <span className="text-[10px] opacity-80 block uppercase tracking-wider font-semibold">
+                {bn ? 'পুষ্টি পর্যাপ্ততা' : 'Nutritional Adequacy'}
+              </span>
+              <span>
+                {currentAdequacy?.status_label_en
+                  ? (bn ? (currentAdequacy.status_label_bn || currentAdequacy.status_label_en) : currentAdequacy.status_label_en)
+                  : (currentAdequacy?.is_adequate !== false
+                    ? (bn ? 'পুষ্টির লক্ষ্যমাত্রা অর্জিত' : 'Targets Achieved')
+                    : (bn ? 'লক্ষ্যমাত্রা ঘাটতি' : 'Target Deficit'))}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Visual Circadian 24-Hour Timeline Bar */}
+        <div className="pt-2 border-t border-border/60 space-y-1.5">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="font-semibold text-foreground">{bn ? '২৪ ঘণ্টার চক্র' : '24h Timeline'}</span>
+            <span className="text-[10px] font-mono">{currentStructure === 'intermittent_fasting_16_8' ? '16:8 Fast' : 'Standard'}</span>
+          </div>
+
+          <div className="relative h-6 bg-slate-900/90 dark:bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex items-center p-0.5 shadow-inner">
+            <div className="absolute inset-0 flex justify-between px-2 text-[8px] font-mono text-slate-500 pointer-events-none select-none items-center">
+              <span>12A</span>
+              <span>6A</span>
+              <span>12P</span>
+              <span>6P</span>
+              <span>12A</span>
+            </div>
+
+            {currentStructure === 'intermittent_fasting_16_8' || currentFasting?.is_fasting ? (
+              <div 
+                className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-amber-400 via-emerald-500 to-teal-400 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[50%] w-[33.33%]"
+                title={fastingScheduleTextEn || "Intermittent Fasting Window"}
+              >
+                <div className="flex items-center gap-1 px-1 truncate">
+                  <Sun className="h-3 w-3 shrink-0 text-amber-950" />
+                  <span className="truncate text-[9px]">{fastingScheduleTextEn || '8h Window'}</span>
+                </div>
+              </div>
+            ) : (
+              <div 
+                className="absolute h-5 top-0.5 rounded-lg bg-gradient-to-r from-emerald-500/80 via-teal-400/80 to-emerald-500/80 shadow-md flex items-center justify-center text-[10px] font-bold text-slate-950 transition-all duration-300 left-[29.16%] w-[58.33%]"
+                title="Regular Intake Schedule"
+              >
+                <div className="flex items-center gap-1 px-1 truncate">
+                  <Sun className="h-3 w-3 shrink-0 text-amber-950" />
+                  <span className="truncate text-[9px]">{bn ? 'নিয়মিত খাদ্য গ্রহণ (৭টা - ৯টা)' : '7 AM – 9 PM'}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Card 3: Foundations, Salt & Hydration Limits */}
+      <div className="bg-card border border-border/80 rounded-2xl p-5 shadow-subtle space-y-3">
+        <div className="flex items-center justify-between border-b border-border/60 pb-3">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-primary" />
+            <h3 className="font-bold text-sm text-foreground tracking-tight">
+              {bn ? 'হাইড্রেশন ও সুরক্ষা বেসলাইন' : 'Hydration & Baseline Limits'}
+            </h3>
+          </div>
+        </div>
+
+        <div className="space-y-2 text-xs">
+          <div className="p-2.5 rounded-xl bg-secondary/40 border border-border">
+            <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{bn ? 'বিএমআর নিরাপদ ফ্লোর' : 'BMR Energy Floor'}</span>
+            <span className="font-bold text-foreground font-mono">{patient.calculated.bmr} kcal/day</span>
+            <span className={`text-[10px] font-medium block mt-0.5 ${
+              totalKcal >= patient.calculated.bmr ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+            }`}>
+              {totalKcal >= patient.calculated.bmr 
+                ? (bn ? '✓ বিএমআরের চেয়ে বেশি (নিরাপদ)' : '✓ Met (>= BMR)')
+                : (bn ? `⚠️ ঘাটতি: ${patient.calculated.bmr - totalKcal} kcal` : `⚠️ Deficit: ${patient.calculated.bmr - totalKcal} kcal`)}
+            </span>
+          </div>
+
+          <div className="p-2.5 rounded-xl bg-secondary/40 border border-border">
+            <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{bn ? 'দৈনিক বাড়তি লবণ (Salt Limit)' : 'Added Cooking Salt'}</span>
+            <span className="font-bold text-foreground">5g (~1967 mg Na)</span>
+            <span className="text-[10px] text-muted-foreground block mt-0.5">
+              {bn ? '১ চা চামচ সমান' : '1 level teaspoon daily limit'}
+            </span>
+          </div>
+
+          <div className={`p-2.5 rounded-xl border text-xs ${fluidBadgeColor}`} data-testid="hydration-guidance-card">
+            <span className="text-muted-foreground block text-[10px] uppercase font-semibold">{fluidTitle}</span>
+            <span className="font-bold text-foreground">{fluidDisplayText}</span>
+            <span className="text-[10px] text-muted-foreground block mt-0.5">
+              {fluidSubText}
+            </span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
 
       {/* ── Add Custom Food Item Modal ─────────────────────────────────────────── */}
       {selectedMealForAdd && (
