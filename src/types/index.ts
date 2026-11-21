@@ -1078,3 +1078,13 @@ export interface ClinicalProgressPlanningContext {
   clinicianReviewStatus: 'approved' | 'pending';
   approvedNextObjectives: string[];
 }
+
+// ─── Phase R1: Dual-Report Architecture (U20 & U21) ───────────────
+export type {
+  ClinicianReportPayload,
+  PatientReportPayload,
+  ReleaseEligibilityResult,
+  ClinicianDayPlan,
+  PatientDayPlan
+} from '@/engine/reports/dualReportEngine';
+

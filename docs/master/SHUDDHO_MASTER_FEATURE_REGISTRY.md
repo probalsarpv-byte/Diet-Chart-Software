@@ -380,7 +380,7 @@
 - **Benchmark / Inspiration:** Cronometer Pro, Nutrium.
 - **Primary Phase Owner:** **R1** (Dual Report & Analytics Studio)
 - **Dependencies:** F03, F08
-- **Current Status:** `IMPLEMENTED` (`src/components/tabs/DietChartTab.tsx` inspector rail; isolated view in R1)
+- **Current Status:** `IMPLEMENTED` (`src/engine/reports/dualReportEngine.ts`, `src/components/reports/ClinicianReportView.tsx`, `src/components/tabs/ReportTab.tsx` U20 Studio)
 - **Input Data:** Full 7-day meal plan, detailed micronutrient vectors from FCTB.
 - **Output Data:** DRI/RDA fulfillment percentages, Atwater distribution, sodium-potassium ratio, calcium-magnesium ratio.
 - **Clinical Safety Considerations:** Provides clinicians with full biochemical depth to detect hidden micronutrient insufficiencies.
@@ -393,7 +393,7 @@
 - **Benchmark / Inspiration:** Proprietary SHUDDHO Innovation (Clinical Psychology & Eating Disorder Prevention Standard).
 - **Primary Phase Owner:** **R1** (Dual Report & PDF Studio)
 - **Dependencies:** F03, F05
-- **Current Status:** `PLANNED` (Contract specified in R0; implementation in R1)
+- **Current Status:** `IMPLEMENTED` (`src/engine/reports/dualReportEngine.ts`, `src/components/reports/PatientDietReportView.tsx`, `src/components/tabs/ReportTab.tsx` U21 Studio)
 - **Input Data:** Approved clinician diet plan.
 - **Output Data:** Sanitized patient PDF and web view containing zero numerical energy or macro tokens.
 - **Clinical Safety Considerations:** Prevents patient obsession, anxiety, and dangerous self-adjustments.
