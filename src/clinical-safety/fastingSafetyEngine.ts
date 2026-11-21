@@ -194,6 +194,94 @@ export function evaluateFastingEligibility(
     }
   }
 
+  // 4c. Chronic Kidney Disease (Stages 1–3b) & Advanced Renal Failure
+  const hasCKD = (patient.selected_conditions || []).includes('ckd_stage_1_3b') || 
+    (patient.labs?.egfr !== undefined && patient.labs.egfr < 60);
+  const isSevereCKD = patient.labs?.egfr !== undefined && patient.labs.egfr < 30;
+
+  if (isSevereCKD) {
+    isEligible = false;
+    maxHours = 0;
+    riskLevel = 'contraindicated';
+    reasons_en.push('Fasting is contraindicated in severe CKD (eGFR <30 mL/min) due to risk of acute uremic catabolism, electrolyte shifts, and volume contraction.');
+    reasons_bn.push('তীব্র কিডনি অকার্যকারিতায় (ই-জিএফআর ৩০ এর কম) উপবাস সম্পূর্ণ নিষিদ্ধ।');
+    safetyResults.push({
+      rule_id: 'FASTING_CKD_STAGE4_5_STOP',
+      rule_version: '1.0.0',
+      patient_id: patient.id,
+      decision: 'HARD_STOP',
+      severity: 'critical',
+      title_en: 'Fasting Contraindicated in Advanced Renal Failure',
+      title_bn: 'উন্নত কিডনি অকার্যকারিতায় রোজা/উপবাস নিষিদ্ধ',
+      clinical_explanation_en: 'Severe renal insufficiency cannot maintain acid-base and potassium homeostasis during prolonged catabolic fasting.',
+      clinical_explanation_bn: 'কিডনির গুরুতর ক্ষতিতে দীর্ঘ উপবাস এসিড-ক্ষার ও পটাশিয়াম ভারসাম্য নষ্ট করে জীবন ঝুঁকিপূর্ণ করতে পারে।',
+      required_action_en: 'Maintain continuous, regulated hydration and non-fasting meal schedule.',
+      required_action_bn: 'উপবাস বন্ধ রাখুন এবং নিয়মিত খাবার ও পানি নিশ্চিত করুন।',
+      triggering_observations: [`egfr:${patient.labs?.egfr}`],
+      clinician_review_required: true,
+      provenance_reference: 'KDIGO Clinical Practice Guideline for CKD Nutrition',
+      timestamp: new Date().toISOString()
+    });
+  } else if (hasCKD) {
+    if (isEligible) {
+      if (maxHours > 14) {
+        maxHours = 14;
+      }
+      riskLevel = riskLevel === 'contraindicated' || riskLevel === 'high_risk_supervised' ? riskLevel : 'moderate_risk';
+      reasons_en.push('CKD Stages 1–3b requires restricting fasting to <=14 hours to prevent volume contraction and hyperuricemic crystal precipitation.');
+      reasons_bn.push('কিডনি রোগে পানিশূন্যতা ও ইউরিক এসিড জমা এড়াতে উপবাস সর্বোচ্চ ১৪ ঘণ্টায় সীমিত রাখা আবশ্যক।');
+      if (proposedFastingHours && proposedFastingHours > 14) {
+        safetyResults.push({
+          rule_id: 'FASTING_CKD_PROLONGED_STOP',
+          rule_version: '1.0.0',
+          patient_id: patient.id,
+          decision: 'HARD_STOP',
+          severity: 'high',
+          title_en: 'Fasting Blocked: CKD Catabolic Nitrogen Hazard',
+          title_bn: 'উপবাস সীমাবদ্ধ: কিডনি জটিলতা ও প্রোটিন ক্যাটাবলিজমের ঝুঁকি',
+          clinical_explanation_en: `Proposed fasting of ${proposedFastingHours} hours in CKD exceeds the safe 14-hour physiological limit, inducing transient hypovolemia and hyperfiltration.`,
+          clinical_explanation_bn: 'কিডনি রোগে ১৪ ঘণ্টার বেশি উপবাস পানিশূন্যতা তৈরি করে এবং নেফ্রনের ক্ষতি করতে পারে।',
+          required_action_en: 'Cap fasting duration at maximum 14 hours and maintain adequate hydration.',
+          required_action_bn: 'উপবাসের সময় সর্বোচ্চ ১৪ ঘণ্টায় সীমাবদ্ধ রাখুন।',
+          triggering_observations: [`conditions:ckd_stage_1_3b`, `proposed_hours:${proposedFastingHours}`],
+          clinician_review_required: true,
+          provenance_reference: 'KDOQI Clinical Practice Guideline for Nutrition in CKD',
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  }
+
+  // 4d. HPA-Axis Dysregulation / Severe Neuro-Adrenal Burnout
+  const hasHPABurnout = (patient.selected_conditions || []).includes('hpa_axis_burnout');
+  if (hasHPABurnout && isEligible) {
+    if (maxHours > 14) {
+      maxHours = 14;
+    }
+    riskLevel = riskLevel === 'contraindicated' || riskLevel === 'high_risk_supervised' ? riskLevel : 'moderate_risk';
+    reasons_en.push('HPA-axis burnout requires fasting cap at <=14h to prevent reactive hypoglycemia and adrenal cortisol spikes.');
+    reasons_bn.push('অ্যাড্রেনাল ক্লান্তিতে কর্টিসল হরমোন অতিরিক্ত বৃদ্ধি রোধে উপবাস সর্বোচ্চ ১৪ ঘণ্টায় সীমিত রাখা আবশ্যক।');
+    if (proposedFastingHours && proposedFastingHours > 14) {
+      safetyResults.push({
+        rule_id: 'FASTING_HPA_BURNOUT_PROLONGED_STOP',
+        rule_version: '1.0.0',
+        patient_id: patient.id,
+        decision: 'HARD_STOP',
+        severity: 'high',
+        title_en: 'Fasting Blocked: HPA-Axis Reactive Cortisol Surge',
+        title_bn: 'উপবাস সীমাবদ্ধ: এইচপিএ-অ্যাক্সিস কর্টিসল স্পাইকের ঝুঁকি',
+        clinical_explanation_en: `Proposed fasting of ${proposedFastingHours} hours in severe neuro-adrenal burnout induces counter-regulatory epinephrine/cortisol surges that exacerbate systemic dysregulation.`,
+        clinical_explanation_bn: 'অ্যাড্রেনাল ক্লান্তিতে দীর্ঘ উপবাসে রক্তে সুগার কমে গিয়ে হঠাৎ কর্টিসল বৃদ্ধি পায় যা নার্ভাস সিস্টেমের জন্য ক্ষতিকর।',
+        required_action_en: 'Cap fasting at maximum 14 hours and ensure timely morning breakfast.',
+        required_action_bn: 'উপবাস সর্বোচ্চ ১৪ ঘণ্টায় সীমাবদ্ধ রাখুন এবং সকালে পুষ্টিকর নাশতা নিশ্চিত করুন।',
+        triggering_observations: [`conditions:hpa_axis_burnout`, `proposed_hours:${proposedFastingHours}`],
+        clinician_review_required: true,
+        provenance_reference: 'Endocrine Society Clinical Practice Guidelines on Adrenal Dysregulation',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
   // 5. Proposed Duration Validation against max allowable
   if (proposedFastingHours && proposedFastingHours > maxHours && isEligible && !safetyResults.some(r => r.rule_id === 'FASTING_HYPOGLYCEMIA_MED_STOP' && r.decision === 'HARD_STOP')) {
     safetyResults.push({

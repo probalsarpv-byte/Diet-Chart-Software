@@ -99,6 +99,22 @@ export function checkSupplementOverlaps(supplements: CandidateSupplement[]): Sup
     });
   }
 
+  // 5. Potassium screening (UL / caution in renal impairment or concurrent potassium sources)
+  const potassiumSupps = approvedOrCandidate.filter(s => 
+    s.id.includes('potassium') || s.name_en.toLowerCase().includes('potassium')
+  );
+  if (potassiumSupps.length > 1) {
+    warnings.push({
+      nutrient: "Potassium (Elemental / Citrate)",
+      total_amount_estimated: `${potassiumSupps.length} concurrent Potassium formulations`,
+      tolerable_upper_limit: "Clinician titration under serial serum K+ monitoring",
+      sources: potassiumSupps.map(s => s.name_en),
+      severity: 'high',
+      warning_bn: `সতর্কতা: একাধিক পটাশিয়াম ফর্মুলেশন চিহ্নিত হয়েছে (${potassiumSupps.map(s => s.name_bn).join(' + ')})। অনিয়ন্ত্রিত অতিরিক্ত পটাশিয়াম রক্তে মারাত্মক হাইপারক্যালেমিয়া ও হৃদস্পন্দনে ছন্দহীনতার ঝুঁকি বাড়ায়।`,
+      warning_en: `Upper Limit Alert: Multiple concurrent potassium-containing formulations (${potassiumSupps.map(s => s.name_en).join(', ')}). Exogenous potassium loads without serial electrolyte monitoring can trigger lethal hyperkalemia.`
+    });
+  }
+
   return warnings;
 }
 
@@ -130,12 +146,21 @@ export function evaluateDNIAndTimeline(
   const seenGenericNames = new Set<string>();
 
   for (const userMed of normalizedMedsInput) {
-    const matched = allMedicines.find(m => 
-      userMed === m.id.toLowerCase() || 
-      userMed === m.generic_name.toLowerCase() ||
-      userMed.includes(m.generic_name.toLowerCase()) ||
-      m.brand_names_bd.some(b => userMed === b.toLowerCase() || userMed.includes(b.toLowerCase()))
-    );
+    const matched = allMedicines.find(m => {
+      const genericLower = m.generic_name.toLowerCase();
+      const genericParts = genericLower.split('/').map(p => p.trim());
+      return (
+        userMed === m.id.toLowerCase() || 
+        userMed === genericLower ||
+        userMed.includes(genericLower) ||
+        genericLower.includes(userMed) ||
+        genericParts.some(p => p === userMed || p.includes(userMed) || userMed.includes(p)) ||
+        m.brand_names_bd.some(b => {
+          const bLower = b.toLowerCase();
+          return userMed === bLower || userMed.includes(bLower) || bLower.includes(userMed);
+        })
+      );
+    });
 
     if (matched && !seenGenericNames.has(matched.generic_name.toLowerCase())) {
       seenGenericNames.add(matched.generic_name.toLowerCase());
@@ -163,6 +188,10 @@ export function evaluateDNIAndTimeline(
         matchedSupp = allSupplements.find(s => s.id === 'supp_coq10');
       } else if (dep.nutrient.toLowerCase().includes('vitamin d3') || dep.nutrient.toLowerCase().includes('calcium')) {
         matchedSupp = allSupplements.find(s => s.id === 'supp_d3_k2');
+      } else if (dep.nutrient.toLowerCase().includes('folate') || dep.nutrient.toLowerCase().includes('b9')) {
+        matchedSupp = allSupplements.find(s => s.id === 'supp_active_folate_bcomplex');
+      } else if (dep.nutrient.toLowerCase().includes('zinc')) {
+        matchedSupp = allSupplements.find(s => s.id === 'supp_zinc_carnosine');
       }
 
       if (matchedSupp && !candidateSupplementsMap.has(matchedSupp.id)) {
@@ -209,8 +238,66 @@ export function evaluateDNIAndTimeline(
     }
   }
 
-  const candidateSupplements = Array.from(candidateSupplementsMap.values());
-  const overlapWarnings = checkSupplementOverlaps(candidateSupplements);
+  // Cluster 3: Autoimmune & Systemic Inflammation
+  if (patient.selected_conditions.includes('rheumatoid_arthritis')) {
+    const boswellia = allSupplements.find(s => s.id === 'supp_boswellia_serrata');
+    if (boswellia && !candidateSupplementsMap.has(boswellia.id)) {
+      candidateSupplementsMap.set(boswellia.id, {
+        ...boswellia,
+        approval_status: 'candidate_review',
+        indication_trigger: "Rheumatoid arthritis synovial inflammation & 5-LOX suppression"
+      });
+    }
+  }
+
+  if (patient.selected_conditions.includes('psoriasis_metabolic_skin') || 
+      patient.selected_conditions.includes('celiac_gluten_sensitivity') || 
+      patient.selected_conditions.includes('migraine_neurovascular')) {
+    const quercetin = allSupplements.find(s => s.id === 'supp_quercetin_phytosome');
+    if (quercetin && !candidateSupplementsMap.has(quercetin.id)) {
+      candidateSupplementsMap.set(quercetin.id, {
+        ...quercetin,
+        approval_status: 'candidate_review',
+        indication_trigger: "Mast cell stabilization & neurovascular endothelial protection"
+      });
+    }
+  }
+
+  // Cluster 4: Renal, Electrolyte & Nephrolithiasis
+  if (patient.selected_conditions.includes('nephrolithiasis_hyperoxaluria')) {
+    const kCit = allSupplements.find(s => s.id === 'supp_potassium_citrate_functional');
+    if (kCit && !candidateSupplementsMap.has(kCit.id)) {
+      candidateSupplementsMap.set(kCit.id, {
+        ...kCit,
+        approval_status: 'candidate_review',
+        indication_trigger: "Urinary alkalinization & calcium oxalate stone suppression"
+      });
+    }
+  }
+
+  // Cluster 5: Neuro-Adrenal, Hormonal & Sleep Axis
+  if (patient.selected_conditions.includes('hpa_axis_burnout')) {
+    const ashwa = allSupplements.find(s => s.id === 'supp_ashwagandha_ksm66');
+    if (ashwa && !candidateSupplementsMap.has(ashwa.id)) {
+      candidateSupplementsMap.set(ashwa.id, {
+        ...ashwa,
+        approval_status: 'candidate_review',
+        indication_trigger: "HPA-axis burnout & diurnal cortisol rhythm modulation"
+      });
+    }
+  }
+
+  if (patient.selected_conditions.includes('insomnia_circadian_disruption') || 
+      patient.selected_conditions.includes('migraine_neurovascular')) {
+    const theanine = allSupplements.find(s => s.id === 'supp_l_theanine');
+    if (theanine && !candidateSupplementsMap.has(theanine.id)) {
+      candidateSupplementsMap.set(theanine.id, {
+        ...theanine,
+        approval_status: 'candidate_review',
+        indication_trigger: "GABA-glutamate balance & circadian sleep architecture restoration"
+      });
+    }
+  }
 
   // 4. Critical Medication Administration & Spacing Warnings
   const hasLevothyroxine = activeMeds.some(m => m.id === 'med_levothyroxine' || m.generic_name.toLowerCase().includes('levothyroxine'));
@@ -222,6 +309,32 @@ export function evaluateDNIAndTimeline(
   const hasSGLT2 = activeMeds.some(m => m.id === 'med_sglt2i' || m.generic_name.toLowerCase().includes('empagliflozin') || m.generic_name.toLowerCase().includes('dapagliflozin'));
   const hasSulfonylurea = activeMeds.some(m => m.id === 'med_sulfonylurea' || m.generic_name.toLowerCase().includes('gliclazide') || m.generic_name.toLowerCase().includes('glimepiride'));
   const hasARB = activeMeds.some(m => m.id === 'med_arb_acei' || m.generic_name.toLowerCase().includes('losartan') || m.generic_name.toLowerCase().includes('telmisartan') || m.generic_name.toLowerCase().includes('ramipril'));
+  const hasPotassiumSparing = activeMeds.some(m => 
+    m.id === 'med_potassium_sparing_diuretic' || 
+    m.generic_name.toLowerCase().includes('spironolactone') || 
+    m.generic_name.toLowerCase().includes('eplerenone') ||
+    m.generic_name.toLowerCase().includes('triamterene')
+  );
+  const hasPotassiumCitrateMed = activeMeds.some(m =>
+    m.id === 'med_potassium_citrate' ||
+    m.generic_name.toLowerCase().includes('potassium citrate')
+  );
+  const hasSSRI = activeMeds.some(m =>
+    m.id === 'med_ssri' ||
+    m.generic_name.toLowerCase().includes('escitalopram') ||
+    m.generic_name.toLowerCase().includes('sertraline') ||
+    m.generic_name.toLowerCase().includes('fluoxetine')
+  );
+  const hasMethotrexate = activeMeds.some(m =>
+    m.id === 'med_dmard_methotrexate' ||
+    m.generic_name.toLowerCase().includes('methotrexate')
+  );
+  const hasBiologics = activeMeds.some(m =>
+    m.id === 'med_biologics_anti_tnf' ||
+    m.generic_name.toLowerCase().includes('adalimumab') ||
+    m.generic_name.toLowerCase().includes('infliximab') ||
+    m.generic_name.toLowerCase().includes('etanercept')
+  );
 
   if (hasLevothyroxine) {
     criticalWarnings.push({
@@ -266,6 +379,47 @@ export function evaluateDNIAndTimeline(
       warning_en: "POTASSIUM-SPARING PRECAUTION: ARB/ACE inhibitors impair renal potassium excretion. Avoid excessive potassium-rich supplements or coconut water."
     });
   }
+
+  if (hasPotassiumSparing) {
+    criticalWarnings.push({
+      warning_bn: "সতর্কতা: পটাসিয়াম-স্পেয়ারিং ডাইইউরেটিক্স (স্পাইরোনোল্যাকটোন) চলাকালীন পটাসিয়াম সাইট্রেট বা পটাসিয়াম সাপ্লিমেন্ট কঠোরভাবে নিষিদ্ধ; এটি মারাত্মক হাইপারক্যালেমিয়া ও কার্ডিয়াক অ্যারেস্টের ঝুঁকি সৃষ্টি করে।",
+      warning_en: "CRITICAL SAFETY HARD STOP: Potassium-sparing diuretics (Spironolactone/Eplerenone) with concurrent Potassium Citrate or potassium supplements is contraindicated due to fatal hyperkalemia and cardiac arrest risk."
+    });
+    // Suppress potassium citrate from candidate supplements
+    candidateSupplementsMap.delete('supp_potassium_citrate_functional');
+  }
+
+  if (hasPotassiumCitrateMed && hasPotassiumSparing) {
+    criticalWarnings.push({
+      warning_bn: "মারাত্মক সতর্কতা: রোগীর ওষুধ তালিকায় একই সাথে স্পাইরোনোল্যাকটোন এবং পটাসিয়াম সাইট্রেট রয়েছে! এই কম্বিনেশন মারাত্মক হাইপারক্যালেমিয়ার ঝুঁকি তৈরি করে। অবিলম্বে প্রেসক্রিপশন সমন্বয় প্রয়োজন।",
+      warning_en: "CRITICAL DNI HARD STOP: Co-prescription of Spironolactone and Potassium Citrate detected. Severe risk of fatal hyperkalemia. Immediate physician reconciliation required."
+    });
+  }
+
+  if (hasSSRI) {
+    criticalWarnings.push({
+      warning_bn: "সতর্কতা: এসএসআরআই (এসসাইটালোপ্রাম/সারট্রালিন) ওষুধের সাথে ৫-এইচটিপি (5-HTP) বা সেন্ট জনস ওয়ার্ট গ্রহণ মারাত্মক সেরোটোনিন সিন্ড্রোম (Serotonin Syndrome) সৃষ্টি করতে পারে।",
+      warning_en: "SEROTONIN SYNDROME WARNING: Concomitant SSRI antidepressants with 5-HTP or serotonergic nutraceuticals is strictly contraindicated due to hyperthermia, neuromuscular agitation, and fatal Serotonin Syndrome."
+    });
+  }
+
+  if (hasMethotrexate) {
+    criticalWarnings.push({
+      warning_bn: "মেথোট্রেক্সেট সেবনের দিনে কোনো প্রকার ফলিক এসিড বা ফোলেট খাবেন না। মেথোট্রেক্সেট গ্রহণের ২৪ থেকে ৪৮ ঘণ্টা পর ফোলেট সাপ্লিমেন্ট গ্রহণ করতে হবে।",
+      warning_en: "METHOTREXATE FOLATE TIMING: Administer folic/folinic acid strictly 24 to 48 hours after the weekly Methotrexate dose; never ingest on the day of Methotrexate."
+    });
+  }
+
+  if (hasBiologics) {
+    criticalWarnings.push({
+      warning_bn: "বায়োলজিক অ্যান্টি-টিএনএফ থেরাপিতে রোগ প্রতিরোধ ক্ষমতা কমে যায়; অপাস্তুরিত দুধ, কাঁচা স্প্রাউট বা কাঁচা খাবার সম্পূর্ণ বর্জন করে সম্পূর্ণ সেদ্ধ ও স্বাস্থ্যসম্মত খাবার নিশ্চিত করুন।",
+      warning_en: "IMMUNOSUPPRESSION SAFETY ALERT: Biologic anti-TNF therapy compromises pathogen defense. Strictly enforce thoroughly cooked foods and eliminate raw/unpasteurized items."
+    });
+  }
+
+  // Finalize candidate supplements & upper limit screening after safety deletions
+  const candidateSupplements = Array.from(candidateSupplementsMap.values());
+  const overlapWarnings = checkSupplementOverlaps(candidateSupplements);
 
   // 5. Generate Chronological 24-Hour Timeline
   const timeline: DailyTimelineItem[] = [];
@@ -320,7 +474,12 @@ export function evaluateDNIAndTimeline(
   const breakfastMeds: string[] = [];
   if (hasMetformin) breakfastMeds.push("Metformin (প্রেসক্রিপশন - খাবারের ঠিক সাথে)");
   if (hasSteroids) breakfastMeds.push("Corticosteroid (প্রেসক্রিপশন - ভারী খাবারের সাথে)");
+  if (hasPotassiumSparing) breakfastMeds.push("Spironolactone (প্রেসক্রিপশন - সকালের খাবারের সাথে)");
+  if (hasSSRI) breakfastMeds.push("SSRI (প্রেসক্রিপশন - সকালের খাবারের সাথে)");
+  if (hasMethotrexate) breakfastMeds.push("Methotrexate (প্রেসক্রিপশন - সাপ্তাহিক নির্দিষ্ট দিনে ডাক্তারের পরামর্শ অনুযায়ী)");
   if (candidateSupplementsMap.has('supp_methyl_b12')) breakfastMeds.push("Candidate: Sublingual Methyl-B12 (জিহ্বার নিচে)");
+  if (candidateSupplementsMap.has('supp_boswellia_serrata')) breakfastMeds.push("Candidate: Boswellia Serrata AKBA (খাবারের সাথে)");
+  if (candidateSupplementsMap.has('supp_quercetin_phytosome')) breakfastMeds.push("Candidate: Quercetin Phytosome (নাশতার ২০ মিনিট পূর্বে)");
 
   timeline.push({
     time: "08:00 AM",
@@ -427,6 +586,12 @@ export function evaluateDNIAndTimeline(
   }
   if (candidateSupplementsMap.has('supp_magnesium_glycinate')) {
     nightMeds.push("Candidate: Magnesium Glycinate / Gefomag (Navana Pharma)");
+  }
+  if (candidateSupplementsMap.has('supp_ashwagandha_ksm66')) {
+    nightMeds.push("Candidate: Ashwagandha KSM-66 (কর্টিসল নিয়ন্ত্রণ ও স্নায়বিক বিশ্রাম)");
+  }
+  if (candidateSupplementsMap.has('supp_l_theanine')) {
+    nightMeds.push("Candidate: L-Theanine (আলফা ব্রেনওয়েভ ও স্বাভাবিক ঘুম সহায়তা)");
   }
 
   timeline.push({

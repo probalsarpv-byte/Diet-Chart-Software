@@ -328,5 +328,130 @@
       "Biliary Tract Obstruction",
       "Concurrent High-Dose Anticoagulants (Warfarin)"
     ]
+  },
+  {
+    "id": "supp_boswellia_serrata",
+    "name_en": "Boswellia Serrata Extract (AKBA 30-65%)",
+    "name_bn": "বসওয়েলিয়া সেরাটা নির্যাস (একেবিএ / লোবান নির্যাস)",
+    "category": "Phytomedicine / 5-LOX Inhibitor & Joint Anti-inflammatory",
+    "clinical_indications": [
+      "Rheumatoid Arthritis Synovial Inflammation",
+      "Osteoarthritis Joint Pain",
+      "Inflammatory Bowel Disease (IBD)",
+      "Elevated hs-CRP & Leukotriene Driven Conditions"
+    ],
+    "recommended_dose": "300 - 500 mg twice daily with meals",
+    "timing_schedule": "With breakfast and dinner",
+    "timing_note_bn": "খাবারের চর্বির সাথে সকালে ও রাতে গ্রহণ করুন; ৫-লিপোক্সিজিনেজ বাধা দিয়ে জয়েন্টের ফোলা ও প্রদাহ কমায়।",
+    "timing_note_en": "Administer with fat-containing meals to optimize bioavailability of acetyl-11-keto-beta-boswellic acid (AKBA).",
+    "verified_bd_brands": [
+      "Boswell",
+      "Arthrocid",
+      "Flexi-B"
+    ],
+    "contraindications": [
+      "Severe active gastritis",
+      "Pregnancy"
+    ]
+  },
+  {
+    "id": "supp_quercetin_phytosome",
+    "name_en": "Quercetin Phytosome (with Bromelain)",
+    "name_bn": "কুয়ারসেটিন ফাইটোসোম (ব্রোমেলাইন সমৃদ্ধ)",
+    "category": "Flavonoid / Mast Cell Stabilizer & Zinc Ionophore",
+    "clinical_indications": [
+      "Neurovascular Inflammation & Migraine Prophylaxis",
+      "Mast Cell Activation & Histamine Intolerance",
+      "Psoriasis & Systemic Endothelial Inflammation",
+      "Cellular Zinc Delivery Support"
+    ],
+    "recommended_dose": "250 - 500 mg daily",
+    "timing_schedule": "Morning 20 minutes before breakfast",
+    "timing_note_bn": "সকালে নাশতার ২০ মিনিট পূর্বে গ্রহণ করুন। মাস্ট সেল স্থিতিশীল করে হিস্টামিন নিঃসরণ কমায় ও রক্তনালীর প্রদাহ দূর করে।",
+    "timing_note_en": "Take on an empty stomach with water or alongside Vitamin C to enhance cellular zinc uptake and blunt mast-cell degranulation.",
+    "verified_bd_brands": [
+      "Querce",
+      "Histamend",
+      "Bio-Quercetin"
+    ],
+    "contraindications": [
+      "Severe renal impairment (eGFR < 30)",
+      "Concurrent Fluoroquinolone Antibiotics (take 4h apart)"
+    ]
+  },
+  {
+    "id": "supp_potassium_citrate_functional",
+    "name_en": "Potassium Magnesium Citrate (Alkalinizing Protocol)",
+    "name_bn": "পটাশিয়াম ম্যাগনেসিয়াম সাইট্রেট (অ্যালকালাইন প্রোটোকল)",
+    "category": "Electrolyte & Urinary Alkalinizer / Nephrolithiasis Prophylaxis",
+    "clinical_indications": [
+      "Calcium Oxalate Nephrolithiasis (Kidney Stones)",
+      "Hypocitraturia & Low Urinary pH (<6.0)",
+      "Hyperuricosuria"
+    ],
+    "recommended_dose": "10 - 20 mEq/day (1000 - 2000 mg) dissolved in water",
+    "timing_schedule": "Post-meal in divided doses",
+    "timing_note_bn": "খাবারের ৩০ মিনিট পর ১ গ্লাস পানিতে গুলে দিনে দুই বারে পান করুন। মূত্র ক্ষারীয় করে পাথর গলতে সহায়তা করে।",
+    "timing_note_en": "Dilute thoroughly in 250 mL water postprandially. Titrate against morning urinary pH (target 6.5 - 7.0).",
+    "verified_bd_brands": [
+      "K-Cit",
+      "Alkali-K",
+      "Urocit"
+    ],
+    "contraindications": [
+      "Concurrent Potassium-Sparing Diuretics (Spironolactone, Triamterene)",
+      "Chronic Kidney Disease Stage 4-5 (eGFR < 30 mL/min)",
+      "Hyperkalemia (> 5.0 mmol/L)",
+      "Severe Cardiac Arrhythmia"
+    ]
+  },
+  {
+    "id": "supp_ashwagandha_ksm66",
+    "name_en": "Ashwagandha Root Extract (KSM-66 Standardized)",
+    "name_bn": "অশ্বগন্ধা মূলের নির্যাস (কেএসএম-৬৬ প্রমিত নির্যাস)",
+    "category": "Adaptogen / HPA-Axis Modulator & Cortisol Balancer",
+    "clinical_indications": [
+      "HPA-Axis Burnout & Chronic Sympathetic Exhaustion",
+      "Elevated Evening Cortisol & Delayed Sleep Latency",
+      "Mild Anxiety & Nervous Tension"
+    ],
+    "recommended_dose": "300 - 600 mg once or twice daily",
+    "timing_schedule": "Evening with dinner or 1 hour before bed",
+    "timing_note_bn": "সন্ধ্যার খাবারের সাথে অথবা ঘুমানোর ১ ঘণ্টা পূর্বে দুধ বা হালকা খাবারের সাথে গ্রহণ করুন; কর্টিসল হ্রাস করে প্রশান্তি আনে।",
+    "timing_note_en": "Administer with evening nourishment. Full-spectrum withanolides downregulate HPA-axis hyperactivity and lower serum cortisol.",
+    "verified_bd_brands": [
+      "Ashwa-KSM",
+      "StressCalm",
+      "Zen-Root"
+    ],
+    "contraindications": [
+      "Hyperthyroidism / Thyrotoxicosis (stimulates T4 synthesis)",
+      "Acute Autoimmune Flares without supervision",
+      "Pregnancy"
+    ]
+  },
+  {
+    "id": "supp_l_theanine",
+    "name_en": "L-Theanine (Alpha-Wave Neuromodulator)",
+    "name_bn": "এল-থিয়ানিন (স্নায়ু শিথিলকারী অ্যামিনো এসিড)",
+    "category": "Neuroactive Amino Acid / Glutamate-GABA Balancer",
+    "clinical_indications": [
+      "Insomnia & Sleep Architecture Fragmentation",
+      "Cerebral Hyperarousal & Racing Thoughts at Night",
+      "Tension-Type & Neurovascular Migraine Auras"
+    ],
+    "recommended_dose": "100 - 200 mg 30-60 minutes before bed or during acute stress",
+    "timing_schedule": "30-45 minutes before bedtime",
+    "timing_note_bn": "ঘুমানোর ৩০-৪৫ মিনিট আগে এক গ্লাস পানির সাথে সেব্য। মস্তিষ্কে আলফা ব্রেনওয়েভ বাড়িয়ে প্রশান্তিদায়ক স্বাভাবিক ঘুম এনে দেয়।",
+    "timing_note_en": "Crosses the blood-brain barrier readily. Induces alpha-frequency brain waves (8-13 Hz) promoting alert relaxation without day sedation.",
+    "verified_bd_brands": [
+      "TheaCalm",
+      "ZenFocus",
+      "NeuroThea"
+    ],
+    "contraindications": [
+      "Severe Hypotension",
+      "Concurrent High-Dose Sedatives without clinical oversight"
+    ]
   }
 ]

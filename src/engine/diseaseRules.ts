@@ -366,6 +366,242 @@ export const DISEASE_RULES: Record<ClinicalConditionId, DiseaseRule> = {
     ],
     clinicalRationaleBn: "অন্ত্রের দেয়ালে ক্ষত থাকলে অপাচ্য আঁশ ও কাঁচা খাদ্য মিউকোসা স্তরে ঘর্ষণ তৈরি করে রক্তক্ষরণ ও প্রদাহ বাড়িয়ে দেয়।",
     clinicalRationaleEn: "Insoluble fibrous roughage induces mechanical friction across friable, inflamed mucosal ulcerations, precipitating micro-hemorrhage."
+  },
+
+  rheumatoid_arthritis: {
+    id: 'rheumatoid_arthritis',
+    name_en: "Rheumatoid Arthritis / Autoimmune Synovitis",
+    name_bn: "রিউমাটয়েড আর্থ্রাইটিস / অটোইমিউন বাতজনিত প্রদাহ",
+    clinical_summary_en: "Chronic autoimmune inflammatory synovitis mediated by citrullinated protein antibodies, TNF-alpha, and NF-kB activation. Focuses on Mediterranean-style anti-inflammatory nutrition, omega-3 fatty acids, and mucosal immune tolerance.",
+    clinical_summary_bn: "অটোইমিউন কারণজনিত অস্থিসন্ধির দীর্ঘস্থায়ী প্রদাহ, ফোলা ও ব্যথা। ওমেগা-৩ ফ্যাটি এসিড, পলিফেনল এবং প্রদাহনাশক খাদ্যাভ্যাস মূল লক্ষ্য।",
+    redTags: ['high_fructose', 'high_sodium_processed', 'trans_fat'],
+    yellowTags: ['solanaceae_nightshade', 'purine_moderate'],
+    greenTags: ['anti_inflammatory', 'gut_healing', 'omega3_rich', 'antioxidant_rich'],
+    redFoods: ['sugar', 'carbonated drink', 'bakery products', 'vanaspati', 'deep fried', 'processed meat', 'refined flour'],
+    yellowFoods: ['tomato', 'eggplant', 'potato', 'bell pepper'],
+    greenFoods: ['sea fish', 'hilsha', 'salmon', 'chia seeds', 'flaxseeds', 'turmeric', 'ginger', 'extra virgin olive oil', 'green tea'],
+    macroAdjustment: {
+      carb_pct_range: [35, 45],
+      protein_g_per_kg: [1.2, 1.5],
+      fat_pct_range: [35, 40]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "সন্ধ্যা ৮টার মধ্যে রাতের খাবার সম্পন্ন করে ১২-১৪ ঘণ্টার স্বাভাবিক নৈশ উপবাস রক্ষা করুন যা সিস্টেমিক প্রদাহ কমাতে সহায়ক।",
+        rule_en: "Maintain an overnight anti-inflammatory fast of 12-14 hours to modulate circulating inflammatory cytokine peaks."
+      }
+    ],
+    clinicalRationaleBn: "রিফাইন্ড চিনি ও ট্রান্স ফ্যাট প্রো-ইনফ্ল্যামেটরি সাইটোকাইন ও জয়েন্টের প্রদাহ বহুগুণ বাড়িয়ে দেয়।",
+    clinicalRationaleEn: "Excess refined carbohydrates and trans-fatty acids upregulate NF-kB and COX-2 enzymatic expression, exacerbating synovial hypervascularity."
+  },
+
+  psoriasis_metabolic_skin: {
+    id: 'psoriasis_metabolic_skin',
+    name_en: "Psoriasis / Th17 Metabolic Skin Inflammation",
+    name_bn: "সোরিয়াসিস / অটোইমিউন ত্বকের দীর্ঘস্থায়ী প্রদাহ",
+    clinical_summary_en: "Hyperproliferation of keratinocytes driven by the IL-23/IL-17 immune axis, often linked with metabolic endotoxemia and impaired gut barrier. Protocol targets gut-skin axis healing, antioxidant sufficiency, and elimination of pro-inflammatory triggers.",
+    clinical_summary_bn: "ত্বকের কেরাটিনোসাইট অতিরিক্ত বৃদ্ধি ও ত্বকে খসখসে লাল স্তর সৃষ্টি। অন্ত্রের দেয়াল নিরাময়, বিষাক্ত টক্সিন দূরীকরণ ও প্রদাহরোধী পথ্য আবশ্যক।",
+    redTags: ['high_fructose', 'high_sodium_processed', 'trans_fat', 'contains_gluten'],
+    yellowTags: ['solanaceae_nightshade', 'dairy_casein'],
+    greenTags: ['anti_inflammatory', 'gut_healing', 'liver_detox', 'antioxidant_rich'],
+    redFoods: ['alcohol', 'refined sugar', 'junk food', 'processed food', 'fried snacks', 'sweetmeat', 'bakery products'],
+    yellowFoods: ['cow milk', 'paneer', 'tomato', 'potato'],
+    greenFoods: ['wild fish', 'pumpkin seeds', 'green leafy vegetables', 'papaya', 'turmeric', 'virgin coconut oil', 'beetroot'],
+    macroAdjustment: {
+      carb_pct_range: [35, 45],
+      protein_g_per_kg: [1.2, 1.4],
+      fat_pct_range: [35, 40]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "পর্যাপ্ত পানি ও অ্যান্টিঅক্সিডেন্টযুক্ত সবুজ শাকসবজি দিনে পর্যাপ্ত পরিমাণে গ্রহণ করুন এবং গভীর রাতে ভারী খাবার এড়িয়ে চলুন।",
+        rule_en: "Ensure adequate daytime hydration and antioxidant load while avoiding nocturnal heavy eating to lower systemic oxidative stress."
+      }
+    ],
+    clinicalRationaleBn: "অন্ত্রে মাইক্রোবিয়াল ভারসাম্যহীনতা ত্বকে এন্ডোটক্সিন ছড়িয়ে সোরিয়াসিসের প্রলেপকে দ্রুত বৃদ্ধি করে।",
+    clinicalRationaleEn: "Circulating lipopolysaccharides (LPS) crossing a permeable gut barrier activate dermal dendritic cells, triggering IL-23 and IL-17 cascades."
+  },
+
+  celiac_gluten_sensitivity: {
+    id: 'celiac_gluten_sensitivity',
+    name_en: "Celiac Disease & Gluten Enteropathy",
+    name_bn: "সিলিয়াক ডিজিজ ও গ্লুটেন সংবেদনশীলতা",
+    clinical_summary_en: "Autoimmune enteropathy triggered by dietary gluten ingestion, precipitating small intestinal mucosal villous blunting and malabsorption. Protocol mandates absolute lifetime elimination of all gluten-containing grains.",
+    clinical_summary_bn: "খাদ্যে গ্লুটেন উপস্থিতির কারণে ক্ষুদ্রান্ত্রের মিউকোসা বিনষ্ট ও খাদ্য শোষণহীনতা। ১০০% সম্পূর্ণ গ্লুটেনমুক্ত খাদ্যাভ্যাস বাধ্যতামূলক।",
+    redTags: ['contains_gluten'],
+    yellowTags: ['cross_reactive_grain', 'dairy_lactose'],
+    greenTags: ['gluten_free', 'gut_healing', 'anti_inflammatory', 'nutrient_dense'],
+    redFoods: ['wheat', 'atta', 'maida', 'suji', 'barley', 'rye', 'bread', 'roti', 'paratha', 'biscuit', 'cake', 'chanachur', 'semolina', 'noodles', 'pasta'],
+    yellowFoods: ['commercial oats', 'corn flakes', 'processed cheese'],
+    greenFoods: ['red rice', 'white rice', 'brown rice', 'quinoa', 'potatoes', 'green banana', 'papaya', 'eggs', 'fresh fish', 'lentils', 'vegetables'],
+    macroAdjustment: {
+      carb_pct_range: [40, 50],
+      protein_g_per_kg: [1.2, 1.5],
+      fat_pct_range: [30, 35]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "রান্নাঘর ও থালাবাসনে যেন গ্লুটেন বা গমের সামান্যতম ক্রস-কন্টামিনেশন না ঘটে তা নিশ্চিত করুন।",
+        rule_en: "Maintain strict non-cross-contaminated preparation surfaces and utensils to eliminate micro-trace gluten exposure."
+      }
+    ],
+    clinicalRationaleBn: "গমের গ্লুটেনের ফ্র্যাকশন গ্লিয়াডিন টিস্যু ট্রান্সগ্লুটামিনেজ এনজাইমের সাথে যুক্ত হয়ে অটোইমিউন প্রতিক্রিয়ায় ক্ষুদ্রান্ত্রের ভিলাই ধ্বংস করে।",
+    clinicalRationaleEn: "Gliadin deamidation by tissue transglutaminase (tTG) triggers CD4+ T-cell activation, resulting in architectural villous blunting and crypt hyperplasia."
+  },
+
+  ckd_stage_1_3b: {
+    id: 'ckd_stage_1_3b',
+    name_en: "Chronic Kidney Disease (Stages 1–3b)",
+    name_bn: "ক্রনিক কিডনি ডিজিজ / দীর্ঘস্থায়ী কিডনি রোগ (ধাপ ১–৩বি)",
+    clinical_summary_en: "Progressive reduction in functional nephron mass (eGFR 30–89 mL/min). Clinical nutrition focuses on titrating protein to avoid glomerular hyperfiltration, sodium restriction (<2000 mg/day), and avoiding hidden phosphorus additives.",
+    clinical_summary_bn: "কিডনির ফিল্ট্রেশন ক্ষমতা হ্রাস (ই-জিএফআর ৩০–৮৯)। প্রোটিন পরিমিতকরণ (০.৬–০.৮ গ্রাম/কেজি), লবণ নিয়ন্ত্রণ এবং অতিরিক্ত অজৈব ফসফেট বর্জন অপরিহার্য।",
+    redTags: ['high_sodium_processed', 'inorganic_phosphate_additive'],
+    yellowTags: ['high_potassium', 'high_protein', 'high_purine'],
+    greenTags: ['renal_protective', 'anti_inflammatory', 'low_sodium'],
+    redFoods: ['processed meat', 'packaged soup', 'salty snacks', 'instant noodles', 'baking powder', 'carbonated beverage', 'canned foods'],
+    yellowFoods: ['red meat', 'beef', 'mutton', 'banana', 'coconut water', 'spinach', 'dates'],
+    greenFoods: ['bottle gourd', 'pointed gourd', 'ridge gourd', 'papaya', 'ash gourd', 'egg white', 'freshwater small fish', 'cauliflower', 'white rice'],
+    macroAdjustment: {
+      carb_pct_range: [45, 55],
+      protein_g_per_kg: [0.6, 0.8],
+      fat_pct_range: [30, 35]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "দৈনিক প্রোটিনের পরিমাণ নির্দিষ্ট গ্রাম হিসেবে মেপে ভাগ করে খান, যাতে একসাথে কিডনির ওপর অতিরিক্ত নাইট্রোজেনাস লোড না পড়ে।",
+        rule_en: "Distribute daily titrated protein evenly across daytime meals to prevent transient glomerular hyperfiltration spikes."
+      },
+      {
+        rule_bn: "লবণ দৈনিক ৫ গ্রামের নিচে (সোডিয়াম ২০০০ মিগ্রা এর কম) সীমাবদ্ধ রাখুন এবং কাঁচা লবণ সম্পূর্ণরূপে বাদ দিন।",
+        rule_en: "Strictly restrict total elemental sodium intake to below 2000 mg/day (under 5g total table salt equivalent)."
+      }
+    ],
+    clinicalRationaleBn: "অতিরিক্ত প্রোটিন অবশিষ্ট কার্যকর নেফ্রনগুলোর ওপর ইন্ট্রাগ্লোমেরুলার প্রেশার ও হাইপারফিল্ট্রেশন ইনজুরি বাড়িয়ে দ্রুত কিডনি নষ্ট করে।",
+    clinicalRationaleEn: "Excessive nitrogenous substrate elevates intraglomerular capillary hydrostatic pressure, accelerating focal segmental sclerosis of remnant nephrons."
+  },
+
+  nephrolithiasis_hyperoxaluria: {
+    id: 'nephrolithiasis_hyperoxaluria',
+    name_en: "Nephrolithiasis / Calcium Oxalate Stones",
+    name_bn: "কিডনিতে পাথর / ক্যালসিয়াম অক্সালেট নেফ্রোলিথিয়াসিস",
+    clinical_summary_en: "Supersaturation of calcium oxalate in renal tubules driven by dietary oxalates, hypocitraturia, and low fluid volume. Nutrition focuses on low-oxalate foods (<50mg/day), dietary calcium-oxalate intestinal pairing, and urinary alkalinization with citrates.",
+    clinical_summary_bn: "মূত্রে অতিরিক্ত অক্সালেট ও ক্যালসিয়াম জমে পাথর তৈরি। খাবারে উচ্চ-অক্সালেট বর্জন, পর্যাপ্ত তরল গ্রহণ ও সাইট্রেট সমৃদ্ধ খাদ্য আবশ্যক।",
+    redTags: ['high_oxalate', 'high_sodium_processed'],
+    yellowTags: ['medium_oxalate', 'high_purine'],
+    greenTags: ['low_oxalate', 'citrate_rich', 'renal_protective'],
+    redFoods: ['spinach', 'palak', 'beetroot', 'star fruit', 'kamranga', 'cashew nuts', 'almonds', 'dark chocolate', 'cocoa', 'black tea high', 'sweet potato'],
+    yellowFoods: ['lady finger', 'okra', 'carrots', 'green beans', 'lentils'],
+    greenFoods: ['bottle gourd', 'cucumber', 'lemon water', 'fresh lime', 'cauliflower', 'cabbage', 'egg', 'fish', 'rice', 'milk with meals'],
+    macroAdjustment: {
+      carb_pct_range: [45, 55],
+      protein_g_per_kg: [1.0, 1.2],
+      fat_pct_range: [30, 35]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "দিনে অন্তত ২.৫ থেকে ৩ লিটার বিশুদ্ধ পানি ও লেবুর পানি সমান ব্যবধানে গ্রহণ করুন যাতে মূত্র হালকা ও স্বচ্ছ থাকে।",
+        rule_en: "Maintain continuous fluid intake of 2.5-3.0 liters/day across waking hours to ensure urinary volume > 2.0 L/day."
+      },
+      {
+        rule_bn: "অক্সালেটযুক্ত খাবার খাওয়ার সময় সাথে ক্যালসিয়ামযুক্ত খাবার (যেমন দুধ বা দই) একসাথে গ্রহণ করুন যাতে অন্ত্রেই অক্সালেট আবদ্ধ হয়।",
+        rule_en: "Co-ingest dietary calcium alongside meals containing oxalate to precipitate insoluble calcium oxalate within the gut lumen."
+      }
+    ],
+    clinicalRationaleBn: "অন্ত্রে মুক্ত অক্সালেট সহজেই রক্তে শোষিত হয়ে কিডনির রেনাল টিউবুলে ক্যালসিয়ামের সাথে মিলে পাথর সৃষ্টি করে। খাবার সাথে ক্যালসিয়াম খেলে অক্সালেট মলের সাথে বেরিয়ে যায়।",
+    clinicalRationaleEn: "Unbound intestinal oxalate is readily absorbed in the colon and filtered by the glomeruli; tubular supersaturation exceeding the crystallization threshold drives stone formation."
+  },
+
+  hpa_axis_burnout: {
+    id: 'hpa_axis_burnout',
+    name_en: "HPA-Axis Dysregulation & Neuro-Adrenal Burnout",
+    name_bn: "এইচপিএ-অ্যাক্সিস ডিজরেগুলেশন ও অ্যাড্রেনাল নার্ভাস ক্লান্তি",
+    clinical_summary_en: "Impaired hypothalamic-pituitary-adrenal negative feedback loop, blunted diurnal cortisol curve, and autonomic nervous system exhaustion. Protocol emphasizes glycemic stabilization to prevent hypoglycemic adrenaline surges, electrolyte repletion, and adaptogenic support.",
+    clinical_summary_bn: "দীর্ঘস্থায়ী মানসিক ও শারীরিক চাপে কর্টিসল হরমোনের ভারসাম্যহীনতা ও শারীরিক অবসাদ। ব্লাড সুগার স্থিতিশীল রাখা, লবণ-ইলেক্ট্রোলাইট ভারসাম্য ও নার্ভ রিল্যাক্সেশন আবশ্যক।",
+    redTags: ['high_fructose', 'caffeine_stimulant', 'high_sodium_processed'],
+    yellowTags: ['refined_carbs'],
+    greenTags: ['adaptogenic_support', 'anti_inflammatory', 'adrenal_support', 'magnesium_rich'],
+    redFoods: ['energy drinks', 'excessive black coffee', 'refined sugar', 'processed pastries', 'alcohol', 'sugary breakfast cereal'],
+    yellowFoods: ['white bread', 'white rice solo', 'sweet fruits on empty stomach'],
+    greenFoods: ['unrefined sea salt', 'pumpkin seeds', 'avocado', 'eggs', 'whole chicken', 'bone broth', 'coconut water with salt', 'chia seeds', 'green tea mild'],
+    macroAdjustment: {
+      carb_pct_range: [35, 45],
+      protein_g_per_kg: [1.2, 1.5],
+      fat_pct_range: [35, 40]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "ঘুম থেকে ওঠার ১ ঘণ্টার মধ্যে প্রোটিনযুক্ত সকালের নাশতা গ্রহণ করুন এবং দীর্ঘ সময় না খেয়ে থাকা পরিহার করুন।",
+        rule_en: "Consume a protein-anchored breakfast within 60 minutes of waking to stabilize the diurnal cortisol awakening response."
+      },
+      {
+        rule_bn: "বিকেল ৩টার পর ক্যাফেইন বা কড়া চা-কফি পরিহার করুন এবং দীর্ঘ উপবাস (১৪ ঘণ্টার বেশি) এড়িয়ে চলুন।",
+        rule_en: "Strictly avoid caffeine past 3:00 PM and cap fasting at 14 hours to prevent reactive nocturnal hypoglycemia."
+      }
+    ],
+    clinicalRationaleBn: "খাবার দেরিতে খেলে বা রক্তে গ্লুকোজ কমে গেলে ক্লান্ত অ্যাড্রেনাল গ্রন্থিকে কর্টিসল ও অ্যাড্রেনালিন ক্ষরণ করতে হয়, যা নার্ভাস সিস্টেমকে আরও দুর্বল করে।",
+    clinicalRationaleEn: "Hypoglycemic episodes provoke counter-regulatory surges of epinephrine and cortisol, driving recurrent HPA-axis hyper-activation and exhaustion."
+  },
+
+  migraine_neurovascular: {
+    id: 'migraine_neurovascular',
+    name_en: "Migraine & Neurovascular Hyperexcitability",
+    name_bn: "মাইগ্রেন / নিউরোভাসকুলার স্নায়বিক মাথাব্যথা",
+    clinical_summary_en: "Cortical spreading depression, trigeminovascular complex hyperreactivity, and neurogenic mast cell degranulation. Dietary strategy focuses on eliminating vasoactive aminergic triggers (tyramine, histamine, phenylethylamine), artificial sweeteners, and MSG.",
+    clinical_summary_bn: "মস্তিষ্কের রক্তনালী ও স্নায়ুর সংবেদনশীলতার কারণে তীব্র একপাশের মাথাব্যথা। খাবারে টাইরামিন, হিস্টামিন, কৃত্রিম মিষ্টি ও টেস্টিং সল্ট পরিহার প্রধান পথ্য।",
+    redTags: ['high_histamine', 'tyramine_rich', 'artificial_sweetener', 'msg_nitrites'],
+    yellowTags: ['fermented_high', 'citrus_excess'],
+    greenTags: ['anti_inflammatory', 'magnesium_rich', 'neuroprotective', 'low_histamine'],
+    redFoods: ['aged cheese', 'parmesan', 'shutki', 'cured sausages', 'soy sauce', 'msg', 'tasting salt', 'aspartame', 'diet soda', 'red wine', 'dark chocolate excess'],
+    yellowFoods: ['oranges', 'lemons', 'tomatoes', 'fermented pickles'],
+    greenFoods: ['fresh chicken', 'fresh ruhi fish', 'boiled rice', 'fresh vegetables', 'bottle gourd', 'cucumber', 'pumpkin seeds', 'coconut water', 'ginger tea'],
+    macroAdjustment: {
+      carb_pct_range: [35, 45],
+      protein_g_per_kg: [1.2, 1.4],
+      fat_pct_range: [35, 40]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "কোনো মূল বেলার খাবার বাদ দেবেন না; খাবার বাদ দেওয়া বা হাইপোগ্লাইসেমিয়া মাইগ্রেন ব্যথার প্রধান উদ্দীপক।",
+        rule_en: "Never skip scheduled daytime meals; fasting hypoglycemia is a potent trigger of neurogenic trigeminal activation."
+      },
+      {
+        rule_bn: "মাথাব্যথার অনুভূতি শুরু হলে তাৎক্ষণিক আদা চা এবং ম্যাগনেসিয়াম সমৃদ্ধ খাবার বা পানি গ্রহণ করুন।",
+        rule_en: "Incorporate fresh ginger infusions at the earliest aura symptoms to suppress 5-HT neurogenic vasodilation."
+      }
+    ],
+    clinicalRationaleBn: "পুরোনো বা গাঁজন করা খাবারের টাইরামিন ও হিস্টামিন মস্তিষ্কের সংবেদনশীল রক্তনালীকে হঠাৎ প্রসারিত ও প্রদাহযুক্ত করে তীব্র মাইগ্রেন ট্রিগার করে।",
+    clinicalRationaleEn: "Dietary tyramine displaces norepinephrine into synaptic clefts while exogenous histamines trigger cranial extravasation via H1/H3 receptor pathways."
+  },
+
+  insomnia_circadian_disruption: {
+    id: 'insomnia_circadian_disruption',
+    name_en: "Insomnia & Circadian Sleep Disruption",
+    name_bn: "অনিদ্রা / জৈবিক ঘড়ি ও সারকাডিয়ান ছন্দহীনতা",
+    clinical_summary_en: "Disrupted suprachiasmatic nucleus signaling, nocturnal hypercortisolemia, and delayed melatonergic onset. Nutrition protocol emphasizes early dinner timing (3-4h prior to sleep), tryptophan-rich precursors, and eliminating evening sympathomimetic stimulants.",
+    clinical_summary_bn: "ঘুমের চক্র ব্যাহত হওয়া ও রাতে দেরিতে ঘুম আসা। ঘুমানোর ৩-৪ ঘণ্টা আগে রাতের খাবার শেষ করা, ক্যাফেইন বর্জন এবং মেলাটোনিন সহায়ক পথ্য প্রদান জরুরি।",
+    redTags: ['caffeine_stimulant', 'high_fructose', 'high_sodium_processed'],
+    yellowTags: ['late_night_carbs'],
+    greenTags: ['tryptophan_rich', 'magnesium_rich', 'circadian_align', 'neuroprotective'],
+    redFoods: ['coffee after 2pm', 'strong tea evening', 'energy drinks', 'heavy greasy late dinner', 'sweets before bed', 'chocolate'],
+    yellowFoods: ['high fat red meat late night', 'spicy curry'],
+    greenFoods: ['warm milk with nutmeg', 'chamomile tea', 'pumpkin seeds', 'ripe banana in evening', 'oats', 'pure honey small drip', 'boiled egg yolk', 'almonds'],
+    macroAdjustment: {
+      carb_pct_range: [40, 50],
+      protein_g_per_kg: [1.1, 1.3],
+      fat_pct_range: [30, 35]
+    },
+    mealTimingRules: [
+      {
+        rule_bn: "ঘুমাতে যাওয়ার অন্তত ৩ থেকে ৪ ঘণ্টা পূর্বে রাতের আহার শেষ করুন এবং শোবার আগে অতিরিক্ত পানি পান থেকে বিরত থাকুন।",
+        rule_en: "Finish the final meal at least 3-4 hours prior to scheduled sleep onset to allow core body temperature down-regulation."
+      },
+      {
+        rule_bn: "সন্ধ্যা বা রাতে কোনো প্রকার চা, কফি বা এনার্জি ড্রিংক সম্পূর্ণভাবে বর্জন করুন।",
+        rule_en: "Eliminate all caffeinated beverages and stimulants after 2:00 PM to protect nocturnal adenosine receptors."
+      }
+    ],
+    clinicalRationaleBn: "ঘুমানোর ঠিক আগে খাবার খেলে পেটে রক্ত সঞ্চালন ও মেটাবলিক তাপ বাড়ে, যা মস্তিষ্কের স্লিপ সেন্টার ও মেলাটোনিন হরমোন ক্ষরণ বন্ধ করে দেয়।",
+    clinicalRationaleEn: "Late nocturnal alimentary thermogenesis delays core body temperature drop, suppressing pineal melatonin synthesis and fragmenting REM sleep architecture."
   }
 };
 

@@ -772,5 +772,303 @@
         "action": "strictly_avoid"
       }
     ]
+  },
+  {
+    "id": "med_dmard_methotrexate",
+    "generic_name": "Methotrexate",
+    "brand_names_bd": [
+      "Folitrax",
+      "Mexate",
+      "Tremet",
+      "Trexall",
+      "Metorex"
+    ],
+    "drug_class": "DMARD / Antifolate Immunosuppressive",
+    "mechanism_bn": "ডাইহাইড্রোফোলেট রিডাকটেজ (DHFR) এনজাইম বাধা দিয়ে লিম্ফোসাইটের অতিরিক্ত বৃদ্ধি ও অটোইমিউন প্রদাহ দমন করে।",
+    "mechanism_en": "Competitively inhibits dihydrofolate reductase, impeding de novo purine/pyrimidine synthesis in hyperactive inflammatory cells.",
+    "depletions": [
+      {
+        "nutrient": "Folate (Vitamin B9)",
+        "severity": "high",
+        "reason_bn": "কোষীয় ফোলেট ক্ষয় করে তীব্র বমিভাব, মুখের ঘা (স্টোমাটাইটিস) ও হেপাটোটক্সিসিটি ঘটাতে পারে।",
+        "reason_en": "Induces functional cellular folate deficiency, stomatitis, and elevated transaminases.",
+        "supplement_recommendation": {
+          "name_en": "Active L-Methylfolate / Folinic Acid",
+          "name_bn": "অ্যাক্টিভ এল-মিথাইলফোলেট",
+          "dose": "5 - 10 mg/week",
+          "timing": "24 to 48 hours after MTX dose (never on MTX day)",
+          "verified_bd_brands": [
+            "Folimax",
+            "Folison"
+          ]
+        }
+      },
+      {
+        "nutrient": "Vitamin B12 (Cobalamin)",
+        "severity": "medium",
+        "reason_bn": "ফোলেট চক্র ব্যাহত হওয়ার কারণে সেকেন্ডারি B12 ইউটিলাইজেশন কমে যায়।",
+        "reason_en": "Secondary impairment of methyl transfer kinetics and cobalamin utilization.",
+        "supplement_recommendation": {
+          "name_en": "Methylcobalamin B12 (Active Sublingual)",
+          "name_bn": "অ্যাক্টিভ মিথাইলকোবালামিন বি১২",
+          "dose": "1000 mcg/day",
+          "timing": "Morning with breakfast",
+          "verified_bd_brands": [
+            "Methylcobal",
+            "Neuro-B"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "মেথোট্রেক্সেট সেবনের দিনে কোনো ফোলেট বা ফলিক এসিড সাপ্লিমেন্ট গ্রহণ করবেন না; মেথোট্রেক্সেট গ্রহণের ২৪ থেকে ৪৮ ঘণ্টা পর ফোলেট নিন।",
+        "rule_en": "Never take folate supplements on the day of Methotrexate; administer folic/folinic acid 24 to 48 hours post-dose.",
+        "time_slot": "24-48h Post-MTX"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "High-dose Green Tea / EGCG & Alcohol",
+        "effect_bn": "সবুজ চা বেশি খেলে ডিএইচএফআর আরও বাধা পায় এবং অ্যালকোহল যকৃতে বিষাক্ততা বাড়ায়।",
+        "effect_en": "Alcohol potentiates MTX hepatotoxicity; high-dose green tea extracts inhibit residual DHFR activity.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_dmard_hydroxychloroquine",
+    "generic_name": "Hydroxychloroquine",
+    "brand_names_bd": [
+      "Plaquenil",
+      "Hydroquin",
+      "Reumac",
+      "HQ-Pro"
+    ],
+    "drug_class": "DMARD / Aminoquinoline",
+    "mechanism_bn": "লাইসোজোমাল পিএইচ বৃদ্ধি করে অ্যান্টিজেন প্রেজেন্টেশন ও অটোইমিউন প্রদাহ হ্রাস করে।",
+    "mechanism_en": "Alkalinizes lysosomal compartments, suppressing major histocompatibility complex class II antigen presentation.",
+    "depletions": [
+      {
+        "nutrient": "Coenzyme Q10 & Zinc",
+        "severity": "medium",
+        "reason_bn": "মাইটোকন্ড্রিয়াল শক্তি উৎপাদন ও সেলুলার জিঙ্ক মাত্রা হ্রাস পেতে পারে।",
+        "reason_en": "May impair mitochondrial electron transport and intracellular zinc mobilization.",
+        "supplement_recommendation": {
+          "name_en": "CoQ10 + Zinc Bisglycinate",
+          "name_bn": "কো-এনজাইম কিউ১০ ও জিঙ্ক",
+          "dose": "100 mg CoQ10 + 20 mg Zinc",
+          "timing": "Morning with meal",
+          "verified_bd_brands": [
+            "Q10",
+            "Zinc-B"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "পেটের অস্বস্তি কমাতে সর্বদা খাবারের সাথে অথবা দুধ সহকারে গ্রহণ করুন।",
+        "rule_en": "Take with food or a glass of milk to minimize gastrointestinal irritation.",
+        "time_slot": "With Meals"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Grapefruit / Star Fruit",
+        "effect_bn": "CYP3A4 বাধা দিয়ে ড্রাগের টক্সিসিটি ও রেটিনোপ্যাথির ঝুঁকি বাড়ায়।",
+        "effect_en": "Inhibits cytochrome P450 3A4, inappropriately increasing systemic hydroxychloroquine exposure.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_biologics_anti_tnf",
+    "generic_name": "Adalimumab / Infliximab / Etanercept",
+    "brand_names_bd": [
+      "Humira",
+      "Exemptia",
+      "Remicade",
+      "Enbrel"
+    ],
+    "drug_class": "Biologic / TNF-alpha Antagonist",
+    "mechanism_bn": "টিউমার নেক্রোসিস ফ্যাক্টর আলফা (TNF-α) কে সরাসরি নিষ্ক্রিয় করে অটোইমিউন আক্রমণ বন্ধ করে।",
+    "mechanism_en": "Neutralizes circulating and transmembrane TNF-alpha, down-regulating downstream pro-inflammatory cytokine cascades.",
+    "depletions": [
+      {
+        "nutrient": "Antioxidant Reserve & Vitamin D",
+        "severity": "medium",
+        "reason_bn": "ইমিউনোসাপ্রেশনের কারণে সংক্রমণ প্রতিরোধে ভিটামিন ডি এর পর্যাপ্ততা বজায় রাখা জরুরি।",
+        "reason_en": "Suppressed cellular immunity necessitates optimal 25(OH)D levels (50-70 ng/mL) for infection resistance.",
+        "supplement_recommendation": {
+          "name_en": "Vitamin D3 + K2 (Liposomal)",
+          "name_bn": "ভিটামিন ডি৩ + কে২",
+          "dose": "2000 - 4000 IU/day",
+          "timing": "With morning fat-containing meal",
+          "verified_bd_brands": [
+            "D-Rise",
+            "Calbo-D"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "ইনজেকশনের পর পর্যাপ্ত বিশ্রাম নিন এবং হাইড্রেটেড থাকুন।",
+        "rule_en": "Ensure optimal hydration and avoid strenuous exercise immediately post-administration.",
+        "time_slot": "Post-Injection"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Raw Unpasteurized Dairy & Raw Sprouts",
+        "effect_bn": "ইমিউনোসাপ্রেশনের কারণে কাঁচা বা অপাস্তুরিত খাবারে লিস্টেরিয়া ও সালমোনেলার মারাত্মক প্রাণঘাতী সংক্রমণ হতে পারে।",
+        "effect_en": "Impaired cell-mediated immunity creates severe vulnerability to Listeria and Salmonella from unpasteurized/raw foods.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_potassium_sparing_diuretic",
+    "generic_name": "Spironolactone / Eplerenone / Triamterene",
+    "brand_names_bd": [
+      "Aldactone",
+      "Spirocard",
+      "Uractone",
+      "Spilac"
+    ],
+    "drug_class": "Potassium-Sparing Diuretic / Aldosterone Antagonist",
+    "mechanism_bn": "রেনাল কালেক্টিং টিউবুলে অ্যালডোস্টেরন রিসেপ্টর ব্লক করে সোডিয়াম নিষ্কাশন বাড়ায় এবং পটাশিয়াম ধরে রাখে।",
+    "mechanism_en": "Competitively antagonizes mineralocorticoid receptors in the distal nephron, reducing sodium reabsorption while retarding potassium excretion.",
+    "depletions": [
+      {
+        "nutrient": "Sodium & Water Balance",
+        "severity": "medium",
+        "reason_bn": "অতিরিক্ত সোডিয়াম হ্রাস পেলেও পটাশিয়াম বিপজ্জনকভাবে শরীরে জমে যেতে পারে।",
+        "reason_en": "Promotes natriuresis while causing renal potassium retention, creating hyperkalemia vulnerability.",
+        "supplement_recommendation": {
+          "name_en": "Magnesium (Without Potassium)",
+          "name_bn": "ম্যাগনেসিয়াম (পটাশিয়ামবিহীন)",
+          "dose": "200 mg elemental",
+          "timing": "Bedtime",
+          "verified_bd_brands": [
+            "Mag-Chelate"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "ঘন ঘন প্রস্রাবের কারণে রাতের ঘুমের ব্যাঘাত এড়াতে সকালে সকালের নাশতার পর গ্রহণ করুন।",
+        "rule_en": "Take in the morning with food to prevent nocturia and sleep fragmentation.",
+        "time_slot": "Morning with Breakfast"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Potassium Supplements / Potassium Citrate / Salt Substitutes",
+        "effect_bn": "পটাশিয়াম সাপ্লিমেন্ট বা পটাশিয়াম সাইট্রেট একসাথে গ্রহণ করলে রক্তে পটাশিয়াম মারাত্মক বেড়ে (Hyperkalemia) হৃদযন্ত্র বন্ধ হওয়ার ঝুঁকি তৈরি হয়।",
+        "effect_en": "Concurrent exogenous potassium or citrate therapy dramatically escalates risk of life-threatening cardiac arrhythmias secondary to hyperkalemia.",
+        "action": "strictly_avoid"
+      },
+      {
+        "food_or_group": "Excessive Coconut Water & Dried Dates",
+        "effect_bn": "অতিরিক্ত ডাবের পানি বা শুকনো খুরমা রক্তে পটাশিয়াম বাড়িয়ে মারাত্মক ঝুঁকি ফেলে।",
+        "effect_en": "High-potassium dietary loads can overwhelm suppressed excretion channels.",
+        "action": "caution_hyperkalemia"
+      }
+    ]
+  },
+  {
+    "id": "med_potassium_citrate",
+    "generic_name": "Potassium Citrate / Sodium Citrate",
+    "brand_names_bd": [
+      "K-Cit",
+      "Urocit-K",
+      "Citrocil",
+      "Alkali-K"
+    ],
+    "drug_class": "Urinary Alkalinizer / Nephrolithiasis Protective",
+    "mechanism_bn": "মেটাবলিজমের পর সিস্টেমিক ও মূত্রের সাইট্রেট বাড়িয়ে মূত্রকে ক্ষারীয় (pH 6.5–7.0) করে ক্যালসিয়াম অক্সালেট স্ফটিক প্রতিরোধ করে।",
+    "mechanism_en": "Induces systemic alkalinization and enhances urinary citrate excretion, complexing free calcium to prevent stone nucleations.",
+    "depletions": [],
+    "timing_rules": [
+      {
+        "rule_bn": "পেটের অস্বস্তি এড়াতে খাবারের ৩০ মিনিটের মধ্যে পর্যাপ্ত পানি সহকারে গ্রহণ করুন।",
+        "rule_en": "Administer within 30 minutes after a meal with a full glass of water to avoid gastric distress.",
+        "time_slot": "Within 30m Post-Meal"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "Potassium-Sparing Diuretics (Spironolactone)",
+        "effect_bn": "স্পাইরোনোল্যাকটোন এর সাথে পটাশিয়াম সাইট্রেট খেলে রক্তে পটাশিয়াম বিপজ্জনক সীমায় পৌঁছে প্রাণঘাতী হতে পারে।",
+        "effect_en": "Combination with potassium-sparing diuretics severely impairs potassium clearance, risking fatal cardiac arrest.",
+        "action": "strictly_avoid"
+      }
+    ]
+  },
+  {
+    "id": "med_ssri",
+    "generic_name": "Escitalopram / Sertraline / Fluoxetine",
+    "brand_names_bd": [
+      "Nexito",
+      "Serlift",
+      "Zolax",
+      "Sedil",
+      "Elipram",
+      "Seropram"
+    ],
+    "drug_class": "Selective Serotonin Reuptake Inhibitor (SSRI)",
+    "mechanism_bn": "সেরোটোনিন ট্রান্সপোর্টার (SERT) ব্লক করে সিন্যাপসে সেরোটোনিনের প্রাপ্যতা ও স্নায়বিক স্থায়িত্ব বৃদ্ধি করে।",
+    "mechanism_en": "Selectively inhibits presynaptic serotonin reuptake, enhancing serotonergic neurotransmission in the CNS and enteric nervous system.",
+    "depletions": [
+      {
+        "nutrient": "Folate & Vitamin B12",
+        "severity": "medium",
+        "reason_bn": "সেরোটোনিন সংশ্লেষণে এস-এডিনোসিলমিথিওনিন (SAMe) ব্যবহার বাড়ে, ফলে ফোলেট ও B12 এর ঘাটতি হতে পারে।",
+        "reason_en": "Accelerated methylation turnover depletes active methylfolate and cobalamin cofactor pools.",
+        "supplement_recommendation": {
+          "name_en": "L-Methylfolate (Active B9)",
+          "name_bn": "অ্যাক্টিভ এল-মিথাইলফোলেট",
+          "dose": "400 - 800 mcg/day",
+          "timing": "Morning with breakfast",
+          "verified_bd_brands": [
+            "Folimax",
+            "Neuro-B"
+          ]
+        }
+      },
+      {
+        "nutrient": "Melatonin & Sodium Balance",
+        "severity": "low",
+        "reason_bn": "সিআইএডিএইচ (SIADH) এর কারণে রক্তে সোডিয়াম কমতে পারে এবং মেলাটোনিন ছন্দে পরিবর্তন আসতে পারে।",
+        "reason_en": "Risk of subclinical hyponatremia and blunted nocturnal melatonin phase shifts.",
+        "supplement_recommendation": {
+          "name_en": "Magnesium Glycinate + Sea Salt",
+          "name_bn": "ম্যাগনেসিয়াম গ্লাইসিনেট",
+          "dose": "200 mg",
+          "timing": "Evening",
+          "verified_bd_brands": [
+            "Mag-Chelate"
+          ]
+        }
+      }
+    ],
+    "timing_rules": [
+      {
+        "rule_bn": "প্রতিদিন একই সময়ে (সকালে অথবা ঘুমের ব্যাঘাত না হলে রাতে) খাবারের সাথে গ্রহণ করুন।",
+        "rule_en": "Take consistently at the same hour each day with food to maintain steady-state pharmacokinetics.",
+        "time_slot": "Morning with Breakfast"
+      }
+    ],
+    "food_interactions": [
+      {
+        "food_or_group": "5-HTP (5-Hydroxytryptophan) / St. John's Wort",
+        "effect_bn": "এসএসআরআই এর সাথে ৫-এইচটিপি বা সেন্ট জনস ওয়ার্ট গ্রহণ করলে মারাত্মক প্রাণঘাতী সেরোটোনিন সিন্ড্রোম (Serotonin Syndrome) হতে পারে।",
+        "effect_en": "Co-administration with serotonin precursors precipitously causes neuromuscular agitation, hyperthermia, and fatal Serotonin Syndrome.",
+        "action": "strictly_avoid"
+      }
+    ]
   }
 ]

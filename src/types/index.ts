@@ -199,7 +199,15 @@ export type ClinicalConditionId =
   | 'lada_early_pancreatic'
   | 'sibo_microbial_overgrowth'
   | 'gerd_reflux_esophagitis'
-  | 'ibd_mucosal_inflammation';
+  | 'ibd_mucosal_inflammation'
+  | 'rheumatoid_arthritis'
+  | 'psoriasis_metabolic_skin'
+  | 'celiac_gluten_sensitivity'
+  | 'ckd_stage_1_3b'
+  | 'nephrolithiasis_hyperoxaluria'
+  | 'hpa_axis_burnout'
+  | 'migraine_neurovascular'
+  | 'insomnia_circadian_disruption';
 
 export interface CalculatedAnthropometrics {
   bmi: number;
