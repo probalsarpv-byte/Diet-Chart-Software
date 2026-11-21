@@ -24,6 +24,7 @@
     "test:step05:qa": "python scripts/qa_step05_nutrition_referential_integrity.py",
     "test:step05:browser": "tsx test/step05_browser_e2e.test.ts",
     "test:step06:browser": "tsx test/step06_real_structural_redesign_v3.test.ts",
+    "test:step07:browser": "tsx test/step07_roadmap_route_acceptance.test.ts",
     "test:expansion": "tsx test/clusters_3_4_5_expansion.test.ts",
     "test:e2e": "tsx test/step01_browser_e2e.test.ts && tsx test/step02_browser_e2e.test.ts && tsx test/step03_browser_e2e.test.ts && tsx test/step04_browser_e2e.test.ts && tsx test/step05_browser_e2e.test.ts && tsx test/step06_real_structural_redesign_v3.test.ts",
     "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate && npm run test:master && npm run test:step01 && npm run test:step02 && npm run test:step03 && npm run test:step04 && npm run test:step05 && npm run test:expansion"

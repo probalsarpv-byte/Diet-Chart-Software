@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { usePractice } from '@/context/PracticeContext';
 import { 
   Activity, 
@@ -13,7 +14,8 @@ import {
   FolderOpen,
   ShieldCheck,
   Flame,
-  Menu
+  Menu,
+  Compass
 } from 'lucide-react';
 import { CLINICAL_PHASES } from '@/engine/phaseProgression';
 
@@ -172,6 +174,17 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           >
             {theme === 'dark' ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4 text-slate-700" />}
           </button>
+
+          {/* Roadmap & Specifications Link */}
+          <Link
+            href="/roadmap"
+            data-testid="header-link-roadmap"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border border-primary/30 bg-primary/10 hover:bg-primary/20 text-primary transition-all hover:scale-[1.02]"
+            title={bn ? 'রোডম্যাপ ও ফিচার রেজিস্ট্রি' : 'R0-R15 Roadmap & Master Blueprint'}
+          >
+            <Compass className="h-3.5 w-3.5 text-primary" />
+            <span className="hidden sm:inline">{bn ? 'রোডম্যাপ' : 'Roadmap'}</span>
+          </Link>
 
           {/* Print A4 Report */}
           <button

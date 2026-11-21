@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { usePractice } from '@/context/PracticeContext';
 import {
   LayoutDashboard,
@@ -19,7 +20,8 @@ import {
   ShieldCheck,
   Sparkles,
   X,
-  Menu
+  Menu,
+  Compass
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -261,6 +263,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onMobileCl
               })}
             </div>
           )}
+        </div>
+
+        {/* Master Architecture & Roadmap Link */}
+        <div className="pt-2 border-t border-border">
+          <Link
+            href="/roadmap"
+            data-testid="sidebar-link-roadmap"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium text-muted-foreground hover:text-primary hover:bg-primary/10 border border-transparent hover:border-primary/20 transition-all group"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Compass className="h-4 w-4 shrink-0 text-primary group-hover:rotate-45 transition-transform" />
+              <span className="truncate">{bn ? 'মাস্টার রোডম্যাপ (R0–R15)' : 'Master Roadmap (R0–R15)'}</span>
+            </div>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-primary/15 text-primary shrink-0">
+              R0
+            </span>
+          </Link>
         </div>
       </div>
 
