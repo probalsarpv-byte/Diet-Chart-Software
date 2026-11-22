@@ -13,6 +13,9 @@ import {
   UserPlus, 
   FolderOpen,
   ShieldCheck,
+  Shield,
+  UserCheck,
+  Database,
   Flame,
   Menu,
   Compass
@@ -35,7 +38,12 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     createNewPatient, 
     saveCurrentPatient,
     activeTab,
-    setActiveTab 
+    setActiveTab,
+    currentClinician,
+    setIsAuthModalOpen,
+    setIsAuditModalOpen,
+    setIsMigrationModalOpen,
+    syncStatus
   } = usePractice();
 
   const phaseInfo = CLINICAL_PHASES[patient.current_phase];
@@ -153,6 +161,50 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
               </div>
             )}
           </div>
+
+          {/* Clinician Authentication Status Pill */}
+          <button
+            onClick={() => setIsAuthModalOpen(true)}
+            data-testid="header-btn-auth"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all hover:scale-[1.02] ${
+              currentClinician
+                ? 'bg-teal-950/60 border-teal-500/40 text-teal-300'
+                : 'bg-card border-border hover:bg-secondary text-muted-foreground'
+            }`}
+            title={currentClinician ? `Clinician: ${currentClinician.name} (${currentClinician.role})` : 'Clinician Authentication / Demo Mode'}
+          >
+            <UserCheck className={`h-3.5 w-3.5 ${currentClinician ? 'text-teal-400' : 'text-muted-foreground'}`} />
+            <span className="max-w-[100px] sm:max-w-[140px] truncate">
+              {currentClinician ? currentClinician.name : (bn ? 'ডেমো মোড' : 'Demo Mode')}
+            </span>
+            {currentClinician && (
+              <span className="text-[10px] px-1 py-0.2 rounded bg-teal-800/80 text-teal-200 hidden md:inline">
+                {currentClinician.role === 'CLINICAL_DIRECTOR' ? 'DIR' : currentClinician.role === 'TREATING_NUTRITIONIST' ? 'CNS' : 'ASST'}
+              </span>
+            )}
+          </button>
+
+          {/* Clinical Audit Log Trigger (U18) */}
+          <button
+            onClick={() => setIsAuditModalOpen(true)}
+            data-testid="header-btn-audit"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium border border-border bg-card hover:bg-secondary text-muted-foreground hover:text-foreground transition-all"
+            title={bn ? 'ক্লিনিক্যাল অডিট ট্রেইল (U18)' : 'Clinical Audit Trail (U18)'}
+          >
+            <Shield className="h-3.5 w-3.5 text-slate-400" />
+            <span className="hidden xl:inline">{bn ? 'অডিট' : 'Audit'}</span>
+          </button>
+
+          {/* Cloud Migration Wizard Trigger */}
+          <button
+            onClick={() => setIsMigrationModalOpen(true)}
+            data-testid="header-btn-migration"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium border border-border bg-card hover:bg-secondary text-muted-foreground hover:text-foreground transition-all"
+            title={bn ? 'ক্লাউড ডাটা মাইগ্রেশন উইজার্ড' : 'Local-to-Cloud Data Migration Wizard'}
+          >
+            <Database className="h-3.5 w-3.5 text-amber-500" />
+            <span className="hidden xl:inline">{bn ? 'মাইগ্রেশন' : 'Sync'}</span>
+          </button>
 
           <div className="h-4 w-[1px] bg-border mx-0.5 sm:mx-1" />
 

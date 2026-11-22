@@ -345,21 +345,31 @@ console.log('\n--- SCENARIO Q: Missing Biomarkers Preserved as Null/Not Availabl
   const vitB12 = clinicianPayload.micronutrient_sufficiency['vitamin_b12'];
   assert(vitB12.actual_amount === null, 'Scenario Q: Missing Vitamin B12 actual_amount is strictly null (never 0)');
   assert(vitB12.status === 'not_available', 'Scenario Q: Missing Vitamin B12 status is "not_available"');
+  assert(vitB12.source_type === 'serum_biomarker', 'Scenario Q: Vitamin B12 clearly tagged as serum_biomarker');
 
   // Calcium is missing in food DB
   const calcium = clinicianPayload.micronutrient_sufficiency['calcium'];
   assert(calcium.actual_amount === null, 'Scenario Q: Missing Calcium is strictly null (never 0)');
   assert(calcium.status === 'not_available', 'Scenario Q: Missing Calcium status is "not_available"');
+  assert(calcium.source_type === 'dietary_intake', 'Scenario Q: Calcium clearly tagged as dietary_intake');
 
   // Vitamin D3 was present (18.5)
   const vitD3 = clinicianPayload.micronutrient_sufficiency['vitamin_d'];
   assert(vitD3.actual_amount === 18.5, 'Scenario Q: Present Vitamin D3 is strictly 18.5 ng/mL');
   assert(vitD3.status === 'deficient', 'Scenario Q: Serum Vitamin D3 correctly evaluated as deficient (<20)');
+  assert(vitD3.source_type === 'serum_biomarker', 'Scenario Q: Vitamin D clearly tagged as serum_biomarker');
 
   // Sodium is missing/null in food DB intake (not falsely marked optimal)
   const sodium = clinicianPayload.micronutrient_sufficiency['sodium'];
   assert(sodium.actual_amount === null, 'Scenario Q: Missing Sodium intake actual_amount is strictly null (never 0)');
   assert(sodium.status === 'not_available', 'Scenario Q: Missing Sodium status is strictly "not_available" (not falsely optimal)');
+  assert(sodium.source_type === 'dietary_intake', 'Scenario Q: Sodium clearly tagged as dietary_intake');
+
+  // Dedicated Serum Laboratory Biomarkers separation
+  const labs = clinicianPayload.serum_laboratory_biomarkers;
+  assert(labs !== undefined, 'Scenario Q: Dedicated serum_laboratory_biomarkers section present');
+  assert(labs?.vitamin_d3_serum.value === 18.5, 'Scenario Q: Serum Vitamin D3 preserved separately from dietary intake');
+  assert(labs?.vitamin_b12_serum.value === null, 'Scenario Q: Missing Serum B12 preserved as null in serum biomarkers');
 }
 
 // -------------------------------------------------------------------

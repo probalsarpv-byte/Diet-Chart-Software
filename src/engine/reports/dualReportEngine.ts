@@ -169,6 +169,14 @@ export interface ClinicianReportPayload {
     unit: string;
     status: 'optimal' | 'marginal' | 'deficient' | 'excess' | 'not_available';
     status_label: string;
+    source_type?: 'dietary_intake' | 'serum_biomarker';
+  }>;
+  serum_laboratory_biomarkers?: Record<string, {
+    marker: string;
+    value: number | null;
+    unit: string;
+    status: 'optimal' | 'marginal' | 'deficient' | 'excess' | 'not_available';
+    status_label: string;
   }>;
   days: ClinicianDayPlan[];
   drug_nutrient_interactions: {
@@ -320,7 +328,10 @@ export function validateReportReleaseEligibility(options: {
   if (!patient || !patient.id || patient.id.trim() === '') {
     blockingReasons.push('No valid patient profile is selected.');
     blockingReasons_bn.push('কোনো সঠিক রোগীর প্রোফাইল নির্বাচিত হয়নি।');
-  } else if (weeklyDietPlan?.patient_id && weeklyDietPlan.patient_id.trim() !== '' && weeklyDietPlan.patient_id !== patient.id) {
+  } else if (weeklyDietPlan && (!weeklyDietPlan.patient_id || weeklyDietPlan.patient_id.trim() === '')) {
+    blockingReasons.push('Plan patient identifier is missing or unverified.');
+    blockingReasons_bn.push('প্ল্যানের রোগী শনাক্তকারী অনুপস্থিত বা অযাচাইকৃত।');
+  } else if (weeklyDietPlan?.patient_id && weeklyDietPlan.patient_id !== patient.id) {
     blockingReasons.push(`Plan patient identity mismatch: plan belongs to ${weeklyDietPlan.patient_id}, active patient is ${patient.id}.`);
     blockingReasons_bn.push(`রোগীর পরিচয়ের অমিল: প্ল্যানটি ${weeklyDietPlan.patient_id} এর জন্য প্রস্তুতকৃত, বর্তমান রোগী ${patient.id}।`);
   }
@@ -363,7 +374,10 @@ export function validateReportReleaseEligibility(options: {
   // Approval Version Integrity: Enforce exact approval-version binding
   if (isApproved && weeklyDietPlan) {
     const boundVersion = weeklyDietPlan.approval_metadata?.plan_version;
-    if (boundVersion !== undefined && boundVersion !== weeklyDietPlan.version) {
+    if (boundVersion === undefined || boundVersion === null) {
+      blockingReasons.push('Approval record is missing bound plan version metadata.');
+      blockingReasons_bn.push('অনুমোদন রেকর্ডে প্ল্যান সংস্করণ মেটাডাটা অনুপস্থিত।');
+    } else if (boundVersion !== weeklyDietPlan.version) {
       blockingReasons.push(`Approval record bound to version ${boundVersion}, but current plan is at version ${weeklyDietPlan.version}.`);
       blockingReasons_bn.push(`অনুমোদন সংস্করণ ${boundVersion}-এর সাথে প্ল্যানের বর্তমান সংস্করণ ${weeklyDietPlan.version} মিলছে না।`);
     }
@@ -646,22 +660,48 @@ export function buildClinicianReportProjection(options: {
     unit: string;
     status: 'optimal' | 'marginal' | 'deficient' | 'excess' | 'not_available';
     status_label: string;
+    source_type: 'dietary_intake' | 'serum_biomarker';
   }> = {
-    calcium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database' },
-    iron: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database' },
-    potassium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Calculated Per Item (FCTB Native Subset)' },
-    sodium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database' },
+    calcium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database', source_type: 'dietary_intake' },
+    iron: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database', source_type: 'dietary_intake' },
+    potassium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Calculated Per Item (FCTB Native Subset)', source_type: 'dietary_intake' },
+    sodium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database', source_type: 'dietary_intake' },
     vitamin_d: {
       actual_amount: patient.labs?.vitamin_d3 ?? null,
       unit: 'ng/mL',
       status: patient.labs?.vitamin_d3 ? (patient.labs.vitamin_d3 < 20 ? 'deficient' : patient.labs.vitamin_d3 < 30 ? 'marginal' : 'optimal') : 'not_available',
-      status_label: patient.labs?.vitamin_d3 ? `${patient.labs.vitamin_d3} ng/mL (Serum Lab)` : 'Laboratory Measurement Not Recorded'
+      status_label: patient.labs?.vitamin_d3 ? `${patient.labs.vitamin_d3} ng/mL (Serum Lab)` : 'Laboratory Measurement Not Recorded',
+      source_type: 'serum_biomarker'
     },
     vitamin_b12: {
       actual_amount: patient.labs?.vitamin_b12 ?? null,
       unit: 'pg/mL',
       status: patient.labs?.vitamin_b12 ? (patient.labs.vitamin_b12 < 200 ? 'deficient' : patient.labs.vitamin_b12 < 350 ? 'marginal' : 'optimal') : 'not_available',
-      status_label: patient.labs?.vitamin_b12 ? `${patient.labs.vitamin_b12} pg/mL (Serum Lab)` : 'Laboratory Measurement Not Recorded'
+      status_label: patient.labs?.vitamin_b12 ? `${patient.labs.vitamin_b12} pg/mL (Serum Lab)` : 'Laboratory Measurement Not Recorded',
+      source_type: 'serum_biomarker'
+    }
+  };
+
+  const serumLaboratoryBiomarkers: Record<string, {
+    marker: string;
+    value: number | null;
+    unit: string;
+    status: 'optimal' | 'marginal' | 'deficient' | 'excess' | 'not_available';
+    status_label: string;
+  }> = {
+    vitamin_d3_serum: {
+      marker: '25-Hydroxy Vitamin D',
+      value: patient.labs?.vitamin_d3 ?? null,
+      unit: 'ng/mL',
+      status: patient.labs?.vitamin_d3 ? (patient.labs.vitamin_d3 < 20 ? 'deficient' : patient.labs.vitamin_d3 < 30 ? 'marginal' : 'optimal') : 'not_available',
+      status_label: patient.labs?.vitamin_d3 ? `${patient.labs.vitamin_d3} ng/mL (Serum 25-OH D)` : 'Not Tested / No Lab Record'
+    },
+    vitamin_b12_serum: {
+      marker: 'Serum Cobalamin (B12)',
+      value: patient.labs?.vitamin_b12 ?? null,
+      unit: 'pg/mL',
+      status: patient.labs?.vitamin_b12 ? (patient.labs.vitamin_b12 < 200 ? 'deficient' : patient.labs.vitamin_b12 < 350 ? 'marginal' : 'optimal') : 'not_available',
+      status_label: patient.labs?.vitamin_b12 ? `${patient.labs.vitamin_b12} pg/mL (Serum B12)` : 'Not Tested / No Lab Record'
     }
   };
 
@@ -731,6 +771,7 @@ export function buildClinicianReportProjection(options: {
       pral_score: plannedPral
     },
     micronutrient_sufficiency: micronutrientSufficiency,
+    serum_laboratory_biomarkers: serumLaboratoryBiomarkers,
     days: clinicianDays,
     drug_nutrient_interactions: {
       timeline: dniResult?.timeline || [],

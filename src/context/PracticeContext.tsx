@@ -84,6 +84,11 @@ import {
   ClinicalObservationsPayload
 } from '@/engine/snapshot/snapshotManager';
 import { generateEntityId } from '@/utils/idGenerator';
+import { ClinicianAuthProfile, isSupabaseConfigured, getSupabaseClient } from '@/lib/supabaseClient';
+import { getPracticeRepository, PracticeSyncStatus, AuditEventPayload } from '@/repositories';
+import { ClinicianAuthModal } from '@/components/auth/ClinicianAuthModal';
+import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal';
+import { DataMigrationWizard } from '@/components/migration/DataMigrationWizard';
 
 export function generateCollisionResistantId(prefix: string): string {
   return generateEntityId(prefix);
@@ -239,6 +244,18 @@ export interface PracticeContextType {
   approveWeeklyPlan: (clinicianId: string, notes?: string) => boolean;
   weeklyPlanApprovalError: string | null;
   clearWeeklyPlanApprovalError: () => void;
+
+  // R2 Backend & Multi-Tenancy Authentication
+  currentClinician: ClinicianAuthProfile | null;
+  setCurrentClinician: (clinician: ClinicianAuthProfile | null) => void;
+  syncStatus: PracticeSyncStatus;
+  isAuthModalOpen: boolean;
+  setIsAuthModalOpen: (open: boolean) => void;
+  isAuditModalOpen: boolean;
+  setIsAuditModalOpen: (open: boolean) => void;
+  isMigrationModalOpen: boolean;
+  setIsMigrationModalOpen: (open: boolean) => void;
+  refreshSyncStatus: () => void;
 }
 
 const PracticeContext = createContext<PracticeContextType | undefined>(undefined);
@@ -325,6 +342,79 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [activeDayNumber, setActiveDayNumber] = useState<number>(1);
   const [weeklyPlanApprovalError, setWeeklyPlanApprovalError] = useState<string | null>(null);
   const clearWeeklyPlanApprovalError = useCallback(() => setWeeklyPlanApprovalError(null), []);
+
+  // R2 Backend & Multi-Tenancy Authentication State
+  const [currentClinician, setCurrentClinician] = useState<ClinicianAuthProfile | null>(null);
+  const [syncStatus, setSyncStatus] = useState<PracticeSyncStatus>(() => getPracticeRepository().getSyncStatus());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+
+  const refreshSyncStatus = useCallback(() => {
+    setSyncStatus(getPracticeRepository().getSyncStatus());
+  }, []);
+
+  // Restore Supabase session on client-side mount
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isSupabaseConfigured()) return;
+    const client = getSupabaseClient();
+    if (!client) return;
+
+    client.auth.getSession().then(({ data }) => {
+      if (data?.session?.user) {
+        const u = data.session.user;
+        client
+          .from('clinicians')
+          .select('*')
+          .eq('auth_user_id', u.id)
+          .maybeSingle()
+          .then(({ data: profileData }) => {
+            setCurrentClinician({
+              id: profileData?.id || u.id,
+              auth_user_id: u.id,
+              organization_id: profileData?.organization_id || 'a0000000-0000-0000-0000-000000000001',
+              name: profileData?.name || u.email || 'Clinician',
+              email: u.email || '',
+              role: (profileData?.role as any) || 'TREATING_NUTRITIONIST',
+              license_number: profileData?.license_number,
+              is_active: true
+            });
+            refreshSyncStatus();
+          });
+      }
+    });
+
+    const { data: authListener } = client.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const u = session.user;
+        client
+          .from('clinicians')
+          .select('*')
+          .eq('auth_user_id', u.id)
+          .maybeSingle()
+          .then(({ data: profileData }) => {
+            setCurrentClinician({
+              id: profileData?.id || u.id,
+              auth_user_id: u.id,
+              organization_id: profileData?.organization_id || 'a0000000-0000-0000-0000-000000000001',
+              name: profileData?.name || u.email || 'Clinician',
+              email: u.email || '',
+              role: (profileData?.role as any) || 'TREATING_NUTRITIONIST',
+              license_number: profileData?.license_number,
+              is_active: true
+            });
+            refreshSyncStatus();
+          });
+      } else {
+        setCurrentClinician(null);
+        refreshSyncStatus();
+      }
+    });
+
+    return () => {
+      authListener?.subscription.unsubscribe();
+    };
+  }, [refreshSyncStatus]);
 
   const persistWeeklyPlan = useCallback((plan: WeeklyDietPlan): boolean => {
     if (!plan || !plan.patient_id) return false;
@@ -1725,6 +1815,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return false;
     }
 
+    if (currentClinician && currentClinician.role === 'ASSISTANT_DIETITIAN') {
+      const err = 'Approval blocked: Assistant Dietitians are not authorized to approve clinical nutrition plans (Requires Treating Nutritionist or Clinical Director).';
+      console.warn(`[Weekly Diet Plan Approval Blocked] ${err}`);
+      setWeeklyPlanApprovalError(err);
+      return false;
+    }
+
     // 3. P2 Clinical Governance Prerequisite
     if (!p2AnalysisResult || !p2AnalysisResult.report || !p2AnalysisResult.report.isApproved || p2AnalysisResult.analysisInvalidatedAt || p2AnalysisResult.report.analysisInvalidatedAt) {
       const err = 'Cannot approve 7-day diet prescription without an approved Phase 2 Clinical Assessment.';
@@ -1812,8 +1909,27 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // 4. ONLY commit in-memory React state after verified persistence
     setWeeklyDietPlan(approvedPlan);
     setWeeklyPlanApprovalError(null);
+
+    // 5. Emit authoritative clinical audit event
+    try {
+      getPracticeRepository().logAuditEvent({
+        event_type: 'PLAN_APPROVED',
+        entity_type: 'approval_record',
+        entity_id: approvedPlan.plan_id,
+        patient_id: patient.id,
+        clinician_name: clinicianId,
+        payload_after: {
+          version: approvedPlan.version,
+          clinician_name: clinicianId,
+          notes
+        }
+      }).catch(e => console.warn('Could not record approval audit event:', e));
+    } catch (e) {
+      console.warn('Audit trail emission error:', e);
+    }
+
     return true;
-  }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult, allFoods, savedPatients]);
+  }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult, allFoods, savedPatients, currentClinician]);
 
   const updateMealItemRawGrams = useCallback((mealId: string, itemId: string, rawGrams: number) => {
     if (weeklyDietPlan) {
@@ -3535,10 +3651,49 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         copyDayPlan,
         approveWeeklyPlan,
         weeklyPlanApprovalError,
-        clearWeeklyPlanApprovalError
+        clearWeeklyPlanApprovalError,
+        currentClinician,
+        setCurrentClinician,
+        syncStatus,
+        isAuthModalOpen,
+        setIsAuthModalOpen,
+        isAuditModalOpen,
+        setIsAuditModalOpen,
+        isMigrationModalOpen,
+        setIsMigrationModalOpen,
+        refreshSyncStatus
       }}
     >
       {children}
+      <ClinicianAuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentClinician={currentClinician}
+        onAuthSuccess={(clinician) => {
+          setCurrentClinician(clinician);
+          refreshSyncStatus();
+        }}
+        onLogout={async () => {
+          const client = getSupabaseClient();
+          if (client) {
+            await client.auth.signOut();
+          }
+          setCurrentClinician(null);
+          refreshSyncStatus();
+        }}
+      />
+      <AuditHistoryModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        patientId={patient?.id}
+      />
+      <DataMigrationWizard
+        isOpen={isMigrationModalOpen}
+        onClose={() => setIsMigrationModalOpen(false)}
+        onMigrationComplete={() => {
+          refreshSyncStatus();
+        }}
+      />
     </PracticeContext.Provider>
   );
 };

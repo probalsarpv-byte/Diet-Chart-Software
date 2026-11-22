@@ -479,6 +479,44 @@ console.log('\n--- SCENARIO R: Unapproved Edits (Dirty State) Fails Closed ---')
   assert(patientPayload.is_released === false, 'Scenario R: Patient payload derives is_released: false when dirty');
 }
 
+// -------------------------------------------------------------------
+// SCENARIO S: Strict Patient ID Integrity & Missing Approval Metadata Fails Closed
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO S: Strict Patient ID Integrity & Missing Approval Metadata ---');
+{
+  const patient = createSyntheticPatient('pt_strict_id', 'Strict ID Patient');
+  const approvedPlan = approveWeeklyDietPlan(makePlan(patient), 'Dr. Integrity Inspector');
+
+  // 1. Missing patient_id in plan
+  const missingPatientIdPlan: WeeklyDietPlan = {
+    ...approvedPlan,
+    patient_id: '' as any
+  };
+  const missingIdCheck = validateReportReleaseEligibility({
+    patient,
+    plan: missingPatientIdPlan,
+    weeklyDietPlan: missingPatientIdPlan
+  });
+  assert(!missingIdCheck.isEligible, 'Scenario S: Missing plan patient_id strictly fails closed');
+  assert(missingIdCheck.blockingReasons.some(r => r.includes('Plan patient identifier is missing or unverified')), 'Scenario S: Reports missing patient identifier');
+
+  // 2. Missing plan_version in approval metadata
+  const missingVersionMetaPlan: WeeklyDietPlan = {
+    ...approvedPlan,
+    approval_metadata: {
+      ...approvedPlan.approval_metadata!,
+      plan_version: undefined as any
+    }
+  };
+  const missingVersionCheck = validateReportReleaseEligibility({
+    patient,
+    plan: missingVersionMetaPlan,
+    weeklyDietPlan: missingVersionMetaPlan
+  });
+  assert(!missingVersionCheck.isEligible, 'Scenario S: Missing approval plan_version metadata strictly fails closed');
+  assert(missingVersionCheck.blockingReasons.some(r => r.includes('Approval record is missing bound plan version metadata')), 'Scenario S: Reports missing bound plan version metadata');
+}
+
 console.log('\n================================================================');
 console.log(`R1 APPROVAL GATE RESULTS: ${passedAssertions}/${totalAssertions} PASSED (${failedAssertions} FAILED)`);
 console.log('================================================================\n');
