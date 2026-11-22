@@ -98,10 +98,10 @@ for (const tbl of supportTables) {
 }
 
 // -------------------------------------------------------------------
-// 3. Row Level Security Enabled on All Entities
+// 3. Row Level Security Enabled on All Entities (All 27 Tables)
 // -------------------------------------------------------------------
 console.log('\n--- 3. Row Level Security Explicitly Enabled on All Tables ---');
-for (const entity of [...expected23Entities, 'organization_members', 'patient_assignments', 'private_file_references']) {
+for (const entity of [...expected23Entities, 'organization_members', 'patient_assignments', 'private_file_references', 'schema_migrations']) {
   const rlsEnabled = rlsSql.includes(`ALTER TABLE public.${entity} ENABLE ROW LEVEL SECURITY;`);
   assert(rlsEnabled, `RLS explicitly enabled on [${entity}]`);
 }
@@ -150,6 +150,44 @@ assert(
   rlsSql.includes('organization_id IN (SELECT org_id FROM public.current_clinician_org_ids())'),
   'Tenancy isolation function current_clinician_org_ids() enforced across patient tables'
 );
+
+// -------------------------------------------------------------------
+// 6. R2 Corrective Patch & Migration 3 Verification
+// -------------------------------------------------------------------
+console.log('\n--- 6. Corrective Patch & Idempotent Migration 3 ---');
+const patchPath = path.join(__dirname, '../supabase/r2_corrective_patch.sql');
+const migration3Path = path.join(__dirname, '../supabase/migrations/20261122000003_r2_rls_completion.sql');
+
+assert(fs.existsSync(patchPath), 'Corrective Patch SQL file exists');
+assert(fs.existsSync(migration3Path), 'RLS Completion Migration 3 exists');
+
+const patchSql = fs.readFileSync(patchPath, 'utf8');
+const mig3Sql = fs.readFileSync(migration3Path, 'utf8');
+
+// Idempotent policy deployment procedure
+assert(patchSql.includes('apply_r2_policy_if_missing'), 'Patch contains apply_r2_policy_if_missing helper');
+assert(mig3Sql.includes('apply_r2_policy_if_missing'), 'Migration 3 contains apply_r2_policy_if_missing helper');
+assert(bundleSql.includes('apply_r2_policy_if_missing'), 'Bundle contains apply_r2_policy_if_missing helper');
+
+// Check schema_migrations RLS protection
+assert(patchSql.includes('ALTER TABLE IF EXISTS public.schema_migrations ENABLE ROW LEVEL SECURITY;'), 'Patch enables RLS on schema_migrations');
+assert(patchSql.includes("'schema_migrations', 'schema_migrations_write_director_only'"), 'Patch restricts schema_migrations writes to CLINICAL_DIRECTOR');
+
+// -------------------------------------------------------------------
+// 7. Anti-Privilege Escalation & Assigned-Patient Isolation
+// -------------------------------------------------------------------
+console.log('\n--- 7. Anti-Escalation & Assigned-Patient Isolation ---');
+// Trigger check_clinician_self_escalation
+assert(patchSql.includes('check_clinician_self_escalation'), 'Patch includes check_clinician_self_escalation trigger function');
+assert(patchSql.includes('trg_prevent_clinician_self_escalation'), 'Patch attaches trigger to public.clinicians');
+
+// Trigger check_nutrition_plan_approval_permission
+assert(patchSql.includes('check_nutrition_plan_approval_permission'), 'Patch includes check_nutrition_plan_approval_permission trigger function');
+assert(patchSql.includes('trg_check_nutrition_plan_approval'), 'Patch attaches trigger to public.nutrition_plans');
+
+// Assigned patient isolation helper & audit event policy
+assert(patchSql.includes('current_clinician_assigned_patient_ids'), 'Patch defines current_clinician_assigned_patient_ids function');
+assert(patchSql.includes('current_clinician_assigned_patient_ids()'), 'Audit event select policy enforces assigned-patient isolation for assistants');
 
 console.log('\n================================================================');
 console.log(`R2 RLS SECURITY RESULTS: ${passedAssertions}/${totalAssertions} PASSED (${failedAssertions} FAILED)`);

@@ -166,28 +166,101 @@ console.log('================================================================\n'
   assert(approvalAudit?.clinician_name === 'Dr. Farhana Rahman, MD, CNS', '4. Clinician name bound to approval audit record');
 
   // -------------------------------------------------------------------
-  // 5. Mocked Supabase Practice Repository
+  // 5. Supabase Practice Repository Unit & Integration Assertions
   // -------------------------------------------------------------------
   console.log('\n--- 5. Supabase Practice Repository Unit Assertions ---');
+  const mockTableData: Record<string, any[]> = {
+    patients: [{ client_id: 'pt_mock', name: 'Mock Pt', age: 30, gender: 'male', height_cm: 170, weight_kg: 70, organization_id: 'org_mock_01' }],
+    visits: [{ client_visit_id: 'vis_mock_01', patient_id: 'pt_mock', visit_number: 1, visit_date: '2026-11-22', visit_type: 'initial_assessment', status: 'completed' }],
+    nutrition_plans: [{ client_plan_id: 'plan_mock_01', patient_id: 'pt_mock', visit_id: 'vis_mock_01', version: 1, status: 'draft', is_approved: false }],
+    approval_records: [],
+    audit_events: [{ id: 'ae_mock_01', organization_id: 'org_mock_01', patient_id: 'pt_mock', event_type: 'PATIENT_CREATED', timestamp: new Date().toISOString() }]
+  };
+
+  class MockQueryBuilder {
+    private data: any[];
+    private filters: Array<(row: any) => boolean> = [];
+
+    constructor(data: any[]) {
+      this.data = data;
+    }
+
+    select() { return this; }
+    order() { return this; }
+    limit() { return this; }
+    eq(col: string, val: any) {
+      this.filters.push(r => r[col] === val);
+      return this;
+    }
+    or(expr: string) {
+      this.filters.push(r => expr.includes(r.client_id) || expr.includes(r.id));
+      return this;
+    }
+    async maybeSingle() {
+      let res = this.data;
+      for (const f of this.filters) res = res.filter(f);
+      return { data: res[0] || null, error: null };
+    }
+    async single() {
+      return this.maybeSingle();
+    }
+    then(resolve: any, reject: any) {
+      let res = this.data;
+      for (const f of this.filters) res = res.filter(f);
+      return Promise.resolve({ data: res, error: null }).then(resolve, reject);
+    }
+  }
+
   const mockSupabaseClient: any = {
-    from: (table: string) => ({
-      select: () => ({
-        order: () => Promise.resolve({ data: [{ client_id: 'pt_mock', name: 'Mock Pt', age: 30, gender: 'male', height_cm: 170, weight_kg: 70 }], error: null }),
-        or: () => ({ maybeSingle: () => Promise.resolve({ data: { client_id: 'pt_mock', name: 'Mock Pt', age: 30, gender: 'male', height_cm: 170, weight_kg: 70 }, error: null }) }),
-        eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }), limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) })
-      }),
-      upsert: () => ({
-        select: () => ({ single: () => Promise.resolve({ data: { client_id: 'pt_mock', name: 'Mock Pt', age: 30, gender: 'male', height_cm: 170, weight_kg: 70 }, error: null }) })
-      }),
-      insert: () => Promise.resolve({ data: null, error: null }),
-      delete: () => ({ or: () => Promise.resolve({ error: null }) })
-    })
+    from: (table: string) => {
+      const q = new MockQueryBuilder(mockTableData[table] || []);
+      return {
+        select: () => q,
+        upsert: (payload: any) => ({
+          select: () => ({
+            single: () => {
+              if (!mockTableData[table]) mockTableData[table] = [];
+              mockTableData[table].push(payload);
+              return Promise.resolve({ data: payload, error: null });
+            }
+          })
+        }),
+        insert: (payload: any) => {
+          if (!mockTableData[table]) mockTableData[table] = [];
+          mockTableData[table].push(payload);
+          return Promise.resolve({ data: payload, error: null });
+        },
+        delete: () => ({
+          or: () => Promise.resolve({ error: null })
+        })
+      };
+    }
   };
 
   const cloudRepo = new SupabasePracticeRepository(mockSupabaseClient, 'org_mock_01');
   assert(cloudRepo.isCloud === true, '5. SupabasePracticeRepository has isCloud: true');
+  
   const cloudPatients = await cloudRepo.getPatients();
-  assert(cloudPatients.length === 1 && cloudPatients[0].name === 'Mock Pt', '5. Supabase mapped PostgreSQL row to PatientProfile');
+  assert(cloudPatients.length >= 1 && cloudPatients[0].name === 'Mock Pt', '5. Supabase mapped PostgreSQL row to PatientProfile');
+
+  const fetchedCloudPt = await cloudRepo.getPatientById('pt_mock');
+  assert(fetchedCloudPt !== null && fetchedCloudPt.name === 'Mock Pt', '5. Supabase getPatientById retrieved matching patient');
+
+  const savedCloudPt = await cloudRepo.savePatient({
+    ...testPatient,
+    id: 'pt_cloud_save',
+    name: 'Rabeya Khatun'
+  });
+  assert(savedCloudPt.id === 'pt_cloud_save', '5. Supabase savePatient successfully upserted patient record');
+
+  const cloudVisits = await cloudRepo.getVisits('pt_mock');
+  assert(cloudVisits.length >= 1, '5. Supabase getVisits retrieved visit records');
+
+  const cloudPlan = await cloudRepo.getNutritionPlan('pt_mock', 'vis_mock_01');
+  assert(cloudPlan !== null && cloudPlan.plan_id === 'plan_mock_01', '5. Supabase getNutritionPlan retrieved plan');
+
+  const cloudAudits = await cloudRepo.getAuditEvents('pt_mock');
+  assert(cloudAudits.length >= 1, '5. Supabase getAuditEvents retrieved audit trail');
 
   console.log('\n================================================================');
   console.log(`R2 PERSISTENCE TEST RESULTS: ${passedAssertions}/${totalAssertions} PASSED (${failedAssertions} FAILED)`);

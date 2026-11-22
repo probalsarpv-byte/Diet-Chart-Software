@@ -92,6 +92,7 @@ ALTER TABLE public.follow_ups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.outcome_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.private_file_references ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.schema_migrations ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------
 -- 3. ORGANIZATIONS POLICIES

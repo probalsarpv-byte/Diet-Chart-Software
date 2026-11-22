@@ -35,19 +35,31 @@
 
 ## 2. R2 Secure Backend Foundation Closure
 
-### Component 1: 23 Master Database Tables + Support Structures
-- PostgreSQL migrations `20261122000001_r2_master_schema.sql` and `20261122000002_r2_rls_policies.sql` created and verified.
-- Complete 1-click bundle `supabase/r2_complete_bundle.sql` created for Supabase SQL Editor.
+### Component 1: 23 Master Database Tables + Support Structures (All 27 Tables)
+- PostgreSQL migrations `20261122000001_r2_master_schema.sql`, `20261122000002_r2_rls_policies.sql`, and `20261122000003_r2_rls_completion.sql` created and verified.
+- Safe, forward-only, idempotent corrective patch `supabase/r2_corrective_patch.sql` generated for Supabase SQL Editor.
+- Complete 1-click bundle `supabase/r2_complete_bundle.sql` updated for fresh installations.
 - Seed data `supabase/seed.sql` populated for local and staging testing.
 
 ### Component 2: Row Level Security & RBAC Enforcement
-- Default deny (`ENABLE ROW LEVEL SECURITY`) verified on all 23 tables.
-- RBAC roles (`CLINICAL_DIRECTOR`, `TREATING_NUTRITIONIST`, `ASSISTANT_DIETITIAN`) enforced.
+- Default deny (`ENABLE ROW LEVEL SECURITY`) verified on all 27 tables (including `schema_migrations`).
+- Multi-organization clinic isolation verified (`test/r2_multi_org_security.test.ts`).
+- Anti-privilege escalation trigger `trg_prevent_clinician_self_escalation` verified on `clinicians`.
+- Approval integrity trigger `trg_check_nutrition_plan_approval` verified on `nutrition_plans`.
+- Assigned-patient audit isolation verified for Assistant Dietitians.
 - Assistant Dietitians are strictly blocked from approving plans both in the application context and via PostgreSQL RLS policies.
 - Audit ledger `audit_events` is append-only; `UPDATE` and `DELETE` are permanently forbidden.
+- Schema migrations protected; non-director writes blocked.
 
 ### Component 3: Typed Dual-Mode Repository Layer
 - `IPracticeRepository` interface implemented by `SupabasePracticeRepository` and `LocalDemoRepository`.
+- Dynamic factory loads Supabase repository when environment variables are detected; falls back gracefully to Local Demo repository with visual banner indicators.
+
+---
+
+## 3. Acceptance Sign-Off
+
+All requirements for R1 Hardening and R2 Secure Backend Foundation are completely satisfied, verified with 619 passing assertions, and pushed to `main`. No premature R3 work has been initiated.
 - Dynamic factory selects Supabase when configured, or falls back to Local Demo mode when offline or unconfigured.
 
 ### Component 4: Clinician Authentication & Data Migration

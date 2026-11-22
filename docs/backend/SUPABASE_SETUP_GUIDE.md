@@ -6,20 +6,31 @@
 
 ---
 
-## 1. Quick One-Click Database Initialization
+## 1. Database Initialization & Patching Options
 
-To initialize all 23 R0 master entities, support tables, and Row Level Security policies:
+### Option A: For Existing Databases (You Have Already Run `r2_complete_bundle.sql`)
+If your Supabase project already has the tables and initial 19 policies created, **DO NOT rerun the original bundle** (which would throw duplicate policy errors). Instead, execute the safe, forward-only, idempotent corrective patch:
 
 1. Open your **Supabase Dashboard** for project `shuddho-clinical`.
 2. Go to **SQL Editor** in the left sidebar.
 3. Click **New Query**.
-4. Copy the entire contents of [`supabase/r2_complete_bundle.sql`](../../supabase/r2_complete_bundle.sql).
+4. Copy the entire contents of [`supabase/r2_corrective_patch.sql`](../../supabase/r2_corrective_patch.sql).
 5. Paste it into the editor and click **Run** (or `Cmd/Ctrl + Enter`).
 6. Verify output confirms:
-   - `Success. No rows returned.`
-   - 23 master tables created under `public`.
-   - RLS enabled on all tables.
-   - Initial migration versions `20261122000001_r2_master_schema` and `20261122000002_r2_rls_policies` recorded in `schema_migrations`.
+   - RLS enabled across all 27 tables (including `schema_migrations`).
+   - Anti-escalation trigger `trg_prevent_clinician_self_escalation` active on `clinicians`.
+   - Approval enforcement trigger `trg_check_nutrition_plan_approval` active on `nutrition_plans`.
+   - Missing policies created without duplicate policy errors.
+   - Assigned-patient audit isolation policy applied to `audit_events`.
+   - Migration `20261122000003_r2_rls_completion` recorded.
+
+### Option B: For Fresh Supabase Installations
+If setting up a brand new Supabase project from scratch:
+
+1. Open your **Supabase Dashboard** -> **SQL Editor** -> **New Query**.
+2. Copy the entire contents of [`supabase/r2_complete_bundle.sql`](../../supabase/r2_complete_bundle.sql).
+3. Paste it into the editor and click **Run**.
+4. All 27 tables, helper functions, triggers, and all policies across all tables will be deployed cleanly and idempotently.
 
 ---
 
