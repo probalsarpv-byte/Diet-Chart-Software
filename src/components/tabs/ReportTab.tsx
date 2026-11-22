@@ -96,12 +96,16 @@ export const ReportTab: React.FC = () => {
   const activeDisplayP2 = isCurrentActiveVisit ? p2AnalysisResult : previewP2AnalysisResult;
 
   // Effective patient demographic context for report
+  const targetVisitId = activeReportVisit?.visit_id || activeReportVisit?.id || patient.current_visit_id;
+  const visitSnapshot = useMemo(() => {
+    return targetVisitId ? getLatestVisitSnapshot(visitSnapshots, targetVisitId) : undefined;
+  }, [visitSnapshots, targetVisitId]);
+
   const effectivePatientForReport = useMemo(() => {
-    const targetVisitId = activeReportVisit?.visit_id || activeReportVisit?.id || patient.current_visit_id;
     if (!activeReportVisit || targetVisitId === patient.current_visit_id) {
       return patient;
     }
-    const snap = getLatestVisitSnapshot(visitSnapshots, targetVisitId || '');
+    const snap = visitSnapshot;
     return {
       ...patient,
       current_visit_id: targetVisitId,
@@ -110,45 +114,74 @@ export const ReportTab: React.FC = () => {
       height_cm: activeDisplayP2?.report?.sectionB_anthropometrics?.height_cm ?? (snap?.anthropometrics?.height_cm ?? patient.height_cm),
       waist_cm: snap?.anthropometrics?.waist_cm ?? patient.waist_cm
     };
-  }, [patient, activeReportVisit, visitSnapshots, activeDisplayP2]);
+  }, [patient, activeReportVisit, targetVisitId, visitSnapshot, activeDisplayP2]);
+
+  // Derive effective nutrition plan and diet chart:
+  // For the active current consultation: use live weeklyDietPlan and dietChart.
+  // For historical visits: retrieve the snapshot recorded for that visit.
+  // If the historical snapshot has no diet plan, DO NOT leak the live current plan!
+  const effectiveWeeklyDietPlan = useMemo<WeeklyDietPlan | null>(() => {
+    if (isCurrentActiveVisit) {
+      return weeklyDietPlan;
+    }
+    return (visitSnapshot as any)?.weekly_diet_plan || null;
+  }, [isCurrentActiveVisit, weeklyDietPlan, visitSnapshot]);
+
+  const effectiveDietChart = useMemo<any[]>(() => {
+    if (isCurrentActiveVisit) {
+      return dietChart;
+    }
+    return (visitSnapshot as any)?.diet_chart || (effectiveWeeklyDietPlan?.days?.[0]?.meals) || [];
+  }, [isCurrentActiveVisit, dietChart, visitSnapshot, effectiveWeeklyDietPlan]);
+
+  const isHistoricalVisitWithoutPlan = !isCurrentActiveVisit && !effectiveWeeklyDietPlan && (!effectiveDietChart || effectiveDietChart.length === 0);
 
   // Release eligibility verification (Deterministic Gate)
   const releaseEligibility = useMemo(() => {
     return validateReportReleaseEligibility({
       patient: effectivePatientForReport,
-      plan: weeklyDietPlan || dietChart,
-      weeklyDietPlan,
+      plan: effectiveWeeklyDietPlan || effectiveDietChart,
+      weeklyDietPlan: effectiveWeeklyDietPlan,
       visit: activeReportVisit,
-      safetyEvaluation: clinicalSafetyEvaluation,
-      isDietPlanDirty
+      expectedVisitId: activeReportVisit?.visit_id || activeReportVisit?.id,
+      safetyEvaluation: isCurrentActiveVisit ? clinicalSafetyEvaluation : undefined,
+      isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false
     });
-  }, [effectivePatientForReport, weeklyDietPlan, dietChart, activeReportVisit, clinicalSafetyEvaluation, isDietPlanDirty]);
+  }, [effectivePatientForReport, effectiveWeeklyDietPlan, effectiveDietChart, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty]);
+
+  // Subtab Single-Day vs 7-Day distinction
+  const isSingleDayClinicianMode = clinicianSubTab === 'diet_prescription';
 
   // Build Authoritative Projections
   const clinicianPayload = useMemo(() => {
     return buildClinicianReportProjection({
       patient: effectivePatientForReport,
-      dietChart,
-      weeklyDietPlan,
+      dietChart: effectiveDietChart,
+      weeklyDietPlan: effectiveWeeklyDietPlan,
       dniResult,
       trafficLight,
       p2AnalysisResult: activeDisplayP2,
       candidateSupplements,
-      visit: activeReportVisit
+      visit: activeReportVisit,
+      includeAllDays: !isSingleDayClinicianMode,
+      activeDayNumber: 1
     });
-  }, [effectivePatientForReport, dietChart, weeklyDietPlan, dniResult, trafficLight, activeDisplayP2, candidateSupplements, activeReportVisit]);
+  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeDisplayP2, candidateSupplements, activeReportVisit, isSingleDayClinicianMode]);
 
   const patientPayload = useMemo(() => {
     return buildPatientReportProjection({
       patient: effectivePatientForReport,
-      dietChart,
-      weeklyDietPlan,
+      dietChart: effectiveDietChart,
+      weeklyDietPlan: effectiveWeeklyDietPlan,
       dniResult,
       trafficLight,
       visit: activeReportVisit,
-      includeAllDays: true
+      includeAllDays: true,
+      safetyEvaluation: isCurrentActiveVisit ? clinicalSafetyEvaluation : undefined,
+      isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false,
+      releaseEligibility
     });
-  }, [effectivePatientForReport, dietChart, weeklyDietPlan, dniResult, trafficLight, activeReportVisit]);
+  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, releaseEligibility]);
 
   const handlePrint = () => {
     if (reportMode === 'patient') {
@@ -418,22 +451,46 @@ export const ReportTab: React.FC = () => {
           {/* Clinician View 1: 7-Day Weekly Clinical Plan Dossier */}
           {clinicianSubTab === 'weekly_diet_plan' && (
             <div data-testid="weekly-diet-report-view">
-              <ClinicianReportView
-                payload={clinicianPayload}
-                language={language}
-                onPrint={handlePrint}
-              />
+              {isHistoricalVisitWithoutPlan ? (
+                <div className="bg-card border border-border rounded-2xl p-10 text-center space-y-3 shadow-subtle max-w-xl mx-auto">
+                  <FileText className="h-10 w-10 text-muted-foreground mx-auto" />
+                  <h3 className="font-bold text-base text-foreground">
+                    {bn ? 'এই অতীত ভিজিটের জন্য কোনো ডায়েট প্ল্যান রেকর্ড করা নেই।' : 'No diet plan recorded for this visit.'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {bn ? 'অতীত ভিজিটের সংরক্ষিত ক্লিনিক্যাল স্ন্যাপশটে কোনো পুষ্টি পরিকল্পনা সংরক্ষিত নেই।' : 'No nutrition plan was recorded in the clinical snapshot for this historical consultation visit.'}
+                  </p>
+                </div>
+              ) : (
+                <ClinicianReportView
+                  payload={clinicianPayload}
+                  language={language}
+                  onPrint={handlePrint}
+                />
+              )}
             </div>
           )}
 
           {/* Clinician View 2: Scaled Single-Day Plan Dossier */}
           {clinicianSubTab === 'diet_prescription' && (
             <div data-testid="weekly-diet-report-view">
-              <ClinicianReportView
-                payload={clinicianPayload}
-                language={language}
-                onPrint={handlePrint}
-              />
+              {isHistoricalVisitWithoutPlan ? (
+                <div className="bg-card border border-border rounded-2xl p-10 text-center space-y-3 shadow-subtle max-w-xl mx-auto">
+                  <FileText className="h-10 w-10 text-muted-foreground mx-auto" />
+                  <h3 className="font-bold text-base text-foreground">
+                    {bn ? 'এই অতীত ভিজিটের জন্য কোনো ডায়েট প্ল্যান রেকর্ড করা নেই।' : 'No diet plan recorded for this visit.'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {bn ? 'অতীত ভিজিটের সংরক্ষিত ক্লিনিক্যাল স্ন্যাপশটে কোনো পুষ্টি পরিকল্পনা সংরক্ষিত নেই।' : 'No nutrition plan was recorded in the clinical snapshot for this historical consultation visit.'}
+                  </p>
+                </div>
+              ) : (
+                <ClinicianReportView
+                  payload={clinicianPayload}
+                  language={language}
+                  onPrint={handlePrint}
+                />
+              )}
             </div>
           )}
 
@@ -509,11 +566,23 @@ export const ReportTab: React.FC = () => {
       {/* ── MODE 2: PATIENT-SAFE DIET PRESCRIPTION (U21) ─────────────── */}
       {reportMode === 'patient' && (
         <div data-testid="patient-projection-view">
-          <PatientDietReportView
-            payload={patientPayload}
-            language={language}
-            onPrint={handlePrint}
-          />
+          {isHistoricalVisitWithoutPlan ? (
+            <div className="bg-card border border-border rounded-2xl p-10 text-center space-y-3 shadow-subtle max-w-xl mx-auto">
+              <FileText className="h-10 w-10 text-muted-foreground mx-auto" />
+              <h3 className="font-bold text-base text-foreground">
+                {bn ? 'এই অতীত ভিজিটের জন্য কোনো ডায়েট প্ল্যান রেকর্ড করা নেই।' : 'No diet plan recorded for this visit.'}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {bn ? 'অতীত ভিজিটের সংরক্ষিত ক্লিনিক্যাল স্ন্যাপশটে কোনো পুষ্টি পরিকল্পনা সংরক্ষিত নেই।' : 'No nutrition plan was recorded in the clinical snapshot for this historical consultation visit.'}
+              </p>
+            </div>
+          ) : (
+            <PatientDietReportView
+              payload={patientPayload}
+              language={language}
+              onPrint={handlePrint}
+            />
+          )}
         </div>
       )}
 

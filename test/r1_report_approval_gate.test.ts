@@ -329,18 +329,16 @@ console.log('\n--- SCENARIO N: Historical Visit Isolation ---');
     visit_date: '2026-10-01',
     visit_type: 'baseline_consultation',
     status: 'completed',
-    created_at: '2026-10-01T10:00:00Z',
-    updated_at: '2026-10-01T10:00:00Z'
+    created_at: '2026-10-01T10:00:00Z'
   };
   const visitV2: ClinicalVisit = {
     visit_id: 'vis_nov_15',
     patient_id: patient.id,
     visit_number: 2,
     visit_date: '2026-11-15',
-    visit_type: 'follow_up_review',
+    visit_type: 'routine_followup',
     status: 'in_progress',
-    created_at: '2026-11-15T10:00:00Z',
-    updated_at: '2026-11-15T10:00:00Z'
+    created_at: '2026-11-15T10:00:00Z'
   };
 
   const plan = makePlan(patient);
@@ -351,6 +349,118 @@ console.log('\n--- SCENARIO N: Historical Visit Isolation ---');
   assert(payloadV1.patient_identity.visit_date === '2026-10-01', 'Scenario N: Payload V1 reflects Visit 1 date (2026-10-01)');
   assert(payloadV2.patient_identity.visit_id === 'vis_nov_15', 'Scenario N: Payload V2 is bound to visit_id vis_nov_15');
   assert(payloadV2.patient_identity.visit_date === '2026-11-15', 'Scenario N: Payload V2 reflects Visit 2 date (2026-11-15)');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO O: Patient ID Mismatch Between Plan and Selected Patient Fails Closed
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO O: Patient ID Mismatch Fails Closed ---');
+{
+  const patientA = createSyntheticPatient('pt_alpha_release', 'Patient Alpha');
+  const patientB = createSyntheticPatient('pt_beta_release', 'Patient Beta');
+  const approvedPlanA = approveWeeklyDietPlan(makePlan(patientA), 'Dr. Mismatch Tester');
+
+  // Attempt to validate release of Plan A under Patient B's profile
+  const mismatchCheck = validateReportReleaseEligibility({
+    patient: patientB,
+    plan: approvedPlanA,
+    weeklyDietPlan: approvedPlanA,
+    visit: {
+      visit_id: patientB.current_visit_id || 'vis_pt_beta_release_1',
+      patient_id: patientB.id,
+      visit_date: patientB.visit_date,
+      visit_type: 'routine_followup',
+      status: 'in_progress',
+      created_at: '2026-11-21T10:00:00Z'
+    }
+  });
+
+  assert(!mismatchCheck.isEligible, 'Scenario O: Plan with mismatched patient_id is strictly blocked from release');
+  assert(mismatchCheck.blockingReasons.some(r => r.includes('mismatch') || r.includes('identity')), 'Scenario O: Blocking reason explicitly states patient identity mismatch');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO P: Visit ID Mismatch Between Plan and Selected Visit Fails Closed
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO P: Visit ID Mismatch Fails Closed ---');
+{
+  const patient = createSyntheticPatient('pt_visit_mismatch', 'Visit Mismatch Patient');
+  const approvedPlan = approveWeeklyDietPlan(makePlan(patient), 'Dr. Visit Tester');
+
+  // Attempt to release with a visit ID that doesn't match the plan's visit_id
+  const visitMismatchCheck = validateReportReleaseEligibility({
+    patient,
+    plan: approvedPlan,
+    weeklyDietPlan: approvedPlan,
+    visit: {
+      visit_id: 'vis_different_999',
+      patient_id: patient.id,
+      visit_date: '2026-12-01',
+      visit_type: 'routine_followup',
+      status: 'in_progress',
+      created_at: '2026-12-01T10:00:00Z'
+    },
+    expectedVisitId: 'vis_different_999'
+  });
+
+  assert(!visitMismatchCheck.isEligible, 'Scenario P: Plan with mismatched visit_id is strictly blocked from release');
+  assert(visitMismatchCheck.blockingReasons.some(r => r.includes('visit') || r.includes('Visit')), 'Scenario P: Blocking reason explicitly identifies visit ID mismatch');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO Q: Plan Version Mismatch with Approval Record Fails Closed
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO Q: Plan Version Tampering / Invalidation Fails Closed ---');
+{
+  const patient = createSyntheticPatient('pt_version_gate', 'Version Gate Patient');
+  const plan = approveWeeklyDietPlan(makePlan(patient), 'Dr. Version Tester');
+
+  // Simulate an unapproved edit bumping version without sign-off
+  const tamperedPlan: WeeklyDietPlan = {
+    ...plan,
+    version: 3,
+    previous_approval: {
+      approved_by: 'Dr. Version Tester',
+      approval_date: new Date().toISOString(),
+      version: 4 // Previous approval recorded for future/different version
+    }
+  };
+
+  const versionCheck = validateReportReleaseEligibility({
+    patient,
+    plan: tamperedPlan,
+    weeklyDietPlan: tamperedPlan
+  });
+
+  assert(!versionCheck.isEligible, 'Scenario Q: Plan with corrupted/mismatched version approval record is blocked');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO R: Unapproved Edits (Dirty Plan State) Fails Closed
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO R: Unapproved Edits (Dirty State) Fails Closed ---');
+{
+  const patient = createSyntheticPatient('pt_dirty_state', 'Dirty State Patient');
+  const approvedPlan = approveWeeklyDietPlan(makePlan(patient), 'Dr. Clean Plan');
+
+  // When dirty flag is active (user edited food item or demographic without re-signing)
+  const dirtyCheck = validateReportReleaseEligibility({
+    patient,
+    plan: approvedPlan,
+    weeklyDietPlan: approvedPlan,
+    isDietPlanDirty: true
+  });
+
+  assert(!dirtyCheck.isEligible, 'Scenario R: Dirty plan state strictly blocks patient release');
+  assert(dirtyCheck.blockingReasons.some(r => r.includes('Unsaved') || r.includes('unapproved')), 'Scenario R: Explains unapproved modifications as blocking reason');
+
+  const patientPayload = buildPatientReportProjection({
+    patient,
+    dietChart: approvedPlan.days[0].meals,
+    weeklyDietPlan: approvedPlan,
+    isDietPlanDirty: true
+  });
+  assert(patientPayload.is_released === false, 'Scenario R: Patient payload derives is_released: false when dirty');
 }
 
 console.log('\n================================================================');

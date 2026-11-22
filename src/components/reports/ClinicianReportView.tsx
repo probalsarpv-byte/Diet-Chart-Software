@@ -198,30 +198,40 @@ export const ClinicianReportView: React.FC<ClinicianReportViewProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="p-3 rounded-xl bg-secondary/30 border border-border/80 space-y-0.5">
               <span className="text-muted-foreground text-[10px] block">{bn ? 'হিসাবকৃত BMR:' : 'Calculated BMR:'}</span>
-              <strong className="text-base text-foreground font-mono">{energy_and_macro_analytics.bmr_kcal}</strong>
-              <span className="text-[10px] text-muted-foreground block">kcal/day</span>
+              <strong className="text-base text-foreground font-mono">
+                {energy_and_macro_analytics.bmr_kcal !== null ? energy_and_macro_analytics.bmr_kcal : (bn ? 'হিসাবকৃত নয়' : 'Not Available')}
+              </strong>
+              {energy_and_macro_analytics.bmr_kcal !== null && <span className="text-[10px] text-muted-foreground block">kcal/day</span>}
             </div>
 
             <div className="p-3 rounded-xl bg-secondary/30 border border-border/80 space-y-0.5">
               <span className="text-muted-foreground text-[10px] block">{bn ? 'টার্গেট TDEE:' : 'Target TDEE:'}</span>
-              <strong className="text-base text-foreground font-mono">{energy_and_macro_analytics.tdee_kcal}</strong>
-              <span className="text-[10px] text-muted-foreground block">kcal/day</span>
+              <strong className="text-base text-foreground font-mono">
+                {energy_and_macro_analytics.tdee_kcal !== null ? energy_and_macro_analytics.tdee_kcal : (bn ? 'হিসাবকৃত নয়' : 'Not Available')}
+              </strong>
+              {energy_and_macro_analytics.tdee_kcal !== null && <span className="text-[10px] text-muted-foreground block">kcal/day</span>}
             </div>
 
             <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 space-y-0.5">
               <span className="text-primary text-[10px] font-bold block">{bn ? 'টার্গেট ক্যালোরি:' : 'Prescribed Target:'}</span>
-              <strong className="text-base text-primary font-mono">{energy_and_macro_analytics.target_calories_kcal}</strong>
-              <span className="text-[10px] text-primary/80 block">kcal/day</span>
+              <strong className="text-base text-primary font-mono">
+                {energy_and_macro_analytics.target_calories_kcal !== null ? energy_and_macro_analytics.target_calories_kcal : (bn ? 'হিসাবকৃত নয়' : 'Not Available')}
+              </strong>
+              {energy_and_macro_analytics.target_calories_kcal !== null && <span className="text-[10px] text-primary/80 block">kcal/day</span>}
             </div>
 
             <div className="p-3 rounded-xl bg-secondary/30 border border-border/80 space-y-0.5">
               <span className="text-muted-foreground text-[10px] block">{bn ? 'পরিকল্পিত ক্যালোরি:' : 'Planned Intake:'}</span>
               <strong className="text-base text-foreground font-mono">{energy_and_macro_analytics.planned_calories_kcal}</strong>
-              <span className={`text-[10px] font-semibold block ${
-                Math.abs(energy_and_macro_analytics.calorie_variance_kcal) <= 50 ? 'text-emerald-600' : 'text-amber-600'
-              }`}>
-                {energy_and_macro_analytics.calorie_variance_kcal > 0 ? `+${energy_and_macro_analytics.calorie_variance_kcal}` : energy_and_macro_analytics.calorie_variance_kcal} kcal var
-              </span>
+              {energy_and_macro_analytics.calorie_variance_kcal !== null ? (
+                <span className={`text-[10px] font-semibold block ${
+                  Math.abs(energy_and_macro_analytics.calorie_variance_kcal) <= 50 ? 'text-emerald-600' : 'text-amber-600'
+                }`}>
+                  {energy_and_macro_analytics.calorie_variance_kcal > 0 ? `+${energy_and_macro_analytics.calorie_variance_kcal}` : energy_and_macro_analytics.calorie_variance_kcal} kcal var
+                </span>
+              ) : (
+                <span className="text-[10px] text-muted-foreground block">{bn ? 'ভ্যারিয়েন্স অনুপলব্ধ' : 'Variance N/A'}</span>
+              )}
             </div>
           </div>
 
@@ -243,30 +253,30 @@ export const ClinicianReportView: React.FC<ClinicianReportViewProps> = ({
                   <td className="py-2 px-3 font-semibold text-emerald-600 dark:text-emerald-400">
                     {bn ? 'প্রোটিন (Protein)' : 'Protein'}
                   </td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.target_protein_g}g</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.target_protein_g !== null ? `${energy_and_macro_analytics.target_protein_g}g` : '—'}</td>
                   <td className="py-2 px-3 font-bold text-foreground">{energy_and_macro_analytics.planned_protein_g}g</td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.protein_variance_g > 0 ? `+${energy_and_macro_analytics.protein_variance_g}` : energy_and_macro_analytics.protein_variance_g}g</td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.protein_achievement_pct}%</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.protein_variance_g !== null ? (energy_and_macro_analytics.protein_variance_g > 0 ? `+${energy_and_macro_analytics.protein_variance_g}g` : `${energy_and_macro_analytics.protein_variance_g}g`) : '—'}</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.protein_achievement_pct !== null ? `${energy_and_macro_analytics.protein_achievement_pct}%` : '—'}</td>
                   <td className="py-2 px-3">{energy_and_macro_analytics.protein_ratio_pct}% of energy</td>
                 </tr>
                 <tr>
                   <td className="py-2 px-3 font-semibold text-blue-600 dark:text-blue-400">
                     {bn ? 'কার্বোহাইড্রেট (Carbs)' : 'Carbohydrates'}
                   </td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.target_carbs_g}g</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.target_carbs_g !== null ? `${energy_and_macro_analytics.target_carbs_g}g` : '—'}</td>
                   <td className="py-2 px-3 font-bold text-foreground">{energy_and_macro_analytics.planned_carbs_g}g</td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.carbs_variance_g > 0 ? `+${energy_and_macro_analytics.carbs_variance_g}` : energy_and_macro_analytics.carbs_variance_g}g</td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.carbs_achievement_pct}%</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.carbs_variance_g !== null ? (energy_and_macro_analytics.carbs_variance_g > 0 ? `+${energy_and_macro_analytics.carbs_variance_g}g` : `${energy_and_macro_analytics.carbs_variance_g}g`) : '—'}</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.carbs_achievement_pct !== null ? `${energy_and_macro_analytics.carbs_achievement_pct}%` : '—'}</td>
                   <td className="py-2 px-3">{energy_and_macro_analytics.carbs_ratio_pct}% of energy</td>
                 </tr>
                 <tr>
                   <td className="py-2 px-3 font-semibold text-amber-600 dark:text-amber-400">
                     {bn ? 'ফ্যাট (Fat)' : 'Healthy Fats'}
                   </td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.target_fat_g}g</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.target_fat_g !== null ? `${energy_and_macro_analytics.target_fat_g}g` : '—'}</td>
                   <td className="py-2 px-3 font-bold text-foreground">{energy_and_macro_analytics.planned_fat_g}g</td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.fat_variance_g > 0 ? `+${energy_and_macro_analytics.fat_variance_g}` : energy_and_macro_analytics.fat_variance_g}g</td>
-                  <td className="py-2 px-3">{energy_and_macro_analytics.fat_achievement_pct}%</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.fat_variance_g !== null ? (energy_and_macro_analytics.fat_variance_g > 0 ? `+${energy_and_macro_analytics.fat_variance_g}g` : `${energy_and_macro_analytics.fat_variance_g}g`) : '—'}</td>
+                  <td className="py-2 px-3">{energy_and_macro_analytics.fat_achievement_pct !== null ? `${energy_and_macro_analytics.fat_achievement_pct}%` : '—'}</td>
                   <td className="py-2 px-3">{energy_and_macro_analytics.fat_ratio_pct}% of energy</td>
                 </tr>
               </tbody>

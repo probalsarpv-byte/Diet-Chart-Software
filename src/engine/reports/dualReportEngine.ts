@@ -137,27 +137,27 @@ export interface ClinicianReportPayload {
     clinical_safety?: PatientProfile['clinical_safety'];
   };
   energy_and_macro_analytics: {
-    bmr_kcal: number;
-    tdee_kcal: number;
-    bmr_safe_floor_kcal: number;
-    target_calories_kcal: number;
+    bmr_kcal: number | null;
+    tdee_kcal: number | null;
+    bmr_safe_floor_kcal: number | null;
+    target_calories_kcal: number | null;
     planned_calories_kcal: number;
-    calorie_variance_kcal: number;
-    calorie_achievement_pct: number;
-    target_protein_g: number;
+    calorie_variance_kcal: number | null;
+    calorie_achievement_pct: number | null;
+    target_protein_g: number | null;
     planned_protein_g: number;
-    protein_variance_g: number;
-    protein_achievement_pct: number;
+    protein_variance_g: number | null;
+    protein_achievement_pct: number | null;
     protein_ratio_pct: number;
-    target_carbs_g: number;
+    target_carbs_g: number | null;
     planned_carbs_g: number;
-    carbs_variance_g: number;
-    carbs_achievement_pct: number;
+    carbs_variance_g: number | null;
+    carbs_achievement_pct: number | null;
     carbs_ratio_pct: number;
-    target_fat_g: number;
+    target_fat_g: number | null;
     planned_fat_g: number;
-    fat_variance_g: number;
-    fat_achievement_pct: number;
+    fat_variance_g: number | null;
+    fat_achievement_pct: number | null;
     fat_ratio_pct: number;
     total_fiber_g: number;
     glycemic_load: number;
@@ -236,17 +236,16 @@ export interface PatientReportPayload {
   clinic_letterhead: {
     clinic_name_bn: string;
     clinic_name_en: string;
-    clinic_tagline_bn: string;
-    clinic_tagline_en: string;
-    contact_phone: string;
-    clinic_address: string;
+    clinic_tagline_bn?: string;
+    clinic_tagline_en?: string;
+    contact_phone?: string;
+    clinic_address?: string;
   };
   nutritionist_signoff: {
     clinician_name: string;
-    license_title_bn: string;
-    license_title_en: string;
+    license_title_bn?: string;
+    license_title_en?: string;
     approval_date?: string;
-    clinical_notes?: string;
     is_verified: boolean;
   };
   patient_identity: {
@@ -309,24 +308,34 @@ export function validateReportReleaseEligibility(options: {
   plan: WeeklyDietPlan | DietChartMeal[] | null | undefined;
   weeklyDietPlan?: WeeklyDietPlan | null;
   visit?: ClinicalVisit | null;
+  expectedVisitId?: string;
   safetyEvaluation?: any;
   isDietPlanDirty?: boolean;
 }): ReleaseEligibilityResult {
-  const { patient, plan, weeklyDietPlan, visit, safetyEvaluation, isDietPlanDirty } = options;
+  const { patient, plan, weeklyDietPlan, visit, expectedVisitId, safetyEvaluation, isDietPlanDirty } = options;
   const blockingReasons: string[] = [];
   const blockingReasons_bn: string[] = [];
 
-  // Check 1: Patient Existence & ID
+  // Check 1: Patient Existence & ID Integrity (Fail Closed)
   if (!patient || !patient.id || patient.id.trim() === '') {
     blockingReasons.push('No valid patient profile is selected.');
     blockingReasons_bn.push('কোনো সঠিক রোগীর প্রোফাইল নির্বাচিত হয়নি।');
+  } else if (weeklyDietPlan?.patient_id && weeklyDietPlan.patient_id.trim() !== '' && weeklyDietPlan.patient_id !== patient.id) {
+    blockingReasons.push(`Plan patient identity mismatch: plan belongs to ${weeklyDietPlan.patient_id}, active patient is ${patient.id}.`);
+    blockingReasons_bn.push(`রোগীর পরিচয়ের অমিল: প্ল্যানটি ${weeklyDietPlan.patient_id} এর জন্য প্রস্তুতকৃত, বর্তমান রোগী ${patient.id}।`);
   }
 
-  // Check 2: Visit context
-  const visitId = visit?.visit_id || visit?.id || patient.current_visit_id;
-  if (!visitId) {
+  // Check 2: Visit Context & ID Integrity (Fail Closed)
+  const effectiveVisitId = expectedVisitId || visit?.visit_id || visit?.id || patient.current_visit_id;
+  if (!effectiveVisitId || effectiveVisitId.trim() === '') {
     blockingReasons.push('No valid clinical consultation visit is linked to this record.');
     blockingReasons_bn.push('এই রেকর্ডের সাথে কোনো সক্রিয় ক্লিনিক্যাল কনসাল্টেশন ভিজিট সংযুক্ত নেই।');
+  } else if (weeklyDietPlan && !weeklyDietPlan.visit_id) {
+    blockingReasons.push('Plan visit identifier is missing or unverified.');
+    blockingReasons_bn.push('প্ল্যানের ভিজিট শনাক্তকারী অনুপস্থিত বা অযাচাইকৃত।');
+  } else if (weeklyDietPlan?.visit_id && effectiveVisitId && weeklyDietPlan.visit_id !== effectiveVisitId) {
+    blockingReasons.push(`Plan visit ID (${weeklyDietPlan.visit_id}) does not match selected consultation visit ID (${effectiveVisitId}).`);
+    blockingReasons_bn.push(`ভিজিট আইডির অমিল: প্ল্যানের ভিজিট (${weeklyDietPlan.visit_id}) নির্বাচিত ভিজিটের (${effectiveVisitId}) সাথে মেলে না।`);
   }
 
   // Check 3: Plan Existence
@@ -337,7 +346,7 @@ export function validateReportReleaseEligibility(options: {
     blockingReasons_bn.push('কোনো ক্লিনিক্যাল পুষ্টি পরিকল্পনা এখনো প্রস্তুত করা হয়নি।');
   }
 
-  // Check 4: Clinical Approval Status
+  // Check 4: Clinical Approval Status & Version Match
   const isApproved = weeklyDietPlan 
     ? Boolean(weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true)
     : false;
@@ -351,22 +360,32 @@ export function validateReportReleaseEligibility(options: {
     blockingReasons_bn.push('পুষ্টি পরিকল্পনাটি এখনো লাইসেন্সপ্রাপ্ত ক্লিনিক্যাল নিউট্রিশনিস্ট দ্বারা আনুষ্ঠানিকভাবে অনুমোদিত হয়নি।');
   }
 
+  // Approval Version Integrity
+  if (weeklyDietPlan?.previous_approval && weeklyDietPlan.status === 'approved') {
+    if (weeklyDietPlan.previous_approval.version > weeklyDietPlan.version) {
+      blockingReasons.push('Approval record version is invalid.');
+      blockingReasons_bn.push('অনুমোদন রেকর্ডের সংস্করণ সঠিক নয়।');
+    }
+  }
+
   // Check 5: Plan Invalidated Check
   if (weeklyDietPlan?.invalidated_at || (weeklyDietPlan?.invalidation_reason && weeklyDietPlan.status !== 'approved')) {
     blockingReasons.push(`Prior approval was invalidated: ${weeklyDietPlan.invalidation_reason || 'Plan was edited'}.`);
     blockingReasons_bn.push(`পূর্ববর্তী অনুমোদন বাতিল হয়েছে: ${weeklyDietPlan.invalidation_reason || 'প্ল্যান পরিমার্জন করা হয়েছে'}।`);
   }
 
-  // Check 6: Dirty State Check (Unsaved/Uncalculated edits)
+  // Check 6: Dirty State Check (Unsaved/Unapproved edits)
   if (isDietPlanDirty || patient.is_diet_plan_dirty) {
-    blockingReasons.push('Unsaved modifications detected. Recalculate and obtain clinician sign-off.');
-    blockingReasons_bn.push('অসংরক্ষিত পরিমার্জন বিদ্যমান। পুনরায় হিসাব করে ক্লিনিক্যাল অনুমোদন নিন।');
+    blockingReasons.push('Unsaved or unapproved modifications detected. Recalculate and obtain clinician sign-off.');
+    blockingReasons_bn.push('অসংরক্ষিত বা অননুমোদিত পরিমার্জন বিদ্যমান। পুনরায় হিসাব করে ক্লিনিক্যাল অনুমোদন নিন।');
   }
 
-  // Check 7: Clinical Safety Hard Stop Check
+  // Check 7: Clinical Safety Hard Stop Check (Fail Closed on ANY Hard Stop)
   const hasOverallHardStop = safetyEvaluation?.overallDecision === 'HARD_STOP';
   const hasPlanHardStop = weeklyDietPlan?.overall_safety_status === 'HARD_STOP';
-  if (hasOverallHardStop || hasPlanHardStop) {
+  const hasUnresolvedHardStops = Boolean(weeklyDietPlan?.unresolved_hard_stops && weeklyDietPlan.unresolved_hard_stops.length > 0);
+  const hasDayHardStop = Boolean(weeklyDietPlan?.days?.some(d => d.safety_decision === 'HARD_STOP'));
+  if (hasOverallHardStop || hasPlanHardStop || hasUnresolvedHardStops || hasDayHardStop) {
     blockingReasons.push('Active Clinical Safety HARD_STOP detected. Prescription release is strictly blocked.');
     blockingReasons_bn.push('সক্রিয় ক্লিনিক্যাল সেফটি হার্ড স্টপ বিদ্যমান। রোগীর জন্য চূড়ান্ত প্রেসক্রিপশন প্রকাশ সম্পূর্ণ নিষিদ্ধ।');
   }
@@ -393,11 +412,11 @@ export function validateReportReleaseEligibility(options: {
     blockingReasons_bn.push(`খাদ্যতালিকায় ${redItemsFound}টি নিষিদ্ধ (লাল) খাবার অন্তর্ভুক্ত রয়েছে। মুক্তির পূর্বে অবশ্যই এগুলো অপসারণ করুন।`);
   }
 
-  // Check 9: Sign-Off Metadata
+  // Check 9: Sign-Off Metadata Authenticity
   const clinicianName = weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name;
-  if (isApproved && (!clinicianName || clinicianName.trim() === '')) {
-    blockingReasons.push('Approval signature metadata is incomplete (missing clinician identifier).');
-    blockingReasons_bn.push('অনুমোদনের স্বাক্ষর সংক্রান্ত মেটাডাটা অসম্পূর্ণ (চিকিৎসকের নাম/আইডি অনুপস্থিত)।');
+  if (isApproved && (!clinicianName || clinicianName.trim() === '' || clinicianName === 'Unassigned Clinician' || clinicianName.toLowerCase() === 'doctor')) {
+    blockingReasons.push('Approval signature metadata is incomplete or contains placeholder clinician name.');
+    blockingReasons_bn.push('অনুমোদনের স্বাক্ষর সংক্রান্ত মেটাডাটা অসম্পূর্ণ বা স্থানধারক চিকিৎসকের নাম রয়েছে।');
   }
 
   return {
@@ -418,6 +437,8 @@ export function buildClinicianReportProjection(options: {
   p2AnalysisResult?: any;
   candidateSupplements?: any[];
   visit?: ClinicalVisit | null;
+  includeAllDays?: boolean;
+  activeDayNumber?: number;
 }): ClinicianReportPayload {
   const { 
     patient, 
@@ -427,7 +448,9 @@ export function buildClinicianReportProjection(options: {
     trafficLight, 
     p2AnalysisResult, 
     candidateSupplements = [], 
-    visit 
+    visit,
+    includeAllDays = true,
+    activeDayNumber = 1
   } = options;
 
   const phaseInfo = CLINICAL_PHASES[patient.current_phase || 1];
@@ -438,7 +461,11 @@ export function buildClinicianReportProjection(options: {
   const clinicianDays: ClinicianDayPlan[] = [];
 
   if (weeklyDietPlan?.days && weeklyDietPlan.days.length > 0) {
-    for (const day of weeklyDietPlan.days) {
+    const daysToProject = includeAllDays
+      ? weeklyDietPlan.days
+      : weeklyDietPlan.days.filter(d => d.day_number === activeDayNumber);
+
+    for (const day of daysToProject) {
       clinicianDays.push({
         day_number: day.day_number,
         day_name_bn: day.day_name_bn,
@@ -515,10 +542,10 @@ export function buildClinicianReportProjection(options: {
     const dayFiber = Math.round(dietChart.reduce((sum, m) => sum + m.items.reduce((s, itm) => s + (itm.fiber_g || 0), 0), 0) * 10) / 10;
     const dayGl = Math.round(dietChart.reduce((sum, m) => sum + (m.meal_gl || 0), 0));
     const dayPral = Math.round(dietChart.reduce((sum, m) => sum + (m.meal_pral || 0), 0) * 10) / 10;
-    const targetKcal = patient.calculated?.target_calories || 1500;
-    const targetProt = patient.calculated?.target_protein_g || 70;
-    const targetCarbs = patient.calculated?.target_carbs_g || 150;
-    const targetFat = patient.calculated?.target_fat_g || 40;
+    const targetKcal = patient.calculated?.target_calories ?? null;
+    const targetProt = patient.calculated?.target_protein_g ?? null;
+    const targetCarbs = patient.calculated?.target_carbs_g ?? null;
+    const targetFat = patient.calculated?.target_fat_g ?? null;
 
     clinicianDays.push({
       day_number: 1,
@@ -533,10 +560,10 @@ export function buildClinicianReportProjection(options: {
         gl: dayGl,
         gl_is_estimated: true,
         pral: dayPral,
-        calorie_variance: dayCal - targetKcal,
-        protein_variance: Math.round((dayProt - targetProt) * 10) / 10,
-        carbs_variance: Math.round((dayCarbs - targetCarbs) * 10) / 10,
-        fat_variance: Math.round((dayFat - targetFat) * 10) / 10
+        calorie_variance: targetKcal !== null ? (dayCal - targetKcal) : 0,
+        protein_variance: targetProt !== null ? Math.round((dayProt - targetProt) * 10) / 10 : 0,
+        carbs_variance: targetCarbs !== null ? Math.round((dayCarbs - targetCarbs) * 10) / 10 : 0,
+        fat_variance: targetFat !== null ? Math.round((dayFat - targetFat) * 10) / 10 : 0
       },
       meals: dietChart.map(m => ({
         id: m.id,
@@ -597,10 +624,10 @@ export function buildClinicianReportProjection(options: {
   const plannedGl = firstDay?.summary.gl || 0;
   const plannedPral = firstDay?.summary.pral || 0;
 
-  const targetKcal = weeklyDietPlan?.target_macros?.calories || patient.calculated?.target_calories || 1500;
-  const targetProt = weeklyDietPlan?.target_macros?.protein_g || patient.calculated?.target_protein_g || 70;
-  const targetCarbs = weeklyDietPlan?.target_macros?.carbs_g || patient.calculated?.target_carbs_g || 150;
-  const targetFat = weeklyDietPlan?.target_macros?.fat_g || patient.calculated?.target_fat_g || 40;
+  const targetKcal = weeklyDietPlan?.target_macros?.calories ?? patient.calculated?.target_calories ?? null;
+  const targetProt = weeklyDietPlan?.target_macros?.protein_g ?? patient.calculated?.target_protein_g ?? null;
+  const targetCarbs = weeklyDietPlan?.target_macros?.carbs_g ?? patient.calculated?.target_carbs_g ?? null;
+  const targetFat = weeklyDietPlan?.target_macros?.fat_g ?? patient.calculated?.target_fat_g ?? null;
 
   const totalAtwaterKcal = (plannedProt * 4) + (plannedCarbs * 4) + (plannedFat * 9) || 1;
   const proteinRatioPct = Math.round(((plannedProt * 4) / totalAtwaterKcal) * 100);
@@ -670,27 +697,27 @@ export function buildClinicianReportProjection(options: {
       clinical_safety: patient.clinical_safety
     },
     energy_and_macro_analytics: {
-      bmr_kcal: patient.calculated?.bmr || 1350,
-      tdee_kcal: patient.calculated?.tdee || 1620,
-      bmr_safe_floor_kcal: patient.calculated?.bmr_safe_calorie_floor || 1350,
+      bmr_kcal: patient.calculated?.bmr ?? null,
+      tdee_kcal: patient.calculated?.tdee ?? null,
+      bmr_safe_floor_kcal: patient.calculated?.bmr_safe_calorie_floor ?? null,
       target_calories_kcal: targetKcal,
       planned_calories_kcal: plannedKcal,
-      calorie_variance_kcal: plannedKcal - targetKcal,
-      calorie_achievement_pct: targetKcal > 0 ? Math.round((plannedKcal / targetKcal) * 100) : 100,
+      calorie_variance_kcal: targetKcal !== null ? (plannedKcal - targetKcal) : null,
+      calorie_achievement_pct: (targetKcal !== null && targetKcal > 0) ? Math.round((plannedKcal / targetKcal) * 100) : null,
       target_protein_g: targetProt,
       planned_protein_g: plannedProt,
-      protein_variance_g: Math.round((plannedProt - targetProt) * 10) / 10,
-      protein_achievement_pct: targetProt > 0 ? Math.round((plannedProt / targetProt) * 100) : 100,
+      protein_variance_g: targetProt !== null ? Math.round((plannedProt - targetProt) * 10) / 10 : null,
+      protein_achievement_pct: (targetProt !== null && targetProt > 0) ? Math.round((plannedProt / targetProt) * 100) : null,
       protein_ratio_pct: proteinRatioPct,
       target_carbs_g: targetCarbs,
       planned_carbs_g: plannedCarbs,
-      carbs_variance_g: Math.round((plannedCarbs - targetCarbs) * 10) / 10,
-      carbs_achievement_pct: targetCarbs > 0 ? Math.round((plannedCarbs / targetCarbs) * 100) : 100,
+      carbs_variance_g: targetCarbs !== null ? Math.round((plannedCarbs - targetCarbs) * 10) / 10 : null,
+      carbs_achievement_pct: (targetCarbs !== null && targetCarbs > 0) ? Math.round((plannedCarbs / targetCarbs) * 100) : null,
       carbs_ratio_pct: carbsRatioPct,
       target_fat_g: targetFat,
       planned_fat_g: plannedFat,
-      fat_variance_g: Math.round((plannedFat - targetFat) * 10) / 10,
-      fat_achievement_pct: targetFat > 0 ? Math.round((plannedFat / targetFat) * 100) : 100,
+      fat_variance_g: targetFat !== null ? Math.round((plannedFat - targetFat) * 10) / 10 : null,
+      fat_achievement_pct: (targetFat !== null && targetFat > 0) ? Math.round((plannedFat / targetFat) * 100) : null,
       fat_ratio_pct: fatRatioPct,
       total_fiber_g: plannedFiber,
       glycemic_load: plannedGl,
@@ -723,6 +750,9 @@ export function buildPatientReportProjection(options: {
   visit?: ClinicalVisit | null;
   activeDayNumber?: number;
   includeAllDays?: boolean;
+  safetyEvaluation?: any;
+  isDietPlanDirty?: boolean;
+  releaseEligibility?: ReleaseEligibilityResult;
 }): PatientReportPayload {
   const { 
     patient, 
@@ -732,20 +762,24 @@ export function buildPatientReportProjection(options: {
     trafficLight, 
     visit,
     activeDayNumber = 1,
-    includeAllDays = true 
+    includeAllDays = true,
+    safetyEvaluation,
+    isDietPlanDirty,
+    releaseEligibility: explicitEligibility
   } = options;
 
   const phaseInfo = CLINICAL_PHASES[patient.current_phase || 1];
   const visitId = visit?.visit_id || visit?.id || patient.current_visit_id || 'vis_current';
   const visitDate = visit?.visit_date || patient.visit_date;
 
-  // Release eligibility verification
-  const eligibility = validateReportReleaseEligibility({
+  // Release eligibility verification (Unified across caller and projection)
+  const eligibility = explicitEligibility || validateReportReleaseEligibility({
     patient,
     plan: weeklyDietPlan || dietChart,
     weeklyDietPlan,
     visit,
-    isDietPlanDirty: patient.is_diet_plan_dirty
+    safetyEvaluation,
+    isDietPlanDirty: isDietPlanDirty ?? patient.is_diet_plan_dirty
   });
 
   // Build patient days using an EXPLICIT ALLOWLIST
@@ -768,7 +802,13 @@ export function buildPatientReportProjection(options: {
     let fastingBn: string | undefined = undefined;
     let fastingEn: string | undefined = undefined;
 
-    if (fasting?.is_fasting && fasting.eating_window_start && fasting.eating_window_end) {
+    const isFastingActiveAndApproved = Boolean(
+      fasting?.is_fasting &&
+      fasting.is_fasting_active !== false &&
+      (fasting.decision_status === 'fasting_approved' || weeklyDietPlan?.is_approved)
+    );
+
+    if (isFastingActiveAndApproved && fasting?.eating_window_start && fasting?.eating_window_end) {
       fastingEn = `Eating Window: ${fasting.eating_window_start} – ${fasting.eating_window_end} (${fasting.planned_fasting_hours || 16}h Fast)`;
       fastingBn = `খাবার গ্রহণের সময়: ${fasting.eating_window_start} থেকে ${fasting.eating_window_end} (${fasting.planned_fasting_hours || 16} ঘণ্টার ফাস্টিং)`;
     }
@@ -803,18 +843,40 @@ export function buildPatientReportProjection(options: {
     });
   }
 
-  // Hydration directives
+  // Hydration directives: only output explicit clinical restrictions or explicit directives
   const fluidPrescription = patient.clinical_safety?.fluid_restriction;
   const isFluidRestricted = Boolean(fluidPrescription?.is_restricted);
   const fluidLimitMl = fluidPrescription?.limit_ml;
 
-  const hydrationBn = isFluidRestricted
-    ? `চিকিৎসকের নির্দেশ মোতাবেক দৈনিক মোট তরল গ্রহণ কঠোরভাবে সর্বাধিক ${fluidLimitMl || 'নির্দিষ্ট'} মিলিলিটারে সীমাবদ্ধ রাখুন। অতিরিক্ত পানি বা তরল গ্রহণ করবেন না।`
-    : 'প্রতিদিন অন্তত ২.৫ থেকে ৩.০ লিটার বিশুদ্ধ কুসুম গরম পানি পান করুন। ভারী খাবারের ৩০ মিনিট পূর্বে অথবা ৪৫ মিনিট পরে পানি পান করা হজমের জন্য উত্তম।';
+  let hydrationBn: string;
+  let hydrationEn: string;
 
-  const hydrationEn = isFluidRestricted
-    ? `Clinical Fluid Restriction Active: Strictly limit total daily fluid intake to maximum ${fluidLimitMl || 'prescribed'} mL/day as ordered by your managing physician. Do not exceed.`
-    : 'Drink 2.5 to 3.0 liters of pure warm water daily. For optimal digestive health, hydrate 30 minutes before or 45 minutes after meals rather than during meals.';
+  if (isFluidRestricted) {
+    hydrationBn = `চিকিৎসকের নির্দেশ মোতাবেক দৈনিক মোট তরল গ্রহণ কঠোরভাবে সর্বাধিক ${fluidLimitMl || 'নির্দিষ্ট'} মিলিলিটারে সীমাবদ্ধ রাখুন। অতিরিক্ত পানি বা তরল গ্রহণ করবেন না।`;
+    hydrationEn = `Clinical Fluid Restriction Active: Strictly limit total daily fluid intake to maximum ${fluidLimitMl || 'prescribed'} mL/day as ordered by your managing physician. Do not exceed.`;
+  } else {
+    hydrationBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
+    hydrationEn = 'Not individually prescribed';
+  }
+
+  // Cooking oil directives: only output if explicitly prescribed
+  const cookingOilBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
+  const cookingOilEn = 'Not individually prescribed';
+
+  // Salt directives: only output if explicitly prescribed (e.g., sodium restriction)
+  const isSodiumRestricted = Boolean(
+    patient.selected_conditions?.includes('hypertension_ckd') ||
+    patient.selected_conditions?.includes('ckd_stage_1_3b')
+  );
+  let saltBn: string;
+  let saltEn: string;
+  if (isSodiumRestricted) {
+    saltBn = 'চিকিৎসকের নির্দেশ অনুযায়ী রান্নার অতিরিক্ত লবণ পরিহার করুন।';
+    saltEn = 'Clinically restricted dietary sodium. Avoid adding raw or excessive cooking salt.';
+  } else {
+    saltBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
+    saltEn = 'Not individually prescribed';
+  }
 
   // Chronological schedule for patient instructions (filtering out internal medication warnings)
   const patientSchedule: Array<{
@@ -860,15 +922,14 @@ export function buildPatientReportProjection(options: {
       clinic_name_en: 'SHUDDHO CLINICAL FUNCTIONAL NUTRITION',
       clinic_tagline_bn: 'সেন্টার ফর মেটাবলিক রিবুট ও প্রিসিশন লাইফস্টাইল মেডিসিন',
       clinic_tagline_en: 'Center for Metabolic Reboot & Precision Lifestyle Medicine',
-      contact_phone: '+880 1712-000000',
-      clinic_address: 'Gulshan-2 / Dhanmondi, Dhaka, Bangladesh'
+      contact_phone: undefined,
+      clinic_address: undefined
     },
     nutritionist_signoff: {
       clinician_name: clinicianName,
-      license_title_bn: 'ক্লিনিক্যাল ফাংশনাল নিউট্রিশনিস্ট',
-      license_title_en: 'Lead Clinical Functional Nutritionist',
+      license_title_bn: weeklyDietPlan?.approval_metadata?.license_number ? 'ক্লিনিক্যাল ফাংশনাল নিউট্রিশনিস্ট' : undefined,
+      license_title_en: weeklyDietPlan?.approval_metadata?.license_number ? 'Lead Clinical Functional Nutritionist' : undefined,
       approval_date: weeklyDietPlan?.approved_at?.split('T')[0] || weeklyDietPlan?.approval_date?.split('T')[0],
-      clinical_notes: weeklyDietPlan?.clinician_notes,
       is_verified: isApproved
     },
     patient_identity: {
@@ -891,10 +952,10 @@ export function buildPatientReportProjection(options: {
       hydration_guidelines_en: hydrationEn,
       fluid_restriction_active: isFluidRestricted,
       fluid_limit_ml: fluidLimitMl,
-      cooking_oil_rules_bn: 'রান্নায় কোনো অবস্থাতেই রিফাইন্ড সয়াবিন বা পাম তেল ব্যবহার করবেন না। খাঁটি ঘানিভাঙা সরিষার তেল (দৈনিক ১৫-২০ মিলি) অথবা দেশি খাঁটি ঘিয়ে রান্না করুন।',
-      cooking_oil_rules_en: 'Avoid industrial refined seed oils. Cook strictly with cold-pressed unrefined mustard oil (15-20 mL/day) or pure desi cow ghee.',
-      salt_guidelines_bn: 'দৈনিক লবণ গ্রহণ ৫ গ্রামের মধ্যে (১ চা চামচ সমান) সীমাবদ্ধ রাখুন। খাবারের সাথে কাঁচা বাড়তি লবণ পরিহার করুন।',
-      salt_guidelines_en: 'Limit daily cooking salt to 5g (~1 level teaspoon). Avoid adding raw table salt at the dining table.'
+      cooking_oil_rules_bn: cookingOilBn,
+      cooking_oil_rules_en: cookingOilEn,
+      salt_guidelines_bn: saltBn,
+      salt_guidelines_en: saltEn
     },
     traffic_light_guide: {
       green_foods_bn: greenBn,
@@ -945,7 +1006,13 @@ const BANNED_PATIENT_KEYS = new Set([
   'micronutrient_sufficiency',
   'atwater_protein_grams',
   'atwater_carbs_grams',
-  'atwater_fat_grams'
+  'atwater_fat_grams',
+  'clinical_notes',
+  'clinician_notes',
+  'approval_notes',
+  'internal_hypotheses',
+  'internal_clinical_hypotheses',
+  'private_observations'
 ]);
 
 export function validatePatientReportProjection(payload: PatientReportPayload): {
@@ -1000,7 +1067,12 @@ export function validatePatientReportProjection(payload: PatientReportPayload): 
     '"bmr"',
     '"tdee"',
     '"pral"',
-    '"glycemic_load"'
+    '"glycemic_load"',
+    '"clinical_notes"',
+    '"clinician_notes"',
+    '"approval_notes"',
+    '"internal_hypotheses"',
+    '"private_observations"'
   ];
 
   for (const field of forbiddenFieldNames) {

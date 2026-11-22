@@ -70,10 +70,10 @@ function createSyntheticPatient(id: string = 'pt_r1_test', overrides: Partial<Pa
     population_group: 'adult_standard',
     bmr_floor_strategy: 'clamped_to_bmr',
     confirmed_allergies: ['egg'],
-    allergy_reconciliation_status: 'fully_reconciled',
+    allergy_reconciliation_status: 'allergies_confirmed',
     clinician_disallowed_foods: [],
     clinician_disallowed_tags: [],
-    selected_conditions: ['t2d_ir', 'hypertension'],
+    selected_conditions: ['t2d_ir', 'hypertension_ckd'],
     active_medications: ['metformin'],
     medication_records: [],
     medication_reconciliation_status: 'fully_reconciled',
@@ -355,6 +355,104 @@ console.log('\n--- SCENARIO Q: Missing Biomarkers Preserved as Null/Not Availabl
   const vitD3 = clinicianPayload.micronutrient_sufficiency['vitamin_d'];
   assert(vitD3.actual_amount === 18.5, 'Scenario Q: Present Vitamin D3 is strictly 18.5 ng/mL');
   assert(vitD3.status === 'deficient', 'Scenario Q: Serum Vitamin D3 correctly evaluated as deficient (<20)');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO U: Private Clinical Notes Strictly Excluded from Patient Payload
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO U: Private Clinical Notes Strictly Excluded from Patient Payload ---');
+{
+  const planWithNotes: WeeklyDietPlan = {
+    ...generatedPlan,
+    clinician_notes: 'CONFIDENTIAL: Suspected subclinical HPA-axis burnout. Monitor cortisol.',
+    approval_notes: 'Approved with cautionary sodium limitation.',
+    status: 'approved',
+    is_approved: true,
+    approved_by: 'Dr. Clinician'
+  };
+
+  const patientPayload = buildPatientReportProjection({
+    patient,
+    dietChart: planWithNotes.days[0].meals,
+    weeklyDietPlan: planWithNotes
+  });
+
+  const jsonStr = JSON.stringify(patientPayload);
+  assert(!jsonStr.includes('CONFIDENTIAL: Suspected subclinical HPA-axis burnout'), 'Scenario U: Clinician internal hypotheses strictly omitted from patient payload');
+  assert(!jsonStr.includes('"clinical_notes"'), 'Scenario U: No "clinical_notes" property in patient payload');
+  assert(!jsonStr.includes('"approval_notes"'), 'Scenario U: No "approval_notes" property in patient payload');
+  const privacyCheck = validatePatientReportProjection(patientPayload);
+  assert(privacyCheck.isValid, 'Scenario U: validatePatientReportProjection confirms 0 privacy violations with private clinician notes present');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO V: Missing BMR/TDEE/Target Preserves Null Without Fabrication
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO V: Missing BMR/TDEE/Target Preserved as Null ---');
+{
+  const uncalculatedPatient = createSyntheticPatient('pt_uncalc', {
+    calculated: undefined
+  });
+  const uncalcPlan: WeeklyDietPlan = {
+    ...generatedPlan,
+    target_macros: undefined as any
+  };
+
+  const clinicianPayload = buildClinicianReportProjection({
+    patient: uncalculatedPatient,
+    dietChart: generatedPlan.days[0].meals,
+    weeklyDietPlan: uncalcPlan
+  });
+
+  assert(clinicianPayload.energy_and_macro_analytics.bmr_kcal === null, 'Scenario V: Missing BMR preserved as null (never fabricated 1320 or 1350)');
+  assert(clinicianPayload.energy_and_macro_analytics.tdee_kcal === null, 'Scenario V: Missing TDEE preserved as null (never fabricated 1584 or 1620)');
+  assert(clinicianPayload.energy_and_macro_analytics.target_calories_kcal === null, 'Scenario V: Missing Target Calories preserved as null (never fabricated 1500)');
+  assert(clinicianPayload.energy_and_macro_analytics.calorie_variance_kcal === null, 'Scenario V: Calorie variance is null when target is unprescribed');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO W: Unsupported Blanket Advice Not Emitted
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO W: Unsupported Blanket Advice Not Emitted ---');
+{
+  const unprescribedPatient = createSyntheticPatient('pt_unprescribed', {
+    clinical_safety: undefined,
+    selected_conditions: []
+  });
+
+  const patientPayload = buildPatientReportProjection({
+    patient: unprescribedPatient,
+    dietChart: generatedPlan.days[0].meals,
+    weeklyDietPlan: generatedPlan
+  });
+
+  const jsonStr = JSON.stringify(patientPayload);
+  assert(!jsonStr.includes('২.৫ থেকে ৩.০ লিটার'), 'Scenario W: Blanket 2.5–3.0L water advice not automatically emitted');
+  assert(!jsonStr.includes('2.5 to 3.0 liters'), 'Scenario W: Blanket English 2.5-3.0L water advice not automatically emitted');
+  assert(!jsonStr.includes('খাঁটি ঘানিভাঙা সরিষার তেল'), 'Scenario W: Blanket mustard oil advice not automatically emitted');
+  assert(!jsonStr.includes('cold-pressed unrefined mustard oil'), 'Scenario W: Blanket English mustard oil advice not automatically emitted');
+  assert(patientPayload.safety_instructions.hydration_guidelines_en === 'Not individually prescribed', 'Scenario W: Hydration marked as not individually prescribed');
+  assert(patientPayload.safety_instructions.cooking_oil_rules_en === 'Not individually prescribed', 'Scenario W: Cooking oil marked as not individually prescribed');
+  assert(patientPayload.safety_instructions.salt_guidelines_en === 'Not individually prescribed', 'Scenario W: Salt marked as not individually prescribed');
+}
+
+// -------------------------------------------------------------------
+// SCENARIO X: Fake Clinic Information Omitted
+// -------------------------------------------------------------------
+console.log('\n--- SCENARIO X: Fake Clinic Information Omitted ---');
+{
+  const patientPayload = buildPatientReportProjection({
+    patient,
+    dietChart: generatedPlan.days[0].meals,
+    weeklyDietPlan: generatedPlan
+  });
+
+  const jsonStr = JSON.stringify(patientPayload);
+  assert(!jsonStr.includes('+880 1712-000000'), 'Scenario X: Dummy phone number (+880 1712-000000) not emitted');
+  assert(!jsonStr.includes('Gulshan-2 / Dhanmondi'), 'Scenario X: Dummy clinic location (Gulshan-2 / Dhanmondi) not emitted');
+  assert(!jsonStr.includes('shuddhobd.com'), 'Scenario X: Dummy URL (shuddhobd.com) not emitted');
+  assert(patientPayload.clinic_letterhead.contact_phone === undefined, 'Scenario X: Contact phone undefined when not provided');
+  assert(patientPayload.clinic_letterhead.clinic_address === undefined, 'Scenario X: Clinic address undefined when not provided');
 }
 
 console.log('\n================================================================');

@@ -85,7 +85,7 @@ async function runStep06Verification() {
     // -------------------------------------------------------------------
     console.log('--- Scenario 1: Desktop Left Sidebar Architecture & Brand ---');
     const desktopPage: Page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await desktopPage.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await desktopPage.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await desktopPage.waitForTimeout(600);
 
     // Verify desktop sidebar element exists and is visible
@@ -160,7 +160,7 @@ async function runStep06Verification() {
     // -------------------------------------------------------------------
     console.log('\n--- Scenario 5: Mobile Drawer Toggle Functionality ---');
     const mobilePage: Page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await mobilePage.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await mobilePage.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await mobilePage.waitForTimeout(600);
 
     // Desktop sidebar should be hidden in mobile view

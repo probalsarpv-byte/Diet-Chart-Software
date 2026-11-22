@@ -157,14 +157,18 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
                 <h1 className="font-extrabold text-xl leading-tight text-slate-900 dark:text-white print:text-black">
                   {bn ? clinic_letterhead.clinic_name_bn : clinic_letterhead.clinic_name_en}
                 </h1>
-                <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 print:text-emerald-700">
-                  {bn ? clinic_letterhead.clinic_tagline_bn : clinic_letterhead.clinic_tagline_en}
-                </p>
+                {(clinic_letterhead.clinic_tagline_bn || clinic_letterhead.clinic_tagline_en) && (
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 print:text-emerald-700">
+                    {bn ? clinic_letterhead.clinic_tagline_bn : clinic_letterhead.clinic_tagline_en}
+                  </p>
+                )}
               </div>
             </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 print:text-slate-600 mt-1">
-              {clinic_letterhead.clinic_address} • Tel: {clinic_letterhead.contact_phone}
-            </p>
+            {(clinic_letterhead.clinic_address || clinic_letterhead.contact_phone) && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 print:text-slate-600 mt-1">
+                {[clinic_letterhead.clinic_address, clinic_letterhead.contact_phone ? `Tel: ${clinic_letterhead.contact_phone}` : null].filter(Boolean).join(' • ')}
+              </p>
+            )}
           </div>
 
           <div className="text-left sm:text-right text-xs">
@@ -198,12 +202,14 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
               {patient_identity.visit_date}
             </span>
           </div>
-          <div>
-            <span className="text-slate-500 print:text-slate-600 block text-[10px]">{bn ? 'পরবর্তী সাক্ষাতের সম্ভাব্য তারিখ:' : 'Next Review Date:'}</span>
-            <span className="text-emerald-700 dark:text-emerald-400 print:text-emerald-700 font-bold">
-              {patient_identity.followup_date || (bn ? '৪ সপ্তাহ পর' : '4 Weeks Post-Initiation')}
-            </span>
-          </div>
+          {patient_identity.followup_date && (
+            <div>
+              <span className="text-slate-500 print:text-slate-600 block text-[10px]">{bn ? 'পরবর্তী সাক্ষাতের সম্ভাব্য তারিখ:' : 'Next Review Date:'}</span>
+              <span className="text-emerald-700 dark:text-emerald-400 print:text-emerald-700 font-bold">
+                {patient_identity.followup_date}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Essential Safety Warnings & Restrictions */}
@@ -397,38 +403,56 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
           </div>
         </div>
 
-        {/* Essential Hydration, Oil & Salt Rules */}
-        <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs avoid-break">
-          <div className="space-y-1">
-            <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
-              <CookingPot className="h-4 w-4 text-amber-600" />
-              <span>{bn ? '১. রান্নার তেল ও ঘিয়ের মাপ:' : '1. Cooking Oil & Ghee:'}</span>
-            </span>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              {bn ? safety_instructions.cooking_oil_rules_bn : safety_instructions.cooking_oil_rules_en}
-            </p>
-          </div>
+        {/* Essential Hydration, Oil & Salt Rules (Rendered only when prescribed) */}
+        {(() => {
+          const isOilPrescribed = safety_instructions.cooking_oil_rules_en && safety_instructions.cooking_oil_rules_en !== 'Not individually prescribed';
+          const isSaltPrescribed = safety_instructions.salt_guidelines_en && safety_instructions.salt_guidelines_en !== 'Not individually prescribed';
+          const isHydrationPrescribed = safety_instructions.hydration_guidelines_en && safety_instructions.hydration_guidelines_en !== 'Not individually prescribed';
 
-          <div className="space-y-1">
-            <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4 text-emerald-600" />
-              <span>{bn ? '২. রান্নার লবণের নির্দেশনা:' : '2. Cooking Salt Guidelines:'}</span>
-            </span>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              {bn ? safety_instructions.salt_guidelines_bn : safety_instructions.salt_guidelines_en}
-            </p>
-          </div>
+          if (!isOilPrescribed && !isSaltPrescribed && !isHydrationPrescribed) {
+            return null;
+          }
 
-          <div className="space-y-1">
-            <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
-              <Droplets className="h-4 w-4 text-blue-600" />
-              <span>{bn ? '৩. বিশুদ্ধ পানি ও পানীয় পান:' : '3. Hydration Guidelines:'}</span>
-            </span>
-            <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-              {bn ? safety_instructions.hydration_guidelines_bn : safety_instructions.hydration_guidelines_en}
-            </p>
-          </div>
-        </div>
+          return (
+            <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs avoid-break">
+              {isOilPrescribed && (
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                    <CookingPot className="h-4 w-4 text-amber-600" />
+                    <span>{bn ? '১. রান্নার তেল ও ঘিয়ের মাপ:' : '1. Cooking Oil & Ghee:'}</span>
+                  </span>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {bn ? safety_instructions.cooking_oil_rules_bn : safety_instructions.cooking_oil_rules_en}
+                  </p>
+                </div>
+              )}
+
+              {isSaltPrescribed && (
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-emerald-600" />
+                    <span>{bn ? '২. রান্নার লবণের নির্দেশনা:' : '2. Cooking Salt Guidelines:'}</span>
+                  </span>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {bn ? safety_instructions.salt_guidelines_bn : safety_instructions.salt_guidelines_en}
+                  </p>
+                </div>
+              )}
+
+              {isHydrationPrescribed && (
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                    <Droplets className="h-4 w-4 text-blue-600" />
+                    <span>{bn ? '৩. বিশুদ্ধ পানি ও পানীয় পান:' : '3. Hydration Guidelines:'}</span>
+                  </span>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {bn ? safety_instructions.hydration_guidelines_bn : safety_instructions.hydration_guidelines_en}
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Nutritionist Sign-Off & Patient Disclaimer Block */}
         <div className="relative z-10 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 text-xs avoid-break">
@@ -437,7 +461,7 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
               {bn ? disclaimers.bn : disclaimers.en}
             </p>
             <p>
-              Shuddho Clinical Functional Nutrition • Dhaka Center • https://shuddhobd.com
+              Shuddho Clinical Functional Nutrition
             </p>
           </div>
 
@@ -449,9 +473,11 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
             }`}>
               {nutritionist_signoff.clinician_name}
             </div>
-            <div className="text-[10px] text-slate-500 mt-1 text-center">
-              {bn ? nutritionist_signoff.license_title_bn : nutritionist_signoff.license_title_en}
-            </div>
+            {(nutritionist_signoff.license_title_bn || nutritionist_signoff.license_title_en) && (
+              <div className="text-[10px] text-slate-500 mt-1 text-center">
+                {bn ? nutritionist_signoff.license_title_bn : nutritionist_signoff.license_title_en}
+              </div>
+            )}
           </div>
         </div>
 
