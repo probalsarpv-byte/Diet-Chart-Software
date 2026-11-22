@@ -360,11 +360,17 @@ export function validateReportReleaseEligibility(options: {
     blockingReasons_bn.push('পুষ্টি পরিকল্পনাটি এখনো লাইসেন্সপ্রাপ্ত ক্লিনিক্যাল নিউট্রিশনিস্ট দ্বারা আনুষ্ঠানিকভাবে অনুমোদিত হয়নি।');
   }
 
-  // Approval Version Integrity
-  if (weeklyDietPlan?.previous_approval && weeklyDietPlan.status === 'approved') {
-    if (weeklyDietPlan.previous_approval.version > weeklyDietPlan.version) {
-      blockingReasons.push('Approval record version is invalid.');
-      blockingReasons_bn.push('অনুমোদন রেকর্ডের সংস্করণ সঠিক নয়।');
+  // Approval Version Integrity: Enforce exact approval-version binding
+  if (isApproved && weeklyDietPlan) {
+    const boundVersion = weeklyDietPlan.approval_metadata?.plan_version;
+    if (boundVersion !== undefined && boundVersion !== weeklyDietPlan.version) {
+      blockingReasons.push(`Approval record bound to version ${boundVersion}, but current plan is at version ${weeklyDietPlan.version}.`);
+      blockingReasons_bn.push(`অনুমোদন সংস্করণ ${boundVersion}-এর সাথে প্ল্যানের বর্তমান সংস্করণ ${weeklyDietPlan.version} মিলছে না।`);
+    }
+
+    if (weeklyDietPlan.previous_approval && weeklyDietPlan.previous_approval.version >= weeklyDietPlan.version) {
+      blockingReasons.push(`Prior approval version (${weeklyDietPlan.previous_approval.version}) is invalid for plan version (${weeklyDietPlan.version}).`);
+      blockingReasons_bn.push(`পূর্ববর্তী অনুমোদন সংস্করণ (${weeklyDietPlan.previous_approval.version}) বর্তমান সংস্করণের (${weeklyDietPlan.version}) জন্য অকার্যকর।`);
     }
   }
 
@@ -644,7 +650,7 @@ export function buildClinicianReportProjection(options: {
     calcium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database' },
     iron: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database' },
     potassium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Calculated Per Item (FCTB Native Subset)' },
-    sodium: { actual_amount: null, unit: 'mg', status: 'optimal', status_label: 'Bounded by 5g Discretionary Salt Rule (~1967 mg Na)' },
+    sodium: { actual_amount: null, unit: 'mg', status: 'not_available', status_label: 'Not Available in Food Composition Database' },
     vitamin_d: {
       actual_amount: patient.labs?.vitamin_d3 ?? null,
       unit: 'ng/mL',
@@ -902,7 +908,7 @@ export function buildPatientReportProjection(options: {
   const redEn = (trafficLight?.red || []).slice(0, 15).map((f: FoodItem) => f.name_en);
 
   const isApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
-  const clinicianName = weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || (isApproved ? 'Dr. Specialist' : 'Unassigned Clinician');
+  const clinicianName = weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Unassigned Clinician';
 
   return {
     report_type: 'PATIENT_LIFESTYLE_PRESCRIPTION',

@@ -530,7 +530,7 @@ export const ClinicianReportView: React.FC<ClinicianReportViewProps> = ({
 
           <div className="text-right shrink-0">
             <div className="border-b border-foreground/40 pb-1 w-56 ml-auto text-center font-mono font-bold text-xs text-foreground">
-              {payload.approval_metadata?.clinician_name || 'Dr. Clinical Specialist'}
+              {payload.approval_metadata?.clinician_name || (bn ? 'অননুমোদিত' : 'Unassigned Clinician')}
             </div>
             <div className="text-[10px] text-muted-foreground mt-1 text-center">
               Licensed Clinical Functional Nutritionist

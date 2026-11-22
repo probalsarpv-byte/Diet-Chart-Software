@@ -655,6 +655,7 @@ export interface WeeklyDietPlanApprovalRecord {
     approval_timestamp: string;
     license_number?: string;
     notes?: string;
+    plan_version?: number;
   };
   invalidated_at?: string;
   invalidation_reason?: string;
@@ -681,6 +682,7 @@ export interface WeeklyDietPlan {
     approval_timestamp: string;
     license_number?: string;
     notes?: string;
+    plan_version?: number;
   };
   previous_approval?: WeeklyDietPlanApprovalRecord;
   historical_approvals?: WeeklyDietPlanApprovalRecord[];

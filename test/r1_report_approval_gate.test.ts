@@ -433,6 +433,22 @@ console.log('\n--- SCENARIO Q: Plan Version Tampering / Invalidation Fails Close
   });
 
   assert(!versionCheck.isEligible, 'Scenario Q: Plan with corrupted/mismatched version approval record is blocked');
+
+  // Test exact approval-version binding:
+  // Approved plan has approval_metadata.plan_version === 1. Bumping plan version without re-approval MUST fail closed.
+  const bumpedVersionPlan: WeeklyDietPlan = {
+    ...plan,
+    version: plan.version + 1 // Version changed from approved version
+  };
+
+  const exactBindingCheck = validateReportReleaseEligibility({
+    patient,
+    plan: bumpedVersionPlan,
+    weeklyDietPlan: bumpedVersionPlan
+  });
+
+  assert(!exactBindingCheck.isEligible, 'Scenario Q: Plan version bumped without re-approval is blocked by exact approval-version binding');
+  assert(exactBindingCheck.blockingReasons.some(r => r.includes('Approval record bound to version')), 'Scenario Q: Blocking reason explicitly identifies approval-version mismatch');
 }
 
 // -------------------------------------------------------------------

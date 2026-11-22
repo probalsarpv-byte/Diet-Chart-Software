@@ -85,10 +85,17 @@ async function runR1PrintExportAcceptance() {
   console.log(`Target: ${BASE_URL} (port: ${port})`);
   console.log('=====================================================================\n');
 
-  const browser: Browser = await chromium.launch({
-    channel: 'chrome',
-    headless: true,
-  });
+  let browser: Browser;
+  try {
+    browser = await chromium.launch({
+      channel: 'chrome',
+      headless: true,
+    });
+  } catch {
+    browser = await chromium.launch({
+      headless: true,
+    });
+  }
   console.log(`[Playwright] Chrome browser launched: version ${browser.version()}`);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page: Page = await context.newPage();

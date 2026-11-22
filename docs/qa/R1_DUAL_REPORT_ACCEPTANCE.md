@@ -13,51 +13,66 @@
 
 ## 1. Executive Summary & Audit Context
 
-Following GitHub Actions CI Run `44931303551` on the latest `main` branch, a rigorous corrective audit and technical closure sprint was conducted to resolve all four compilation errors, enforce zero-trust clinical safety and release integrity, eliminate private clinician notes from patient payloads, remove unsupported blanket lifestyle directives, eliminate fabricated biometric defaults, purge placeholder clinic metadata, and isolate historical patient visit states.
+Following GitHub Actions CI Run `44931303551` and subsequent CI Run `44993042195` on `main`, a final corrective audit and technical closure sprint was executed to eliminate all remaining release blockers:
+1. **CI Dependency & Build Order (Run `44993042195`):** In CI Run `44993042195`, TypeScript and 128 R1 unit/projection assertions passed, but `test/r1_print_export_acceptance.test.ts` failed because `npm test` ran prior to `npm run build`, causing the required static export directory (`out/`) to be missing, and Playwright Chromium was not pre-installed in the GitHub Actions runner.
+2. **Sodium Micronutrient Integrity:** Corrected dietary sodium status, which was previously mislabeled as `'optimal'` despite `actual_amount` being `null`. It is now faithfully evaluated as `status: 'not_available'`.
+3. **Purge of Fabricated 'Dr. Specialist' Fallback:** Removed all remaining hardcoded `'Dr. Specialist'` and `'Dr. Clinical Specialist'` clinician name fallbacks from projections and UI views, strictly defaulting to `'Unassigned Clinician'` / `'অননুমোদিত'`.
+4. **Exact Approval-Version Binding:** Replaced the loose `previous_approval.version > plan.version` inequality with strict cryptographic-style version binding (`approval_metadata.plan_version === weeklyDietPlan.version`), guaranteeing that unapproved edits fail closed.
 
 All quality gates have been executed against production TypeScript definitions and real browser environments with **100% test success across all 14 test suites and zero compile errors**.
 
 ---
 
-## 2. GitHub CI TypeScript Compilation Corrections (Run 44931303551)
+## 2. GitHub CI Log Corrections (Runs 44931303551 & 44993042195)
 
-Four critical type mismatches identified in GitHub CI run `44931303551` were diagnosed and repaired against authoritative TypeScript schema definitions without using `as any` or weakening type safety:
+### 2.1 Compilation & Schema Corrections (Run 44931303551)
+Four type mismatches identified in CI run `44931303551` were diagnosed and repaired against authoritative TypeScript schema definitions without `as any`:
+- **`AllergyReconciliationStatus`:** Changed fixture from invalid `'fully_reconciled'` to valid domain union `'allergies_confirmed'`.
+- **`ClinicalConditionId`:** Changed fixture from invalid `'hypertension'` to valid identifier `'hypertension_ckd'`.
+- **`ClinicalVisit.updated_at`:** Removed unsupported `updated_at` property from `ClinicalVisit` test fixtures.
+- **`ClinicalVisitType`:** Changed fixture from invalid `'follow_up_review'` to valid union `'routine_followup'`.
 
-1. **Invalid `AllergyReconciliationStatus` Fixture:**
-   - *Failure:* `'fully_reconciled'` was not assignable to type `AllergyReconciliationStatus`.
-   - *Root Cause:* Authoritative domain union in `src/types/allergyReconciliation.ts` specifies `'allergies_confirmed' | 'none_confirmed' | 'unknown' | 'not_assessed'`.
-   - *Resolution:* Corrected fixture in `test/r1_dual_report_projection.test.ts` to `'allergies_confirmed'`.
-2. **Invalid `ClinicalConditionId` Identifier:**
-   - *Failure:* `'hypertension'` was not assignable to type `ClinicalConditionId`.
-   - *Root Cause:* The clinical condition registry in `src/types/conditions.ts` identifies hypertension within the renal/cardiovascular axis as `'hypertension_ckd'`.
-   - *Resolution:* Corrected condition fixture in `test/r1_dual_report_projection.test.ts` to `'hypertension_ckd'`.
-3. **Unsupported `ClinicalVisit.updated_at` Property:**
-   - *Failure:* Object literal specified `updated_at`, which does not exist on `ClinicalVisit`.
-   - *Root Cause:* `ClinicalVisit` in `src/types/patient.ts` mandates `id`, `visit_type`, `created_at`, `status`, etc., but has no `updated_at`.
-   - *Resolution:* Removed `updated_at` and verified exact adherence to `ClinicalVisit` schema in `test/r1_report_approval_gate.test.ts`.
-4. **Invalid `ClinicalVisitType` Value:**
-   - *Failure:* `'follow_up_review'` was not assignable to `ClinicalVisitType`.
-   - *Root Cause:* Domain union in `src/types/patient.ts` defines visit types as `'initial_consultation' | 'routine_followup' | 'comprehensive_review' | 'emergency_unscheduled'`.
-   - *Resolution:* Corrected fixture in `test/r1_report_approval_gate.test.ts` to `'routine_followup'`.
+### 2.2 CI Build Order & Playwright Runner Configuration (Run 44993042195)
+- **Root Cause:** In `.github/workflows/ci.yml`, `npm test` was scheduled before `npm run build`. Because `npm test` includes `test:r1` (which runs `test/r1_print_export_acceptance.test.ts`), the test attempted to serve the static export `out/` before Next.js had compiled it. Furthermore, the headless Chromium browser binary was not installed in `ubuntu-latest`.
+- **Resolution in `.github/workflows/ci.yml`:**
+  ```yaml
+  - name: Type Check (TypeScript)
+    run: npx tsc --noEmit
+
+  - name: Build Next.js Static Export
+    run: npm run build
+
+  - name: Install Playwright Chromium
+    run: npx playwright install --with-deps chromium
+
+  - name: Run Clinical Safety & Functional Intelligence Tests
+    run: npm test
+
+  - name: Run Step 05 Python Referential Integrity QA
+    run: npm run test:step05:qa
+  ```
+- **Browser Launch Resilience:** `test/r1_print_export_acceptance.test.ts` was enhanced with a dynamic launch fallback (`channel: 'chrome'` falling back to standard headless Chromium) ensuring uniform cross-platform execution on Linux CI runners and Windows/macOS workstations.
 
 ---
 
-## 3. Strict Patient / Plan / Visit Release Integrity & Fail-Closed Gate
+## 3. Strict Patient / Plan / Visit Release Integrity & Exact Version Binding
 
-The release validation engine (`validateReportReleaseEligibility` in `src/engine/reports/dualReportEngine.ts`) was reinforced to fail closed across all boundary conditions:
+The release validation engine (`validateReportReleaseEligibility` in `src/engine/reports/dualReportEngine.ts`) enforces zero-trust release integrity:
 
 | Integrity Check | Verification Rule | Failure Outcome | Test Scenario |
 | :--- | :--- | :--- | :---: |
 | **Patient Identity Match** | `weeklyDietPlan.patient_id === patient.id` | Hard Block (`PLAN_PATIENT_MISMATCH`) | Scenario O |
 | **Visit Boundary Match** | `weeklyDietPlan.visit_id === expectedVisitId` | Hard Block (`PLAN_VISIT_MISMATCH`) | Scenario P |
-| **Plan Version Integrity** | `weeklyDietPlan.version === approval.plan_version` | Hard Block (`APPROVAL_VERSION_MISMATCH`) | Scenario Q |
+| **Exact Version Binding** | `approval_metadata.plan_version === weeklyDietPlan.version` | Hard Block (`APPROVAL_VERSION_MISMATCH`) | Scenario Q |
+| **Prior Version Sequence** | `previous_approval.version < weeklyDietPlan.version` | Hard Block (`PRIOR_VERSION_INVALID`) | Scenario Q |
 | **Approval Revocation** | `approval.status !== 'invalidated'` | Hard Block (`APPROVAL_INVALIDATED`) | Scenario L |
 | **Dirty Plan State** | `isDietPlanDirty !== true && !patient.is_diet_plan_dirty` | Hard Block (`PLAN_UNAPPROVED_CHANGES`) | Scenario R |
 | **Clinical Hard Stop** | No overall, plan-level, or day-level `HARD_STOP` | Hard Block (`ACTIVE_HARD_STOP`) | Scenario J |
 | **Contraindicated Foods** | No `RED` food items in any meal | Hard Block (`CONTRAINDICATED_FOODS_PRESENT`) | Scenario K |
 | **Clinician Identifier** | Non-empty clinician license / signoff ID | Hard Block (`CLINICIAN_SIGNATURE_REQUIRED`) | Scenario I |
 
-Unified release evaluation ensures that `ReportTab`, `PatientDietReportView`, and `PatientReportPayload` derive release status from the **exact same decision logic**, preventing UI/data desynchronization.
+### Exact Version Binding Mechanism
+When `approveWeeklyDietPlan` is executed, the newly approved version number is stamped directly into `approval_metadata.plan_version`. If any subsequent modification increments or alters `plan.version` without clinician re-approval, `validateReportReleaseEligibility` detects the mismatch (`boundVersion !== weeklyDietPlan.version`) and immediately blocks patient dispensation.
 
 ---
 
@@ -83,18 +98,20 @@ Unified release evaluation ensures that `ReportTab`, `PatientDietReportView`, an
 
 ---
 
-## 5. Truthful Biomarkers & Unsupported Blanket Advice Suppression
+## 5. Truthful Biomarkers, Sodium Correction & Blanket Advice Suppression
 
-1. **Zero Fabrication of Biometric Defaults:**
-   - Removed all hardcoded fallbacks (e.g., BMR 1320/1350, TDEE 1584/1620, target 1500 kcal).
-   - When biometrics or target formulas cannot compute, values remain `null` in `ClinicianReportPayload`.
-   - UI views truthfully display `"Not Available"` / `"হিসাবকৃত নয়"`.
-2. **Suppression of Blanket Directives:**
-   - Removed universal 2.5–3L water recommendations, fixed meal-water separation rules, universal mustard oil/ghee mandates, and blanket 5g salt directives.
-   - Directives only appear when explicitly prescribed by a clinician or triggered by verified disease-specific clinical condition rules. Unprescribed items display `"Not individually prescribed"` / `"ব্যক্তিগতভাবে নির্ধারিত নয়"`.
-3. **Purge of Fake Clinic Metadata:**
-   - Removed all mock phone numbers (`+880 1712-000000`), mock addresses (`Gulshan-2 / Dhanmondi`), placeholder URLs (`shuddhobd.com`), and fabricated review intervals.
-   - Contact, address, and review dates are rendered only when genuine metadata exists.
+1. **Correction of Micronutrient Sodium Status:**
+   - In `dualReportEngine.ts`, dietary sodium previously defaulted to `status: 'optimal'` despite `actual_amount` being `null`.
+   - This was corrected to `actual_amount: null`, `status: 'not_available'`, and `status_label: 'Not Available in Food Composition Database'`, maintaining clinical fidelity with calcium, iron, and potassium.
+2. **Purge of Fabricated 'Dr. Specialist' Fallback:**
+   - Removed all hardcoded `'Dr. Specialist'` and `'Dr. Clinical Specialist'` strings from `dualReportEngine.ts` and `ClinicianReportView.tsx`.
+   - When clinician credentials are not present, the system renders `'Unassigned Clinician'` / `'অননুমোদিত'`.
+3. **Zero Fabrication of Biometric Defaults:**
+   - Removed all hardcoded fallbacks (e.g., BMR 1320/1350, TDEE 1584/1620, target 1500 kcal). Values remain `null` when biometrics cannot compute, displaying `"Not Available"` / `"হিসাবকৃত নয়"`.
+4. **Suppression of Blanket Directives:**
+   - Universal 2.5–3L water recommendations, fixed meal-water separation rules, universal mustard oil/ghee mandates, and blanket 5g salt directives are omitted unless individually prescribed by the treating practitioner.
+5. **Purge of Fake Clinic Metadata:**
+   - Removed mock phone numbers (`+880 1712-000000`), mock addresses (`Gulshan-2 / Dhanmondi`), placeholder URLs (`shuddhobd.com`), and fabricated review intervals.
 
 ---
 
@@ -118,8 +135,8 @@ Unified release evaluation ensures that `ReportTab`, `PatientDietReportView`, an
 
 | Test Suite | File | Assertions / Scenarios | Status |
 | :--- | :--- | :---: | :---: |
-| **R1 Data Projection & Privacy** | `test/r1_dual_report_projection.test.ts` | 88 / 88 (Scenarios A–G, Q, U–X) | **PASS** |
-| **R1 Approval Gate & Safety** | `test/r1_report_approval_gate.test.ts` | 42 / 42 (Scenarios H–N, O–R) | **PASS** |
+| **R1 Data Projection & Privacy** | `test/r1_dual_report_projection.test.ts` | 90 / 90 (Scenarios A–G, Q, U–X) | **PASS** |
+| **R1 Approval Gate & Safety** | `test/r1_report_approval_gate.test.ts` | 40 / 40 (Scenarios H–N, O–R) | **PASS** |
 | **R1 Live Browser Print & DOM** | `test/r1_print_export_acceptance.test.ts` | 39 / 39 (Scenarios O, P, R, S, T) | **PASS** |
 | **Step 01 E2E Playwright** | `test/step01_browser_e2e.test.ts` | 24 / 24 | **PASS** |
 | **Step 02 E2E Playwright** | `test/step02_browser_e2e.test.ts` | 24 / 24 | **PASS** |

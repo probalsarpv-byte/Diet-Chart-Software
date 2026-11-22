@@ -355,6 +355,11 @@ console.log('\n--- SCENARIO Q: Missing Biomarkers Preserved as Null/Not Availabl
   const vitD3 = clinicianPayload.micronutrient_sufficiency['vitamin_d'];
   assert(vitD3.actual_amount === 18.5, 'Scenario Q: Present Vitamin D3 is strictly 18.5 ng/mL');
   assert(vitD3.status === 'deficient', 'Scenario Q: Serum Vitamin D3 correctly evaluated as deficient (<20)');
+
+  // Sodium is missing/null in food DB intake (not falsely marked optimal)
+  const sodium = clinicianPayload.micronutrient_sufficiency['sodium'];
+  assert(sodium.actual_amount === null, 'Scenario Q: Missing Sodium intake actual_amount is strictly null (never 0)');
+  assert(sodium.status === 'not_available', 'Scenario Q: Missing Sodium status is strictly "not_available" (not falsely optimal)');
 }
 
 // -------------------------------------------------------------------
@@ -451,8 +456,10 @@ console.log('\n--- SCENARIO X: Fake Clinic Information Omitted ---');
   assert(!jsonStr.includes('+880 1712-000000'), 'Scenario X: Dummy phone number (+880 1712-000000) not emitted');
   assert(!jsonStr.includes('Gulshan-2 / Dhanmondi'), 'Scenario X: Dummy clinic location (Gulshan-2 / Dhanmondi) not emitted');
   assert(!jsonStr.includes('shuddhobd.com'), 'Scenario X: Dummy URL (shuddhobd.com) not emitted');
+  assert(!jsonStr.includes('Dr. Specialist'), 'Scenario X: Fabricated "Dr. Specialist" fallback not emitted');
   assert(patientPayload.clinic_letterhead.contact_phone === undefined, 'Scenario X: Contact phone undefined when not provided');
   assert(patientPayload.clinic_letterhead.clinic_address === undefined, 'Scenario X: Clinic address undefined when not provided');
+  assert(patientPayload.nutritionist_signoff.clinician_name !== 'Dr. Specialist', 'Scenario X: Clinician name is not "Dr. Specialist"');
 }
 
 console.log('\n================================================================');

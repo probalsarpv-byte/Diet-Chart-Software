@@ -30,11 +30,14 @@ jobs:
       - name: Type Check (TypeScript)
         run: npx tsc --noEmit
 
+      - name: Build Next.js Static Export
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
       - name: Run Clinical Safety & Functional Intelligence Tests
         run: npm test
 
       - name: Run Step 05 Python Referential Integrity QA
         run: npm run test:step05:qa
-
-      - name: Build Next.js Static Export
-        run: npm run build

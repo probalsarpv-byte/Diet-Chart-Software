@@ -1562,11 +1562,13 @@ export function approveWeeklyDietPlan(
     ? { ...plan.fasting_schedule, decision_status: 'fasting_approved' as const }
     : plan.fasting_schedule;
 
+  const approvedVersion = plan.status === 'approved' ? plan.version : plan.version + 1;
+
   return {
     ...plan,
     days: updatedDays,
     fasting_schedule: updatedFastingSchedule,
-    version: plan.status === 'approved' ? plan.version : plan.version + 1,
+    version: approvedVersion,
     status: 'approved',
     is_approved: true,
     approved_by: trimmed,
@@ -1581,7 +1583,8 @@ export function approveWeeklyDietPlan(
       clinician_name: trimmed,
       approval_timestamp: timestamp,
       license_number: trimmed,
-      notes: notes?.trim() || undefined
+      notes: notes?.trim() || undefined,
+      plan_version: approvedVersion
     },
     updated_at: timestamp
   };
