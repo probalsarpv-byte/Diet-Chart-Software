@@ -18,7 +18,8 @@ import {
   Database,
   Flame,
   Menu,
-  Compass
+  Compass,
+  GitCompare
 } from 'lucide-react';
 import { CLINICAL_PHASES } from '@/engine/phaseProgression';
 
@@ -43,6 +44,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     setIsAuthModalOpen,
     setIsAuditModalOpen,
     setIsMigrationModalOpen,
+    setIsReconciliationModalOpen,
+    stagedSubmissionsCount,
     syncStatus
   } = usePractice();
 
@@ -204,6 +207,26 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           >
             <Database className="h-3.5 w-3.5 text-amber-500" />
             <span className="hidden xl:inline">{bn ? 'মাইগ্রেশন' : 'Sync'}</span>
+          </button>
+
+          {/* R3 Remote Intake & Staging Queue (U19) */}
+          <button
+            onClick={() => setIsReconciliationModalOpen(true)}
+            data-testid="header-btn-intake-queue"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all hover:scale-[1.02] ${
+              stagedSubmissionsCount > 0
+                ? 'bg-amber-500/20 border-amber-500/50 text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/30'
+                : 'bg-card border-border hover:bg-secondary text-muted-foreground'
+            }`}
+            title={bn ? 'রিমোট ইনটেক স্ট্যাজিং কিউ (U19)' : 'Remote Patient Intake Staging Queue (U19)'}
+          >
+            <GitCompare className="h-3.5 w-3.5 text-amber-500" />
+            <span className="hidden sm:inline">{bn ? 'ইনটেক কিউ' : 'Intake Queue'}</span>
+            {stagedSubmissionsCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                {stagedSubmissionsCount}
+              </span>
+            )}
           </button>
 
           <div className="h-4 w-[1px] bg-border mx-0.5 sm:mx-1" />

@@ -354,7 +354,7 @@
 - **Benchmark / Inspiration:** Cerbo, 21 CFR Part 11 Audit Trail Guidelines.
 - **Primary Phase Owner:** **R2** (Secure Backend & Audit Architecture)
 - **Dependencies:** F05
-- **Current Status:** `PARTIALLY IMPLEMENTED` (`qa_step05_nutrition_referential_integrity.py` validates audit logs; cloud storage in R2)
+- **Current Status:** `IMPLEMENTED` (`src/repositories/SupabasePracticeRepository.ts`, `src/components/audit/AuditHistoryModal.tsx`, `src/components/migration/DataMigrationWizard.tsx`)
 - **Input Data:** Clinician user ID, timestamp, before/after state diff, justification rationale.
 - **Output Data:** Immutable audit event stream viewable by practice supervisors.
 - **Clinical Safety Considerations:** Critical for medico-legal liability and peer clinical review.
@@ -367,7 +367,7 @@
 - **Benchmark / Inspiration:** Practice Better, OptiMantra.
 - **Primary Phase Owner:** **R3** (Patient Self-Assessment Portal)
 - **Dependencies:** F02, R2 (Backend Auth & DB)
-- **Current Status:** `PLANNED` (Targeted for R3 implementation)
+- **Current Status:** `IMPLEMENTED` (`src/app/intake/page.tsx`, `src/components/intake/PatientIntakeForm.tsx`, `src/components/intake/ClinicianInvitationModal.tsx`, `src/components/intake/IntakeReconciliationModal.tsx`, `src/repositories/LocalDemoRepository.ts`, `src/repositories/SupabasePracticeRepository.ts`)
 - **Input Data:** Patient-submitted demographic, dietary, symptom, and lifestyle answers via public web portal.
 - **Output Data:** Staged submission record with diff viewer comparing patient claims against clinical records.
 - **Clinical Safety Considerations:** Patient-submitted medical claims cannot modify safety rules until vetted by clinician.

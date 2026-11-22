@@ -1,6 +1,6 @@
 /**
  * SHUDDHO Clinical Functional Nutrition Platform
- * R2 Repository Layer Interface Contracts & Sync Types
+ * R2/R3 Repository Layer Interface Contracts & Sync Types
  */
 
 import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
@@ -34,12 +34,67 @@ export interface AuditEventPayload {
     | 'REPORT_RELEASED'
     | 'DATA_MIGRATED'
     | 'SESSION_LOGIN'
-    | 'SESSION_LOGOUT';
-  entity_type: 'patient' | 'visit' | 'nutrition_plan' | 'approval_record' | 'patient_report' | 'auth';
+    | 'SESSION_LOGOUT'
+    | 'INTAKE_INVITATION_CREATED'
+    | 'INTAKE_SUBMITTED'
+    | 'ASSESSMENT_SUBMISSION_ACCEPTED'
+    | 'ASSESSMENT_SUBMISSION_REJECTED';
+  entity_type: 
+    | 'patient' 
+    | 'visit' 
+    | 'nutrition_plan' 
+    | 'approval_record' 
+    | 'patient_report' 
+    | 'auth'
+    | 'assessment_invitation'
+    | 'assessment_submission'
+    | 'assessment_review';
   entity_id: string;
   payload_before?: any;
   payload_after?: any;
   timestamp?: string;
+}
+
+export interface AssessmentInvitation {
+  id: string;
+  organization_id: string;
+  patient_id: string;
+  template_id?: string;
+  invitation_token: string;
+  expires_at: string;
+  status: 'pending' | 'completed' | 'expired' | 'revoked';
+  sent_via?: 'link' | 'whatsapp' | 'email' | 'sms';
+  created_at: string;
+}
+
+export interface AssessmentSubmission {
+  id: string;
+  organization_id: string;
+  invitation_id: string;
+  patient_id: string;
+  responses_json: Record<string, any>;
+  calculated_scores_json?: Record<string, any>;
+  submitted_at: string;
+  client_ip?: string;
+}
+
+export interface ReconciliationDecision {
+  status: 'accepted' | 'rejected' | 'edited';
+  value?: any;
+  reason?: string;
+}
+
+export interface AssessmentReview {
+  id: string;
+  organization_id: string;
+  submission_id: string;
+  reviewer_id: string;
+  reviewer_name: string;
+  review_status: 'pending' | 'approved' | 'rejected' | 'partially_accepted';
+  reconciliation_diff_json: Record<string, any>;
+  merged_patient_snapshot?: any;
+  review_notes?: string;
+  reviewed_at: string;
 }
 
 export interface IPracticeRepository {
@@ -63,6 +118,27 @@ export interface IPracticeRepository {
     clinician: ClinicianAuthProfile,
     notes?: string
   ): Promise<WeeklyDietPlan>;
+
+  // R3 Patient Assessment Operations
+  createAssessmentInvitation(
+    patientId: string,
+    clinician: ClinicianAuthProfile,
+    expiresDays?: number
+  ): Promise<AssessmentInvitation>;
+  getAssessmentInvitations(patientId?: string): Promise<AssessmentInvitation[]>;
+  getAssessmentInvitationByToken(token: string): Promise<AssessmentInvitation | null>;
+  submitAssessment(
+    invitationToken: string,
+    responses: Record<string, any>
+  ): Promise<AssessmentSubmission>;
+  getStagedSubmissions(patientId?: string): Promise<AssessmentSubmission[]>;
+  getSubmissionById(submissionId: string): Promise<AssessmentSubmission | null>;
+  reconcileAssessmentSubmission(
+    submissionId: string,
+    reviewer: ClinicianAuthProfile,
+    decisions: Record<string, ReconciliationDecision>,
+    notes?: string
+  ): Promise<{ review: AssessmentReview; updatedPatient: PatientProfile }>;
 
   // Audit Operations
   logAuditEvent(event: Omit<AuditEventPayload, 'id' | 'timestamp'>): Promise<void>;

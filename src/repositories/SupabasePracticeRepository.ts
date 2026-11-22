@@ -5,10 +5,19 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import { IPracticeRepository, PracticeSyncStatus, AuditEventPayload } from './types';
+import { 
+  IPracticeRepository, 
+  PracticeSyncStatus, 
+  AuditEventPayload,
+  AssessmentInvitation,
+  AssessmentSubmission,
+  AssessmentReview,
+  ReconciliationDecision
+} from './types';
 import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile, getSupabaseClient } from '@/lib/supabaseClient';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
+import { calculateAnthropometrics } from '@/engine/anthropometrics';
 
 export class SupabasePracticeRepository implements IPracticeRepository {
   public readonly isCloud = true;
@@ -400,6 +409,295 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     });
 
     return approvedPlan;
+  }
+
+  // -------------------------------------------------------------------
+  // R3 Patient Assessment Operations
+  // -------------------------------------------------------------------
+
+  async createAssessmentInvitation(
+    patientId: string,
+    clinician: ClinicianAuthProfile,
+    expiresDays: number = 14
+  ): Promise<AssessmentInvitation> {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + expiresDays);
+
+    const token = 'sh_inv_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    const payload = {
+      organization_id: this.currentOrgId,
+      patient_id: patientId,
+      invitation_token: token,
+      expires_at: expiresAt.toISOString(),
+      status: 'pending',
+      sent_via: 'link'
+    };
+
+    const { data, error } = await this.client
+      .from('assessment_invitations')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    await this.logAuditEvent({
+      organization_id: this.currentOrgId,
+      event_type: 'INTAKE_INVITATION_CREATED',
+      entity_type: 'assessment_invitation',
+      entity_id: data.id,
+      patient_id: patientId,
+      clinician_id: clinician.id,
+      clinician_name: clinician.name,
+      payload_after: {
+        token: data.invitation_token,
+        expires_at: data.expires_at
+      }
+    });
+
+    return data;
+  }
+
+  async getAssessmentInvitations(patientId?: string): Promise<AssessmentInvitation[]> {
+    let query = this.client
+      .from('assessment_invitations')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (patientId) {
+      query = query.eq('patient_id', patientId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  }
+
+  async getAssessmentInvitationByToken(token: string): Promise<AssessmentInvitation | null> {
+    const { data, error } = await this.client
+      .from('assessment_invitations')
+      .select('*')
+      .eq('invitation_token', token)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Failed to resolve invitation by token:', error);
+      return null;
+    }
+    return data || null;
+  }
+
+  async submitAssessment(
+    invitationToken: string,
+    responses: Record<string, any>
+  ): Promise<AssessmentSubmission> {
+    const invitation = await this.getAssessmentInvitationByToken(invitationToken);
+    if (!invitation) {
+      throw new Error('Invalid assessment invitation token.');
+    }
+
+    if (invitation.status === 'expired' || new Date(invitation.expires_at) < new Date()) {
+      throw new Error('Assessment invitation has expired.');
+    }
+    if (invitation.status === 'revoked') {
+      throw new Error('Assessment invitation has been revoked.');
+    }
+    if (invitation.status === 'completed') {
+      throw new Error('Assessment has already been completed for this invitation.');
+    }
+
+    const payload = {
+      organization_id: invitation.organization_id,
+      invitation_id: invitation.id,
+      patient_id: invitation.patient_id,
+      responses_json: responses,
+      submitted_at: new Date().toISOString()
+    };
+
+    const { data, error } = await this.client
+      .from('assessment_submissions')
+      .insert(payload)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    // Transition invitation to completed
+    await this.client
+      .from('assessment_invitations')
+      .update({ status: 'completed' })
+      .eq('id', invitation.id);
+
+    await this.logAuditEvent({
+      organization_id: invitation.organization_id,
+      event_type: 'INTAKE_SUBMITTED',
+      entity_type: 'assessment_submission',
+      entity_id: data.id,
+      patient_id: invitation.patient_id,
+      payload_after: {
+        submission_id: data.id,
+        response_keys: Object.keys(responses)
+      }
+    });
+
+    return data;
+  }
+
+  async getStagedSubmissions(patientId?: string): Promise<AssessmentSubmission[]> {
+    let query = this.client
+      .from('assessment_submissions')
+      .select('*')
+      .order('submitted_at', { ascending: false });
+
+    if (patientId) {
+      query = query.eq('patient_id', patientId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Filter out submissions that already have reviews
+    const { data: reviews } = await this.client
+      .from('assessment_reviews')
+      .select('submission_id');
+
+    const reviewedIds = new Set((reviews || []).map((r: any) => r.submission_id));
+    return (data || []).filter((s: any) => !reviewedIds.has(s.id));
+  }
+
+  async getSubmissionById(submissionId: string): Promise<AssessmentSubmission | null> {
+    const { data, error } = await this.client
+      .from('assessment_submissions')
+      .select('*')
+      .eq('id', submissionId)
+      .maybeSingle();
+
+    if (error) return null;
+    return data || null;
+  }
+
+  async reconcileAssessmentSubmission(
+    submissionId: string,
+    reviewer: ClinicianAuthProfile,
+    decisions: Record<string, ReconciliationDecision>,
+    notes?: string
+  ): Promise<{ review: AssessmentReview; updatedPatient: PatientProfile }> {
+    const submission = await this.getSubmissionById(submissionId);
+    if (!submission) {
+      throw new Error(`Submission [${submissionId}] not found.`);
+    }
+
+    const patient = await this.getPatientById(submission.patient_id);
+    if (!patient) {
+      throw new Error(`Target patient [${submission.patient_id}] not found.`);
+    }
+
+    const patientBefore = JSON.parse(JSON.stringify(patient));
+    let hasAccepted = false;
+    let hasRejected = false;
+
+    // Apply granular decisions
+    for (const [field, decision] of Object.entries(decisions)) {
+      if (decision.status === 'accepted' || decision.status === 'edited') {
+        hasAccepted = true;
+        const val = decision.value;
+
+        if (field === 'weight_kg' && val !== undefined) {
+          patient.weight_kg = Number(val);
+        } else if (field === 'height_cm' && val !== undefined) {
+          patient.height_cm = Number(val);
+        } else if (field === 'waist_cm' && val !== undefined) {
+          patient.waist_cm = Number(val);
+        } else if (field === 'sleep_hours' && val !== undefined) {
+          patient.sleep_hours = Number(val);
+        } else if (field === 'activity_level' && val !== undefined) {
+          patient.activity_level = val;
+        } else if (field === 'bloating' && val !== undefined) {
+          patient.gut_profile.bloating = val;
+        } else if (field === 'bristol_stool_score' && val !== undefined) {
+          patient.gut_profile.bristol_stool_score = Number(val);
+        } else if (field === 'acid_reflux' && val !== undefined) {
+          patient.gut_profile.acid_reflux_hypoacidity = Boolean(val);
+        } else if (field === 'digestive_fire_agni' && val !== undefined) {
+          patient.gut_profile.digestive_fire_agni = val;
+        } else if (field === 'confirmed_allergies' && Array.isArray(val)) {
+          patient.confirmed_allergies = Array.from(new Set([...patient.confirmed_allergies, ...val]));
+          patient.allergy_reconciliation_status = 'allergies_confirmed';
+        }
+      } else if (decision.status === 'rejected') {
+        hasRejected = true;
+      }
+    }
+
+    // Recalculate anthropometrics
+    patient.calculated = calculateAnthropometrics(
+      patient.age,
+      patient.gender,
+      patient.height_cm,
+      patient.weight_kg,
+      patient.waist_cm,
+      patient.activity_level,
+      patient.selected_conditions,
+      patient.population_group,
+      patient.trimester,
+      patient.bmr_floor_strategy,
+      patient.custom_calorie_floor
+    );
+
+    let reviewStatus: 'approved' | 'rejected' | 'partially_accepted' = 'approved';
+    if (hasAccepted && hasRejected) {
+      reviewStatus = 'partially_accepted';
+    } else if (!hasAccepted && hasRejected) {
+      reviewStatus = 'rejected';
+    }
+
+    const reviewPayload = {
+      organization_id: reviewer.organization_id || this.currentOrgId,
+      submission_id: submissionId,
+      reviewer_id: reviewer.id,
+      reviewer_name: reviewer.name,
+      review_status: reviewStatus,
+      reconciliation_diff_json: decisions,
+      merged_patient_snapshot: patient,
+      review_notes: notes,
+      reviewed_at: new Date().toISOString()
+    };
+
+    const { data: reviewData, error: reviewError } = await this.client
+      .from('assessment_reviews')
+      .insert(reviewPayload)
+      .select('*')
+      .single();
+
+    if (reviewError) throw reviewError;
+
+    // Save updated patient to PostgreSQL
+    const savedPatient = await this.savePatient(patient);
+
+    await this.logAuditEvent({
+      organization_id: reviewer.organization_id || this.currentOrgId,
+      event_type: reviewStatus === 'rejected' ? 'ASSESSMENT_SUBMISSION_REJECTED' : 'ASSESSMENT_SUBMISSION_ACCEPTED',
+      entity_type: 'assessment_review',
+      entity_id: reviewData.id,
+      patient_id: patient.id,
+      clinician_id: reviewer.id,
+      clinician_name: reviewer.name,
+      payload_before: {
+        weight_kg: patientBefore.weight_kg,
+        sleep_hours: patientBefore.sleep_hours,
+        gut_profile: patientBefore.gut_profile
+      },
+      payload_after: {
+        submission_id: submissionId,
+        weight_kg: savedPatient.weight_kg,
+        sleep_hours: savedPatient.sleep_hours,
+        gut_profile: savedPatient.gut_profile,
+        review_status: reviewStatus,
+        notes
+      }
+    });
+
+    return { review: reviewData, updatedPatient: savedPatient };
   }
 
   async logAuditEvent(event: Omit<AuditEventPayload, 'id' | 'timestamp'>): Promise<void> {

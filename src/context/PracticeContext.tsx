@@ -85,10 +85,12 @@ import {
 } from '@/engine/snapshot/snapshotManager';
 import { generateEntityId } from '@/utils/idGenerator';
 import { ClinicianAuthProfile, isSupabaseConfigured, getSupabaseClient } from '@/lib/supabaseClient';
-import { getPracticeRepository, PracticeSyncStatus, AuditEventPayload } from '@/repositories';
+import { getPracticeRepository, PracticeSyncStatus, AuditEventPayload, IPracticeRepository } from '@/repositories';
 import { ClinicianAuthModal } from '@/components/auth/ClinicianAuthModal';
 import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal';
 import { DataMigrationWizard } from '@/components/migration/DataMigrationWizard';
+import { ClinicianInvitationModal } from '@/components/intake/ClinicianInvitationModal';
+import { IntakeReconciliationModal } from '@/components/intake/IntakeReconciliationModal';
 
 export function generateCollisionResistantId(prefix: string): string {
   return generateEntityId(prefix);
@@ -256,6 +258,16 @@ export interface PracticeContextType {
   isMigrationModalOpen: boolean;
   setIsMigrationModalOpen: (open: boolean) => void;
   refreshSyncStatus: () => void;
+
+  // R3 Patient Self-Assessment Portal
+  repository: IPracticeRepository;
+  clinicianUser: ClinicianAuthProfile;
+  isInvitationModalOpen: boolean;
+  setIsInvitationModalOpen: (open: boolean) => void;
+  isReconciliationModalOpen: boolean;
+  setIsReconciliationModalOpen: (open: boolean) => void;
+  stagedSubmissionsCount: number;
+  refreshStagedSubmissionsCount: () => Promise<void>;
 }
 
 const PracticeContext = createContext<PracticeContextType | undefined>(undefined);
@@ -349,6 +361,42 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+
+  // R3 Patient Self-Assessment Portal State
+  const [isInvitationModalOpen, setIsInvitationModalOpen] = useState(false);
+  const [isReconciliationModalOpen, setIsReconciliationModalOpen] = useState(false);
+  const [stagedSubmissionsCount, setStagedSubmissionsCount] = useState(0);
+
+  const repository = useMemo(() => getPracticeRepository(), [syncStatus.state]);
+
+  const clinicianUser: ClinicianAuthProfile = useMemo(() => {
+    return currentClinician || {
+      id: 'clin_lead_01',
+      auth_user_id: 'local_lead_user',
+      organization_id: 'org_main',
+      email: 'lead.nutritionist@shuddho.clinic',
+      name: 'Treating Nutritionist',
+      role: 'TREATING_NUTRITIONIST',
+      is_active: true,
+    };
+  }, [currentClinician]);
+
+  const refreshStagedSubmissionsCount = useCallback(async () => {
+    if (!patient?.id) {
+      setStagedSubmissionsCount(0);
+      return;
+    }
+    try {
+      const list = await repository.getStagedSubmissions(patient.id);
+      setStagedSubmissionsCount(list.length);
+    } catch {
+      setStagedSubmissionsCount(0);
+    }
+  }, [patient?.id, repository]);
+
+  useEffect(() => {
+    refreshStagedSubmissionsCount();
+  }, [patient?.id, refreshStagedSubmissionsCount]);
 
   const refreshSyncStatus = useCallback(() => {
     setSyncStatus(getPracticeRepository().getSyncStatus());
@@ -3661,7 +3709,15 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsAuditModalOpen,
         isMigrationModalOpen,
         setIsMigrationModalOpen,
-        refreshSyncStatus
+        refreshSyncStatus,
+        repository,
+        clinicianUser,
+        isInvitationModalOpen,
+        setIsInvitationModalOpen,
+        isReconciliationModalOpen,
+        setIsReconciliationModalOpen,
+        stagedSubmissionsCount,
+        refreshStagedSubmissionsCount
       }}
     >
       {children}
@@ -3692,6 +3748,17 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         onClose={() => setIsMigrationModalOpen(false)}
         onMigrationComplete={() => {
           refreshSyncStatus();
+        }}
+      />
+      <ClinicianInvitationModal
+        isOpen={isInvitationModalOpen}
+        onClose={() => setIsInvitationModalOpen(false)}
+      />
+      <IntakeReconciliationModal
+        isOpen={isReconciliationModalOpen}
+        onClose={() => setIsReconciliationModalOpen(false)}
+        onReconciliationComplete={() => {
+          refreshStagedSubmissionsCount();
         }}
       />
     </PracticeContext.Provider>

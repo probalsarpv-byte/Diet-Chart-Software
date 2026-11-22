@@ -19,11 +19,19 @@ import {
   Save,
   RotateCcw,
   CheckCircle2,
-  FileCheck
+  FileCheck,
+  Link as LinkIcon,
+  GitCompare
 } from 'lucide-react';
 
 export const AssessmentTab: React.FC = () => {
-  const { patient, language } = usePractice();
+  const {
+    patient,
+    language,
+    setIsInvitationModalOpen,
+    setIsReconciliationModalOpen,
+    stagedSubmissionsCount
+  } = usePractice();
   const bn = language === 'bn';
 
   const {
@@ -66,6 +74,39 @@ export const AssessmentTab: React.FC = () => {
 
         {/* Global Action Buttons */}
         <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+          {/* R3 Remote Intake Link Generator */}
+          <button
+            type="button"
+            onClick={() => setIsInvitationModalOpen(true)}
+            data-testid="btn-remote-intake-link"
+            className="px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/10 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors flex items-center gap-1.5 shadow-subtle"
+            title={bn ? 'রোগীর জন্য রিমোট ইনটেক লিংক তৈরি করুন' : 'Generate remote intake link for patient'}
+          >
+            <LinkIcon className="h-3.5 w-3.5" />
+            <span>{bn ? 'রিমোট ইনটেক' : 'Remote Intake'}</span>
+          </button>
+
+          {/* R3 Staged Queue & Reconciliation */}
+          <button
+            type="button"
+            onClick={() => setIsReconciliationModalOpen(true)}
+            data-testid="btn-staged-queue"
+            className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-subtle ${
+              stagedSubmissionsCount > 0
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40 animate-pulse'
+                : 'border-border bg-card text-foreground hover:bg-secondary'
+            }`}
+            title={bn ? 'সেলফ-অ্যাসেসমেন্ট স্ট্যাজিং কিউ ও রিকনসিলিয়েশন' : 'Staged patient submissions & diff reconciliation'}
+          >
+            <GitCompare className="h-3.5 w-3.5 text-amber-500" />
+            <span>{bn ? 'স্টেজড কিউ' : 'Staged Queue'}</span>
+            {stagedSubmissionsCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500 text-white text-[10px] font-bold">
+                {stagedSubmissionsCount}
+              </span>
+            )}
+          </button>
+
           {/* Mobile Snapshot Toggle Button */}
           <button
             type="button"
