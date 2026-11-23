@@ -17,11 +17,24 @@ import { FollowUpTab } from '@/components/tabs/FollowUpTab';
 import { ReportTab } from '@/components/tabs/ReportTab';
 import { ClinicalIntelligenceTab } from '@/components/p2/ClinicalIntelligenceTab';
 import { ProtocolStudioTab } from '@/components/protocol-studio/ProtocolStudioTab';
+import { R5SystemsDashboard } from '@/components/r5/R5SystemsDashboard';
+import { deriveR5PopulationProfile } from '@/engine/r5PopulationEngine';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 import { Lock, LogIn, ShieldAlert, Loader2, Stethoscope, ArrowRight } from 'lucide-react';
 
 export default function Home() {
-  const { activeTab, authState, signOut, language } = usePractice();
+  const { 
+    activeTab, 
+    authState, 
+    signOut, 
+    language,
+    patient,
+    r5Pathways,
+    r5Medications,
+    updateR5Pathways,
+    updateR5Medications,
+    syncR5ToR4Protocol
+  } = usePractice();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const bn = language === 'bn';
@@ -140,6 +153,16 @@ export default function Home() {
           {activeTab === 'conditions' && <ConditionsTab />}
           {activeTab === 'dni' && <DNITab />}
           {activeTab === 'protocol_studio' && <ProtocolStudioTab />}
+          {activeTab === 'systems_intelligence' && (
+            <R5SystemsDashboard
+              populationProfile={deriveR5PopulationProfile(patient)}
+              pathwayState={r5Pathways}
+              medications={r5Medications}
+              onUpdatePathways={updateR5Pathways}
+              onUpdateMedications={updateR5Medications}
+              onSyncToR4={syncR5ToR4Protocol}
+            />
+          )}
         </main>
       </div>
     </div>

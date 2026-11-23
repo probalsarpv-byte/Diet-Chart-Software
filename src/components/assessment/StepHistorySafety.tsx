@@ -10,9 +10,10 @@ import {
 } from 'lucide-react';
 import { AllergyReconciliationEditor } from '@/components/reconciliation/AllergyReconciliationEditor';
 import { MedicationReconciliationEditor } from '@/components/reconciliation/MedicationReconciliationEditor';
+import { RunningMedicationList } from '@/components/r5/RunningMedicationList';
 
 export const StepHistorySafety: React.FC = () => {
-  const { patient, updatePatient, language } = usePractice();
+  const { patient, updatePatient, language, r5Medications, updateR5Medications } = usePractice();
   const { setCurrentStep, setAnswer, functionalAnswers } = useAssessment();
   const bn = language === 'bn';
 
@@ -92,6 +93,14 @@ export const StepHistorySafety: React.FC = () => {
 
       {/* 3. Medication Reconciliation (Full MediNutrition V5 Corpus & Administration Timing) */}
       <MedicationReconciliationEditor />
+
+      {/* Phase R5: Running Medication Cards & Reconciliation */}
+      <div className="pt-2">
+        <RunningMedicationList
+          medications={r5Medications}
+          onUpdateMedications={updateR5Medications}
+        />
+      </div>
 
       {/* 4. Mandatory Clinical Safety Screening */}
       <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-4">

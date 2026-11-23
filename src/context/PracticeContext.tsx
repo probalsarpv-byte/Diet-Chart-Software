@@ -98,6 +98,19 @@ import {
   createManualProtocolTemplate, 
   recalculateProtocolSafety 
 } from '@/engine/r4ProtocolStudioEngine';
+import { 
+  PatientPathwayState, 
+  R5MedicationRecord, 
+  ExpandedClinicalPathwayId, 
+  R5ClinicalContextPayload 
+} from '@/types/r5Systems';
+import { evaluatePathwaySelectionState } from '@/engine/r5PathwayRegistry';
+import { deriveR5PopulationProfile } from '@/engine/r5PopulationEngine';
+import { evaluateFunctionalMatrix, buildSystemsNetworkGraph } from '@/engine/r5SystemsNetworkEngine';
+import { resolveMultimorbidityConflicts } from '@/engine/r5MultimorbidityEngine';
+import { analyzeInsulinRegimen } from '@/engine/r5InsulinEngine';
+import { evaluateMedicationNutritionInteractions } from '@/engine/r5MedicationNutritionEngine';
+import { adaptR5ContextToR4 } from '@/engine/r5ToR4Adapter';
 
 export function generateCollisionResistantId(prefix: string): string {
   return generateEntityId(prefix);
@@ -131,8 +144,14 @@ export interface PracticeContextType {
   setLanguage: (lang: 'bn' | 'en') => void;
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
-  activeTab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio';
-  setActiveTab: (tab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio') => void;
+  activeTab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence';
+  setActiveTab: (tab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence') => void;
+
+  r5Pathways: PatientPathwayState;
+  r5Medications: R5MedicationRecord[];
+  updateR5Pathways: (selectedIds: ExpandedClinicalPathwayId[], isExplicitlyNoPathways: boolean) => void;
+  updateR5Medications: (meds: R5MedicationRecord[]) => void;
+  syncR5ToR4Protocol: () => void;
 
   r4Protocol: R4ProtocolStudioData | null;
   isR4ProtocolDirty: boolean;
@@ -357,10 +376,14 @@ function createInitialSeedPatient(): PatientProfile {
 export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence'>('dashboard');
 
   const [r4Protocol, setR4Protocol] = useState<R4ProtocolStudioData | null>(null);
   const [isR4ProtocolDirty, setIsR4ProtocolDirty] = useState<boolean>(false);
+
+  // Phase R5: Systems Intelligence & Expanded Pathways State
+  const [r5Pathways, setR5Pathways] = useState<PatientPathwayState>(() => evaluatePathwaySelectionState([]));
+  const [r5Medications, setR5Medications] = useState<R5MedicationRecord[]>([]);
 
   const [patient, setPatient] = useState<PatientProfile>(createInitialSeedPatient);
   const [visits, setVisits] = useState<LongitudinalVisit[]>([]);
@@ -2147,6 +2170,46 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return approved;
   }, [r4Protocol, currentClinician]);
 
+  // Phase R5: Systems Intelligence Actions
+  const updateR5Pathways = useCallback((selectedIds: ExpandedClinicalPathwayId[], isExplicitlyNoPathways: boolean) => {
+    const newState = evaluatePathwaySelectionState(selectedIds, isExplicitlyNoPathways);
+    setR5Pathways(newState);
+  }, []);
+
+  const updateR5Medications = useCallback((meds: R5MedicationRecord[]) => {
+    setR5Medications(meds);
+  }, []);
+
+  const syncR5ToR4Protocol = useCallback(() => {
+    const pop = deriveR5PopulationProfile(patient);
+    const matrix = evaluateFunctionalMatrix({ pathway_ids: r5Pathways.selected_pathways, medications: r5Medications });
+    const graph = buildSystemsNetworkGraph(matrix, r5Pathways.selected_pathways, r5Medications);
+    const conflicts = resolveMultimorbidityConflicts({ pathway_ids: r5Pathways.selected_pathways, medications: r5Medications });
+    const insulin = analyzeInsulinRegimen(r5Medications);
+    const dni = evaluateMedicationNutritionInteractions(r5Medications);
+
+    const payload: R5ClinicalContextPayload = {
+      population: pop,
+      pathways: r5Pathways,
+      functional_findings: Object.values(matrix.domains).flat(),
+      medications: r5Medications,
+      insulin_context: insulin.regimen_context,
+      dni_findings: dni,
+      multimorbidity_resolutions: conflicts,
+      systems_graph: graph,
+      stale_r4_sections: [],
+      generated_at: new Date().toISOString()
+    };
+
+    const res = adaptR5ContextToR4(payload, r4Protocol || undefined);
+    if (r4Protocol) {
+      updateR4Protocol({
+        ...r4Protocol,
+        ...res.updated_draft
+      });
+    }
+  }, [patient, r5Pathways, r5Medications, r4Protocol, updateR4Protocol]);
+
   // Rehydrate or lazily initialize R4 protocol on patient/visit changes
   useEffect(() => {
     let isCancelled = false;
@@ -3926,7 +3989,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         createManualR4Protocol,
         updateR4Protocol,
         saveR4Protocol,
-        approveR4Protocol
+        approveR4Protocol,
+        r5Pathways,
+        r5Medications,
+        updateR5Pathways,
+        updateR5Medications,
+        syncR5ToR4Protocol
       }}
     >
       {children}

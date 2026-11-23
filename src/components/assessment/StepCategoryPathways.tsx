@@ -5,6 +5,7 @@ import { usePractice } from '@/context/PracticeContext';
 import { useAssessment } from '@/context/AssessmentContext';
 import { PopulationGroup } from '@/types/index';
 import { ClinicalPathway } from '@/types/clinical';
+import { PathwaySelector } from '@/components/r5/PathwaySelector';
 import {
   Users,
   Activity,
@@ -139,7 +140,7 @@ const CLINICAL_PATHWAYS: PathwayOption[] = [
 ];
 
 export const StepCategoryPathways: React.FC = () => {
-  const { patient, updatePatient, language } = usePractice();
+  const { patient, updatePatient, language, r5Pathways, updateR5Pathways } = usePractice();
   const { setCurrentStep } = useAssessment();
   const bn = language === 'bn';
 
@@ -279,6 +280,15 @@ export const StepCategoryPathways: React.FC = () => {
             );
           })}
         </div>
+      </div>
+
+      {/* 3. Phase R5: Expanded 16+ Clinical Pathways Matrix */}
+      <div className="pt-4 border-t space-y-3">
+        <PathwaySelector
+          selectedPathwayIds={r5Pathways.selected_pathways}
+          isExplicitlyNoPathways={r5Pathways.status === 'NO_KNOWN_PATHWAY'}
+          onChange={updateR5Pathways}
+        />
       </div>
 
       {/* Navigation Controls */}

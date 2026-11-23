@@ -113,6 +113,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onMobileCl
       label_en: '8. Protocol Studio (R4)',
       badge: 'R4 Studio',
       badgeColor: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
+    },
+    {
+      id: 'systems_intelligence' as const,
+      icon: Network,
+      label_bn: '৯. সিস্টেমস ইন্টেলিজেন্স (R5)',
+      label_en: '9. Systems Intelligence (R5)',
+      badge: 'R5 Systems',
+      badgeColor: 'bg-teal-500/15 text-teal-600 dark:text-teal-400'
     }
   ];
 
