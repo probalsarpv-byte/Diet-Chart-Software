@@ -88,6 +88,13 @@ async function runTests() {
   assert(inv.invitation_token.startsWith('sh_inv_'), 'Token has standardized prefix "sh_inv_"');
   assert(inv.invitation_token.length >= 24, `Token has sufficient entropy (length: ${inv.invitation_token.length})`);
   assert(inv.status === 'pending', 'Initial invitation status is "pending"');
+  assert(typeof inv.token_hash === 'string' && inv.token_hash.length === 64, 'Token SHA-256 hash computed and stored');
+
+  // Verify Audit Log does NOT leak plaintext token
+  const inviteAudits = await repo.getAuditEvents('pt_remote_01');
+  const createInviteAudit = inviteAudits.find(a => a.event_type === 'INTAKE_INVITATION_CREATED');
+  assert(createInviteAudit !== undefined, 'INTAKE_INVITATION_CREATED audit event logged');
+  assert(!JSON.stringify(createInviteAudit?.payload_after || {}).includes(inv.invitation_token), 'Audit payload strictly excludes raw plaintext token');
 
   // Verify multiple tokens are completely distinct (no PRNG collisions)
   const tokens = new Set<string>();
@@ -98,7 +105,7 @@ async function runTests() {
   }
   assert(tokens.size === 51, 'All 51 generated tokens are cryptographically distinct with zero collision');
 
-  // --- 2. Token Verification (Minimal Metadata Exposure) ---
+  // --- 2. Token Verification (Minimal Metadata Exposure & Access Telemetry) ---
   console.log('\n--- 2. Public Token Verification ---');
   
   // A. Missing token
@@ -116,14 +123,43 @@ async function runTests() {
   assert(resValid.initial_age === 42, 'Patient initial age retrieved');
   assert(resValid.initial_gender === 'female', 'Patient gender retrieved');
 
-  // --- 3. Public Assessment Submission & Chart Isolation ---
-  console.log('\n--- 3. Public Assessment Submission & Isolation ---');
+  // D. Access Telemetry
+  const updatedInvAfterAccess = await repo.getAssessmentInvitationByToken(inv.invitation_token);
+  assert((updatedInvAfterAccess?.access_count || 0) >= 1, 'Access count telemetry incremented on token verification');
+  assert(Boolean(updatedInvAfterAccess?.first_accessed_at), 'first_accessed_at timestamp recorded');
+
+  // --- 3. Invitation Revocation and Rotation ---
+  console.log('\n--- 3. Invitation Revocation & Rotation ---');
+  const invToRevoke = await repo.createAssessmentInvitation('pt_remote_01', mockClinician, 7);
+  const revokeSuccess = await repo.revokeAssessmentInvitation(invToRevoke.id, mockClinician);
+  assert(revokeSuccess === true, 'Invitation revocation returns success = true');
+
+  const verifyRevoked = await repo.verifyPublicIntakeToken(invToRevoke.invitation_token);
+  assert(!verifyRevoked.valid && verifyRevoked.reason === 'revoked', 'Verification of revoked token rejected with reason="revoked"');
+
+  // Rotation test
+  const invToRotate = await repo.createAssessmentInvitation('pt_remote_01', mockClinician, 7);
+  const rotatedInv = await repo.rotateAssessmentInvitation(invToRotate.id, mockClinician, 14);
+  assert(rotatedInv.id !== invToRotate.id, 'Rotated invitation has new unique ID');
+  assert(rotatedInv.invitation_token !== invToRotate.invitation_token, 'Rotated invitation has fresh secure token');
+  
+  const verifyOldRotated = await repo.verifyPublicIntakeToken(invToRotate.invitation_token);
+  assert(!verifyOldRotated.valid && verifyOldRotated.reason === 'revoked', 'Original rotated token is now revoked');
+
+  // --- 4. Public Assessment Submission & Chart Isolation ---
+  console.log('\n--- 4. Public Assessment Submission & Isolation ---');
 
   const intakeResponses = {
     current_weight_kg: 66.5,
     typical_sleep_hours: 8.0,
     digestive_bloating: 'severe',
-    reported_new_allergies: ['shellfish']
+    reported_new_allergies: ['shellfish'],
+    maternal_status: 'none',
+    bloating_timing: '1_2_hours_post_meal',
+    bloating_triggers: ['legumes', 'raw_vegetables'],
+    fasting_interest: true,
+    fasting_schedule: '16_8',
+    active_medications: [{ name: 'Metformin', timing: 'with_meals', side_effects: ['mild_nausea'] }]
   };
 
   const submitResult = await repo.submitPublicIntakeAssessment(inv.invitation_token, intakeResponses);
@@ -149,6 +185,54 @@ async function runTests() {
     assert(err.message.includes('completed'), 'Replay attack on completed invitation blocked');
   }
   assert(replayBlocked, 'Replay submission strictly prevented');
+
+  // --- 5. Clinical Reconciliation & Plan Invalidation Protection ---
+  console.log('\n--- 5. Clinical Reconciliation & Plan Invalidation Protection ---');
+  // Seed an active approved diet plan for pt_remote_01
+  await repo.saveNutritionPlan({
+    plan_id: 'plan_pt_remote_01',
+    patient_id: 'pt_remote_01',
+    visit_id: 'vis_remote_01',
+    version: 1,
+    schema_version: 2,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    status: 'approved',
+    is_approved: true,
+    approved_by: mockClinician.name,
+    approval_date: new Date().toISOString(),
+    target_macros: { calories: 1800, protein_g: 80, carbs_g: 200, fat_g: 55 },
+    days: [],
+    overall_safety_status: 'SAFE'
+  });
+
+  const planBeforeReconcile = await repo.getNutritionPlan('pt_remote_01');
+  assert(planBeforeReconcile?.is_approved === true, 'Diet plan is initially approved');
+
+  // Clinician reconciles intake and ACCEPTS the new shellfish allergy
+  const staged = await repo.getStagedSubmissions('pt_remote_01');
+  assert(staged.length >= 1, 'Staged submission retrieved for clinician reconciliation');
+
+  const { updatedPatient } = await repo.reconcileAssessmentSubmission(
+    staged[0].id,
+    mockClinician,
+    {
+      confirmed_allergies: { status: 'accepted', value: ['egg', 'shellfish'] },
+      weight_kg: { status: 'accepted', value: 66.5 }
+    },
+    'Accepted shellfish allergy based on clinical interview.'
+  );
+
+  assert(updatedPatient.confirmed_allergies.includes('shellfish'), 'Shellfish allergy now confirmed in patient chart');
+
+  // Verify active approved plan was invalidated!
+  const planAfterReconcile = await repo.getNutritionPlan('pt_remote_01');
+  assert(planAfterReconcile?.is_approved === false, 'Approved plan invalidated when new allergy confirmed');
+  assert(planAfterReconcile?.status === 'requires_review', 'Plan status shifted to requires_review');
+
+  const latestAudits = await repo.getAuditEvents('pt_remote_01');
+  const planInvalAudit = latestAudits.find(a => a.event_type === 'PLAN_INVALIDATED');
+  assert(planInvalAudit !== undefined, 'PLAN_INVALIDATED audit event logged with clinical justification');
 
   console.log('\n================================================================');
   console.log('R3 PUBLIC INTAKE RPC RESULTS: ALL CHECKS PASSED (0 FAILED)');

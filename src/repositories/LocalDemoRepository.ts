@@ -18,6 +18,7 @@ import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
+import { computeSha256Sync } from '@/lib/hashUtils';
 
 function generateSecureToken(prefix: string = 'sh_inv_'): string {
   const bytes = new Uint8Array(16);
@@ -316,11 +317,14 @@ export class LocalDemoRepository implements IPracticeRepository {
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
     const token = generateSecureToken('sh_inv_');
+    const tokenHash = computeSha256Sync(token);
     const newInvitation: AssessmentInvitation = {
       id: generateSecureToken('inv_'),
       organization_id: clinician.organization_id || 'org_main',
       patient_id: patientId,
       invitation_token: token,
+      token_hash: tokenHash,
+      access_count: 0,
       expires_at: expiresAt.toISOString(),
       status: 'pending',
       sent_via: 'link',
@@ -339,12 +343,76 @@ export class LocalDemoRepository implements IPracticeRepository {
       clinician_id: clinician.id,
       clinician_name: clinician.name,
       payload_after: {
-        token: newInvitation.invitation_token,
+        token_hash_preview: tokenHash.substring(0, 10),
         expires_at: newInvitation.expires_at
       }
     });
 
     return newInvitation;
+  }
+
+  async revokeAssessmentInvitation(
+    invitationId: string,
+    clinician: ClinicianAuthProfile
+  ): Promise<boolean> {
+    const invitations = this.getStoredInvitations();
+    const inv = invitations.find(i => i.id === invitationId);
+    if (!inv) return false;
+
+    inv.status = 'revoked';
+    inv.revoked_at = new Date().toISOString();
+    this.setStoredInvitations(invitations);
+
+    await this.logAuditEvent({
+      organization_id: clinician.organization_id || 'org_main',
+      event_type: 'INTAKE_INVITATION_REVOKED',
+      entity_type: 'assessment_invitation',
+      entity_id: inv.id,
+      patient_id: inv.patient_id,
+      clinician_id: clinician.id,
+      clinician_name: clinician.name,
+      payload_after: {
+        revoked_at: inv.revoked_at,
+        token_hash_preview: inv.token_hash?.substring(0, 10)
+      }
+    });
+
+    return true;
+  }
+
+  async rotateAssessmentInvitation(
+    invitationId: string,
+    clinician: ClinicianAuthProfile,
+    expiresDays: number = 14
+  ): Promise<AssessmentInvitation> {
+    const invitations = this.getStoredInvitations();
+    const inv = invitations.find(i => i.id === invitationId);
+    if (!inv) {
+      throw new Error(`Invitation [${invitationId}] not found.`);
+    }
+
+    inv.status = 'revoked';
+    inv.revoked_at = new Date().toISOString();
+    this.setStoredInvitations(invitations);
+
+    const freshInvitation = await this.createAssessmentInvitation(inv.patient_id, clinician, expiresDays);
+
+    await this.logAuditEvent({
+      organization_id: clinician.organization_id || 'org_main',
+      event_type: 'INTAKE_INVITATION_ROTATED',
+      entity_type: 'assessment_invitation',
+      entity_id: freshInvitation.id,
+      patient_id: inv.patient_id,
+      clinician_id: clinician.id,
+      clinician_name: clinician.name,
+      payload_after: {
+        previous_invitation_id: inv.id,
+        fresh_invitation_id: freshInvitation.id,
+        expires_at: freshInvitation.expires_at
+      }
+    });
+
+    return freshInvitation;
   }
 
   async getAssessmentInvitations(patientId?: string): Promise<AssessmentInvitation[]> {
@@ -542,6 +610,35 @@ export class LocalDemoRepository implements IPracticeRepository {
     // Save updated patient to persistence
     await this.savePatient(patient);
 
+    // Invalidate approved nutrition plan if newly confirmed allergies were added
+    const allergiesBefore = new Set(patientBefore.confirmed_allergies || []);
+    const allergiesAfter = new Set(patient.confirmed_allergies || []);
+    const hasNewAllergies = [...allergiesAfter].some(a => !allergiesBefore.has(a));
+
+    if (hasNewAllergies) {
+      const currentPlan = await this.getNutritionPlan(patient.id);
+      if (currentPlan && currentPlan.is_approved) {
+        currentPlan.is_approved = false;
+        currentPlan.status = 'requires_review';
+        await this.saveNutritionPlan(currentPlan);
+
+        await this.logAuditEvent({
+          organization_id: reviewer.organization_id || 'org_main',
+          event_type: 'PLAN_INVALIDATED',
+          entity_type: 'nutrition_plan',
+          entity_id: currentPlan.plan_id,
+          patient_id: patient.id,
+          clinician_id: reviewer.id,
+          clinician_name: reviewer.name,
+          payload_after: {
+            reason: 'Newly reconciled allergens require clinical safety recalculation',
+            plan_id: currentPlan.plan_id,
+            new_allergies: [...allergiesAfter].filter(a => !allergiesBefore.has(a))
+          }
+        });
+      }
+    }
+
     await this.logAuditEvent({
       organization_id: reviewer.organization_id || 'org_main',
       event_type: reviewStatus === 'rejected' ? 'ASSESSMENT_SUBMISSION_REJECTED' : 'ASSESSMENT_SUBMISSION_ACCEPTED',
@@ -603,12 +700,17 @@ export class LocalDemoRepository implements IPracticeRepository {
     if (!token || !token.trim()) {
       return { valid: false, reason: 'missing' };
     }
+    const tokenHash = computeSha256Sync(token);
     const invitations = this.getStoredInvitations();
-    const inv = invitations.find(i => i.invitation_token === token || (i as any).token === token);
+    const inv = invitations.find(i => 
+      i.token_hash === tokenHash || 
+      i.invitation_token === token || 
+      (i as any).token === token
+    );
     if (!inv) {
       return { valid: false, reason: 'invalid' };
     }
-    if (inv.status === 'revoked') {
+    if (inv.status === 'revoked' || inv.revoked_at) {
       return { valid: false, reason: 'revoked' };
     }
     if (inv.status === 'completed') {
@@ -617,6 +719,12 @@ export class LocalDemoRepository implements IPracticeRepository {
     if (new Date(inv.expires_at) < new Date()) {
       return { valid: false, reason: 'expired' };
     }
+
+    // Telemetry: increment access count and update timestamps
+    inv.access_count = (inv.access_count || 0) + 1;
+    inv.first_accessed_at = inv.first_accessed_at || new Date().toISOString();
+    inv.last_accessed_at = new Date().toISOString();
+    this.setStoredInvitations(invitations);
 
     const patient = await this.getPatientById(inv.patient_id);
     return {

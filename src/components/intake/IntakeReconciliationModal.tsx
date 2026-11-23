@@ -601,6 +601,54 @@ export const IntakeReconciliationModal: React.FC<IntakeReconciliationModalProps>
                           ? 'অ্যালার্জি নিশ্চিত করলে সফটওয়্যার স্বয়ংক্রিয়ভাবে বিপরীতমুখী বা ক্ষতিকর খাদ্যসমূহ লক করবে।'
                           : 'Accepting will add these to confirmed allergies and engage dietary safety contraindication filters.'}
                       </p>
+
+                      {decisions.confirmed_allergies?.status === 'accepted' && (
+                        <div className="mt-2 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-2 text-rose-700 dark:text-rose-300">
+                          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600" />
+                          <div className="text-[11px] leading-tight">
+                            <span className="font-bold block">
+                              {bn ? 'ক্লিনিক্যাল রি-ভ্যালিডেশন সতর্কতা:' : 'Clinical Safety Revalidation Notice:'}
+                            </span>
+                            {bn
+                              ? 'নতুন অ্যালার্জি গ্রহণ করলে বিদ্যমান অনুমোদিত পুষ্টি পরিকল্পনা বাতিল হবে এবং নিরাপত্তা ইঞ্জিন দ্বারা নতুন করে রি-ভ্যালিডেশন আবশ্যক হবে।'
+                              : 'Accepting newly confirmed allergens will automatically invalidate any currently approved nutrition plans for this patient, requiring fresh clinical safety evaluation.'}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Adaptive: Women's Health */}
+                  {responses.pregnancy_lactation_status && (
+                    <div className="p-3.5 bg-emerald-50/40 dark:bg-emerald-950/20 border-t border-border flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-foreground block">
+                          {bn ? 'মাতৃত্ব ও গর্ভাবস্থা স্ট্যাটাস' : 'Maternal / Pregnancy Status'}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground capitalize">
+                          {responses.pregnancy_lactation_status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 font-bold text-[10px]">
+                        Self-Reported
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Adaptive: Fasting Information */}
+                  {responses.fasting_interested && (
+                    <div className="p-3.5 bg-sky-50/40 dark:bg-sky-950/20 border-t border-border flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-foreground block">
+                          {bn ? 'ফাস্টিং আগ্রহ ও সময়সূচী' : 'Intermittent Fasting Schedule'}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {responses.fasting_pattern || '16:8'} • Hypoglycemia: {responses.fasting_hypoglycemia_symptoms?.join(', ') || 'None'}
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 font-bold text-[10px]">
+                        Self-Reported
+                      </span>
                     </div>
                   )}
 

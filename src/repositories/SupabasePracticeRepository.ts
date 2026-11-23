@@ -25,6 +25,7 @@ import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
+import { computeSha256 } from '@/lib/hashUtils';
 
 function generateSecureToken(prefix: string = 'sh_inv_'): string {
   const bytes = new Uint8Array(16);
@@ -520,12 +521,15 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
     const token = generateSecureToken('sh_inv_');
+    const tokenHash = await computeSha256(token);
     const patientUuid = await this.resolvePatientUuid(patientId);
 
     const payload = {
       organization_id: this.currentOrgId,
       patient_id: patientUuid,
       invitation_token: token,
+      token_hash: tokenHash,
+      access_count: 0,
       expires_at: expiresAt.toISOString(),
       status: 'pending',
       sent_via: 'link'
@@ -539,6 +543,11 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
     if (error) throw error;
 
+    const result: AssessmentInvitation = {
+      ...data,
+      invitation_token: token
+    };
+
     await this.logAuditEvent({
       organization_id: this.currentOrgId,
       event_type: 'INTAKE_INVITATION_CREATED',
@@ -548,12 +557,94 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       clinician_id: clinician.id,
       clinician_name: clinician.name,
       payload_after: {
-        token: data.invitation_token,
+        token_hash_preview: tokenHash.substring(0, 10),
         expires_at: data.expires_at
       }
     });
 
-    return data;
+    return result;
+  }
+
+  async revokeAssessmentInvitation(
+    invitationId: string,
+    clinician: ClinicianAuthProfile
+  ): Promise<boolean> {
+    try {
+      const { error: rpcError } = await this.client.rpc('revoke_assessment_invitation', {
+        p_invitation_id: invitationId,
+        p_clinician_id: clinician.id
+      });
+
+      if (rpcError) {
+        const { error: updateError } = await this.client
+          .from('assessment_invitations')
+          .update({
+            status: 'revoked',
+            revoked_at: new Date().toISOString()
+          })
+          .eq('id', invitationId);
+
+        if (updateError) throw updateError;
+      }
+
+      await this.logAuditEvent({
+        organization_id: this.currentOrgId,
+        event_type: 'INTAKE_INVITATION_REVOKED',
+        entity_type: 'assessment_invitation',
+        entity_id: invitationId,
+        clinician_id: clinician.id,
+        clinician_name: clinician.name,
+        payload_after: {
+          revoked_at: new Date().toISOString()
+        }
+      });
+
+      return true;
+    } catch (err) {
+      console.error('Failed to revoke assessment invitation:', err);
+      return false;
+    }
+  }
+
+  async rotateAssessmentInvitation(
+    invitationId: string,
+    clinician: ClinicianAuthProfile,
+    expiresDays: number = 14
+  ): Promise<AssessmentInvitation> {
+    const { data: existing, error: fetchErr } = await this.client
+      .from('assessment_invitations')
+      .select('*')
+      .eq('id', invitationId)
+      .single();
+
+    if (fetchErr || !existing) {
+      throw new Error(`Invitation [${invitationId}] not found.`);
+    }
+
+    await this.revokeAssessmentInvitation(invitationId, clinician);
+
+    const freshInvitation = await this.createAssessmentInvitation(
+      existing.patient_id,
+      clinician,
+      expiresDays
+    );
+
+    await this.logAuditEvent({
+      organization_id: this.currentOrgId,
+      event_type: 'INTAKE_INVITATION_ROTATED',
+      entity_type: 'assessment_invitation',
+      entity_id: freshInvitation.id,
+      patient_id: existing.patient_id,
+      clinician_id: clinician.id,
+      clinician_name: clinician.name,
+      payload_after: {
+        previous_invitation_id: invitationId,
+        fresh_invitation_id: freshInvitation.id,
+        expires_at: freshInvitation.expires_at
+      }
+    });
+
+    return freshInvitation;
   }
 
   async getAssessmentInvitations(patientId?: string): Promise<AssessmentInvitation[]> {
@@ -754,6 +845,7 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     const reviewPayload = {
       organization_id: reviewer.organization_id || this.currentOrgId,
       submission_id: submissionId,
+      clinician_id: reviewer.id,
       reviewer_id: reviewer.id,
       reviewer_name: reviewer.name,
       review_status: reviewStatus,
@@ -773,6 +865,42 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
     // Save updated patient to PostgreSQL
     const savedPatient = await this.savePatient(patient);
+
+    // Invalidate approved nutrition plan if newly confirmed allergies were added
+    const allergiesBefore = new Set(patientBefore.confirmed_allergies || []);
+    const allergiesAfter = new Set(patient.confirmed_allergies || []);
+    const hasNewAllergies = [...allergiesAfter].some(a => !allergiesBefore.has(a));
+
+    if (hasNewAllergies) {
+      try {
+        const patientUuid = await this.resolvePatientUuid(patient.id);
+        await this.client
+          .from('nutrition_plans')
+          .update({
+            is_approved: false,
+            status: 'requires_review',
+            updated_at: new Date().toISOString()
+          })
+          .eq('patient_id', patientUuid)
+          .eq('is_approved', true);
+
+        await this.logAuditEvent({
+          organization_id: reviewer.organization_id || this.currentOrgId,
+          event_type: 'PLAN_INVALIDATED',
+          entity_type: 'nutrition_plan',
+          entity_id: patient.id,
+          patient_id: patient.id,
+          clinician_id: reviewer.id,
+          clinician_name: reviewer.name,
+          payload_after: {
+            reason: 'Newly reconciled allergens require clinical safety recalculation',
+            new_allergies: [...allergiesAfter].filter(a => !allergiesBefore.has(a))
+          }
+        });
+      } catch (invalErr) {
+        console.warn('Failed to invalidate nutrition plans after allergy reconciliation:', invalErr);
+      }
+    }
 
     await this.logAuditEvent({
       organization_id: reviewer.organization_id || this.currentOrgId,

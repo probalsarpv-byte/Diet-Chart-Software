@@ -62,7 +62,15 @@ serve(async (req: Request) => {
 
     // Action 2: Submit Intake Assessment
     if (action === "submit" && req.method === "POST") {
-      const body = await req.json();
+      const rawText = await req.text();
+      if (rawText.length > 1048576) {
+        return new Response(
+          JSON.stringify({ error: "Payload too large: Request body exceeds 1MB limit." }),
+          { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const body = JSON.parse(rawText);
       const { token, responses } = body;
 
       if (!token || !responses) {
@@ -74,7 +82,7 @@ serve(async (req: Request) => {
 
       const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
 
-      const { data, error } = await supabase.rpc("submit_intake_assessment", {
+      const { data, error } = await supabase.rpc("submit_public_intake_assessment", {
         p_token: token,
         p_responses: responses,
         p_client_ip: clientIp

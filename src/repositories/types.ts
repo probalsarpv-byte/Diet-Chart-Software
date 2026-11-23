@@ -36,6 +36,8 @@ export interface AuditEventPayload {
     | 'SESSION_LOGIN'
     | 'SESSION_LOGOUT'
     | 'INTAKE_INVITATION_CREATED'
+    | 'INTAKE_INVITATION_REVOKED'
+    | 'INTAKE_INVITATION_ROTATED'
     | 'INTAKE_SUBMITTED'
     | 'ASSESSMENT_SUBMISSION_ACCEPTED'
     | 'ASSESSMENT_SUBMISSION_REJECTED';
@@ -61,9 +63,14 @@ export interface AssessmentInvitation {
   patient_id: string;
   template_id?: string;
   invitation_token: string;
+  token_hash?: string;
   expires_at: string;
   status: 'pending' | 'completed' | 'expired' | 'revoked';
   sent_via?: 'link' | 'whatsapp' | 'email' | 'sms';
+  access_count?: number;
+  first_accessed_at?: string;
+  last_accessed_at?: string;
+  revoked_at?: string;
   created_at: string;
 }
 
@@ -133,6 +140,15 @@ export interface IPracticeRepository {
   // R3 Patient Assessment Operations
   createAssessmentInvitation(
     patientId: string,
+    clinician: ClinicianAuthProfile,
+    expiresDays?: number
+  ): Promise<AssessmentInvitation>;
+  revokeAssessmentInvitation(
+    invitationId: string,
+    clinician: ClinicianAuthProfile
+  ): Promise<boolean>;
+  rotateAssessmentInvitation(
+    invitationId: string,
     clinician: ClinicianAuthProfile,
     expiresDays?: number
   ): Promise<AssessmentInvitation>;

@@ -15,9 +15,12 @@ import {
   AlertCircle,
   Plus,
   Loader2,
+  RotateCw,
+  Ban,
 } from 'lucide-react';
 import { usePractice } from '@/context/PracticeContext';
 import { AssessmentInvitation } from '@/repositories/types';
+import { maskToken } from '@/lib/hashUtils';
 
 interface ClinicianInvitationModalProps {
   isOpen: boolean;
@@ -103,6 +106,39 @@ export const ClinicianInvitationModal: React.FC<ClinicianInvitationModalProps> =
       ? `আসসালামু আলাইকুম ${patient.name}, আপনার পুষ্টি পরামর্শের পূর্বে দয়া করে এই নিরাপদ লিংকে ক্লিক করে আপনার তথ্যগুলো পূরণ করুন: ${url}`
       : `Dear ${patient.name}, please complete your pre-consultation functional nutrition intake questionnaire here: ${url}`;
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  const handleRevokeInvitation = async (invitationId: string) => {
+    if (!confirm(bn ? 'আপনি কি নিশ্চিত যে এই ইনভাইটেশনটি বাতিল করতে চান?' : 'Are you sure you want to revoke this invitation link?')) {
+      return;
+    }
+    try {
+      await repository.revokeAssessmentInvitation(invitationId, clinicianUser);
+      if (latestCreated?.id === invitationId) {
+        setLatestCreated(null);
+      }
+      await loadInvitations();
+    } catch (err: any) {
+      console.error('Failed to revoke invitation:', err);
+      alert(err?.message || 'Failed to revoke invitation');
+    }
+  };
+
+  const handleRotateInvitation = async (invitationId: string) => {
+    if (!confirm(bn ? 'পূর্ববর্তী লিংকটি বাতিল করে নতুন লিংক তৈরি করা হবে। চালিয়ে যাবেন?' : 'This will revoke the previous link and issue a fresh link. Continue?')) {
+      return;
+    }
+    try {
+      setCreating(true);
+      const rotated = await repository.rotateAssessmentInvitation(invitationId, clinicianUser, expiresDays);
+      setLatestCreated(rotated);
+      await loadInvitations();
+    } catch (err: any) {
+      console.error('Failed to rotate invitation:', err);
+      alert(err?.message || 'Failed to rotate invitation');
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -265,7 +301,7 @@ export const ClinicianInvitationModal: React.FC<ClinicianInvitationModalProps> =
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold text-foreground">
-                            {inv.invitation_token.substring(0, 16)}...
+                            {maskToken(inv.invitation_token)}
                           </span>
                           {effectiveStatus === 'completed' && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1">
@@ -285,6 +321,12 @@ export const ClinicianInvitationModal: React.FC<ClinicianInvitationModalProps> =
                               {bn ? 'মেয়াদ শেষ' : 'Expired'}
                             </span>
                           )}
+                          {effectiveStatus === 'revoked' && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 flex items-center gap-1">
+                              <Ban className="h-3 w-3" />
+                              {bn ? 'বাতিলকৃত' : 'Revoked'}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-muted-foreground flex items-center gap-3">
                           <span>
@@ -294,46 +336,78 @@ export const ClinicianInvitationModal: React.FC<ClinicianInvitationModalProps> =
                           <span>
                             {bn ? 'মেয়াদ:' : 'Expires:'} {new Date(inv.expires_at).toLocaleDateString()}
                           </span>
+                          {inv.access_count !== undefined && (
+                            <>
+                              <span>•</span>
+                              <span>
+                                {bn ? `খোলা হয়েছে: ${inv.access_count} বার` : `Opened: ${inv.access_count}x`}
+                              </span>
+                            </>
+                          )}
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 self-end sm:self-center">
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(inv.invitation_token)}
-                          className="px-2.5 py-1.5 rounded-lg border border-border bg-muted/50 hover:bg-muted text-foreground text-[11px] font-semibold flex items-center gap-1 transition"
-                        >
-                          {copiedToken === inv.invitation_token ? (
-                            <>
-                              <Check className="h-3 w-3 text-emerald-600" />
-                              {bn ? 'কপি হয়েছে' : 'Copied'}
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="h-3 w-3" />
-                              {bn ? 'লিংক কপি' : 'Copy'}
-                            </>
-                          )}
-                        </button>
-                        {effectiveStatus === 'pending' && (
-                          <button
-                            type="button"
-                            onClick={() => shareViaWhatsApp(inv.invitation_token)}
-                            className="p-1.5 rounded-lg bg-emerald-600/10 text-emerald-600 hover:bg-emerald-600 hover:text-white transition"
-                            title="Share via WhatsApp"
-                          >
-                            <Share2 className="h-3.5 w-3.5" />
-                          </button>
+                        {effectiveStatus === 'pending' ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(inv.invitation_token)}
+                              className="px-2.5 py-1.5 rounded-lg border border-border bg-muted/50 hover:bg-muted text-foreground text-[11px] font-semibold flex items-center gap-1 transition"
+                            >
+                              {copiedToken === inv.invitation_token ? (
+                                <>
+                                  <Check className="h-3 w-3 text-emerald-600" />
+                                  {bn ? 'কপি হয়েছে' : 'Copied'}
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3 w-3" />
+                                  {bn ? 'লিংক কপি' : 'Copy'}
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => shareViaWhatsApp(inv.invitation_token)}
+                              className="p-1.5 rounded-lg bg-emerald-600/10 text-emerald-600 hover:bg-emerald-600 hover:text-white transition"
+                              title="Share via WhatsApp"
+                            >
+                              <Share2 className="h-3.5 w-3.5" />
+                            </button>
+                            <a
+                              href={getFullUrl(inv.invitation_token)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition"
+                              title="Open Link"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleRotateInvitation(inv.id)}
+                              className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-primary transition"
+                              title={bn ? 'লিংক পরিবর্তন (Rotate)' : 'Rotate Link (Revoke & Re-issue)'}
+                            >
+                              <RotateCw className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeInvitation(inv.id)}
+                              className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 transition"
+                              title={bn ? 'লিংক বাতিল (Revoke)' : 'Revoke Link'}
+                            >
+                              <Ban className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground italic px-2">
+                            {effectiveStatus === 'completed'
+                              ? (bn ? 'ফর্ম গৃহীত হয়েছে' : 'Submission Completed')
+                              : (bn ? 'অকার্যকর' : 'Inactive')}
+                          </span>
                         )}
-                        <a
-                          href={getFullUrl(inv.invitation_token)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition"
-                          title="Open Link"
-                        >
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
                       </div>
                     </div>
                   );

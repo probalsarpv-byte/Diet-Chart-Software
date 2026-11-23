@@ -50,22 +50,36 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
     waist_cm: 80,
     sleep_hours: 7,
     activity_level: 'sedentary' as 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active',
+    pregnancy_status: 'not_pregnant' as 'not_pregnant' | 'trimester_1' | 'trimester_2' | 'trimester_3' | 'lactating' | 'postpartum',
+    menstrual_cycle: 'regular' as 'regular' | 'irregular' | 'menopausal' | 'pcos_suspected',
+    pediatric_growth_concern: 'none' as 'none' | 'faltering_growth' | 'rapid_gain' | 'picky_eating',
+    caregiver_meal_prep: 'fully_parental' as 'fully_parental' | 'partial_self' | 'school_canteen',
 
     // Step 2: Digestion & Elimination
     agni: 'samagni' as 'mandagni' | 'tikshnagni' | 'vishamagni' | 'samagni',
     bristol_stool: 4,
     bloating: 'none' as 'none' | 'mild' | 'moderate' | 'severe',
+    bloating_timing: 'after_meals' as 'after_meals' | 'evening' | 'constant' | 'variable',
+    bloating_triggers: [] as string[],
     acid_reflux: false,
+    acid_reflux_frequency: 'occasional' as 'daily' | 'several_times_week' | 'occasional',
+    acid_reflux_triggers: [] as string[],
 
     // Step 3: Diet & Lifestyle
     diet_type: 'omnivore' as 'omnivore' | 'vegetarian' | 'pescatarian',
     meal_structure: '3_meals' as '3_meals' | '3_meals_1_snack' | 'intermittent_fasting_16_8',
+    fasting_interested: false,
+    fasting_pattern: 'none' as 'none' | '14_10' | '16_8' | '20_4' | 'intermittent_24h',
+    fasting_hypoglycemia_symptoms: [] as string[],
     water_liters: 2.0,
     tea_coffee_cups: 1,
 
     // Step 4: Medical History, Medications & Allergies
     selected_concerns: [] as string[],
+    has_active_medications: false,
     active_medications_text: '',
+    medication_timing: 'with_meals' as 'morning_empty_stomach' | 'with_meals' | 'bedtime' | 'variable',
+    medication_side_effects: [] as string[],
     selected_allergies: [] as string[],
     other_allergies: '',
 
@@ -126,6 +140,8 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
     }
 
     const payload: Record<string, any> = {
+      provenance: 'PATIENT_SELF_REPORTED',
+
       // Direct clinical metrics
       age: Number(formData.age),
       gender: formData.gender,
@@ -135,21 +151,47 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
       sleep_hours: Number(formData.sleep_hours),
       activity_level: formData.activity_level,
 
+      // Step 1 Adaptive: Women's health / Pediatric context
+      pregnancy_lactation_status:
+        formData.gender === 'female' && Number(formData.age) >= 18
+          ? formData.pregnancy_status
+          : undefined,
+      menstrual_cycle:
+        formData.gender === 'female' && Number(formData.age) >= 18
+          ? formData.menstrual_cycle
+          : undefined,
+      pediatric_growth_concern:
+        Number(formData.age) < 18 ? formData.pediatric_growth_concern : undefined,
+      caregiver_meal_prep:
+        Number(formData.age) < 18 ? formData.caregiver_meal_prep : undefined,
+
       // Gut & digestion
       digestive_fire_agni: formData.agni,
       bristol_stool_score: Number(formData.bristol_stool),
       bloating: formData.bloating,
+      bloating_timing: formData.bloating !== 'none' ? formData.bloating_timing : undefined,
+      bloating_triggers: formData.bloating !== 'none' ? formData.bloating_triggers : undefined,
       acid_reflux_hypoacidity: formData.acid_reflux,
+      acid_reflux_frequency: formData.acid_reflux ? formData.acid_reflux_frequency : undefined,
+      acid_reflux_triggers: formData.acid_reflux ? formData.acid_reflux_triggers : undefined,
 
       // Lifestyle
       dietary_preference: formData.diet_type,
       meal_structure: formData.meal_structure,
+      fasting_interested: formData.fasting_interested,
+      fasting_pattern: formData.fasting_interested ? formData.fasting_pattern : undefined,
+      fasting_hypoglycemia_symptoms: formData.fasting_interested
+        ? formData.fasting_hypoglycemia_symptoms
+        : undefined,
       daily_water_liters: Number(formData.water_liters),
       tea_coffee_cups: Number(formData.tea_coffee_cups),
 
       // History & safety
       health_concerns: formData.selected_concerns,
+      has_active_medications: formData.has_active_medications,
       reported_medications: formData.active_medications_text,
+      medication_timing: formData.has_active_medications ? formData.medication_timing : undefined,
+      medication_side_effects: formData.has_active_medications ? formData.medication_side_effects : undefined,
       reported_allergies: [
         ...formData.selected_allergies,
         ...(formData.other_allergies ? [formData.other_allergies.trim()] : []),
@@ -394,6 +436,139 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Adaptive Section: Women's Health (Female & Age >= 18) */}
+              {formData.gender === 'female' && Number(formData.age) >= 18 && (
+                <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl p-4 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-emerald-600" />
+                    <h4 className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider">
+                      {bn ? 'নারী স্বাস্থ্য ও মাতৃত্ব সংক্রান্ত বিশেষ মূল্যায়ন' : "Women's Health & Maternal Screening"}
+                    </h4>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {bn ? 'গর্ভাবস্থা বা স্তন্যদান অবস্থা (Maternal Status)' : 'Current Maternal / Pregnancy Status'}
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {[
+                        { id: 'not_pregnant', en: 'Not Pregnant', bn: 'গর্ভবতী নন' },
+                        { id: 'trimester_1', en: '1st Trimester (1-12w)', bn: '১ম ট্রাইমেস্টার (১-১২ সপ্তাহ)' },
+                        { id: 'trimester_2', en: '2nd Trimester (13-27w)', bn: '২য় ট্রাইমেস্টার (১৩-২৭ সপ্তাহ)' },
+                        { id: 'trimester_3', en: '3rd Trimester (28w+)', bn: '৩য় ট্রাইমেস্টার (২৮+ সপ্তাহ)' },
+                        { id: 'lactating', en: 'Breastfeeding / Lactating', bn: 'স্তন্যদানকারী মা' },
+                        { id: 'postpartum', en: 'Postpartum (<6 months)', bn: 'প্রসবোত্তর (৬ মাসের মধ্যে)' },
+                      ].map(st => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, pregnancy_status: st.id as any })}
+                          className={`p-2.5 rounded-xl border text-xs font-semibold text-center transition ${
+                            formData.pregnancy_status === st.id
+                              ? 'border-emerald-600 bg-white text-emerald-800 dark:bg-slate-900 dark:text-emerald-300 ring-2 ring-emerald-500'
+                              : 'border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-800/60 hover:bg-white text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {bn ? st.bn : st.en}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {bn ? 'মাসিকের চক্র ও হরমোন অবস্থা (Menstrual Health)' : 'Menstrual Cycle / Hormonal Context'}
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: 'regular', en: 'Regular (28-32d)', bn: 'নিয়মিত চক্র' },
+                        { id: 'irregular', en: 'Irregular / Delayed', bn: 'অনিয়মিত / বিলম্বে' },
+                        { id: 'pcos_suspected', en: 'PCOS / PCOD Diagnosed', bn: 'পিসিওএস / সিস্ট' },
+                        { id: 'menopausal', en: 'Perimenopause / Menopause', bn: 'মেনোপজ' },
+                      ].map(mc => (
+                        <button
+                          key={mc.id}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, menstrual_cycle: mc.id as any })}
+                          className={`p-2.5 rounded-xl border text-xs font-semibold text-center transition ${
+                            formData.menstrual_cycle === mc.id
+                              ? 'border-emerald-600 bg-white text-emerald-800 dark:bg-slate-900 dark:text-emerald-300 ring-2 ring-emerald-500'
+                              : 'border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-800/60 hover:bg-white text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {bn ? mc.bn : mc.en}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Adaptive Section: Pediatric Context (Age < 18) */}
+              {Number(formData.age) < 18 && (
+                <div className="bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-900/40 rounded-2xl p-4 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-sky-600" />
+                    <h4 className="text-xs font-bold text-sky-900 dark:text-sky-300 uppercase tracking-wider">
+                      {bn ? 'শিশু ও কিশোর পুষ্টি মূল্যায়ন (Pediatric / Adolescent Growth)' : 'Pediatric / Adolescent Nutrition Screening'}
+                    </h4>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {bn ? 'শারীরিক বৃদ্ধি সংক্রান্ত অগ্রাধিকার' : 'Growth & Development Observation'}
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { id: 'none', en: 'Normal Growth Pace', bn: 'স্বাভাবিক বৃদ্ধি' },
+                        { id: 'faltering_growth', en: 'Underweight / Slow Height', bn: 'ওজন বা উচ্চতা কম' },
+                        { id: 'rapid_gain', en: 'Rapid Weight Gain', bn: 'দ্রুত ওজন বৃদ্ধি' },
+                        { id: 'picky_eating', en: 'Picky Eater / Low Appetite', bn: 'খাবারে অনিহা / বায়না' },
+                      ].map(pg => (
+                        <button
+                          key={pg.id}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, pediatric_growth_concern: pg.id as any })}
+                          className={`p-2.5 rounded-xl border text-xs font-semibold text-center transition ${
+                            formData.pediatric_growth_concern === pg.id
+                              ? 'border-sky-600 bg-white text-sky-800 dark:bg-slate-900 dark:text-sky-300 ring-2 ring-sky-500'
+                              : 'border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-800/60 hover:bg-white text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {bn ? pg.bn : pg.en}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                      {bn ? 'খাবার তৈরির দায়িত্ব ও পরিবেশ' : 'Caregiver Meal Context'}
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 'fully_parental', en: 'Prepared by Parents', bn: 'পিতা-মাতা রান্না করেন' },
+                        { id: 'partial_self', en: 'Self / Hosteller', bn: 'মেস / নিজে রান্না' },
+                        { id: 'school_canteen', en: 'Frequent School Canteen', bn: 'ক্যান্টিনের খাবার' },
+                      ].map(cg => (
+                        <button
+                          key={cg.id}
+                          type="button"
+                          onClick={() => setFormData({ ...formData, caregiver_meal_prep: cg.id as any })}
+                          className={`p-2.5 rounded-xl border text-xs font-semibold text-center transition ${
+                            formData.caregiver_meal_prep === cg.id
+                              ? 'border-sky-600 bg-white text-sky-800 dark:bg-slate-900 dark:text-sky-300 ring-2 ring-sky-500'
+                              : 'border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-800/60 hover:bg-white text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {bn ? cg.bn : cg.en}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -551,6 +726,132 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Adaptive Bloating Details */}
+              {formData.bloating !== 'none' && (
+                <div className="bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-2xl p-4 space-y-3">
+                  <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Flame className="h-3.5 w-3.5 text-amber-600" />
+                    {bn ? 'পেট ফাঁপার সময় ও সম্ভাব্য কারণ' : 'Bloating Timing & Suspected Triggers'}
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {bn ? 'কখন বেশি অনুভূত হয়?' : 'Onset & Timing'}
+                      </label>
+                      <select
+                        value={formData.bloating_timing}
+                        onChange={e => setFormData({ ...formData, bloating_timing: e.target.value as any })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      >
+                        <option value="after_meals">{bn ? 'খাওয়ার সাথে সাথে (৩০-৬০ মিনিট)' : 'Immediately post-meal (30-60m)'}</option>
+                        <option value="evening">{bn ? 'বিকেলের দিকে বা রাতে' : 'Late afternoon / Evening'}</option>
+                        <option value="constant">{bn ? 'সারাদিনই পেট ভারী থাকে' : 'Constant throughout day'}</option>
+                        <option value="variable">{bn ? 'অনিয়মিত' : 'Intermittent / Variable'}</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {bn ? 'কোন খাবারে বেশি হয়?' : 'Suspected Trigger Foods'}
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'dairy', en: 'Milk/Dairy', bn: 'দুধ' },
+                          { id: 'legumes', en: 'Lentils/Beans', bn: 'ডাল/ছোলা' },
+                          { id: 'cruciferous', en: 'Cabbage/Cauli', bn: 'বাঁধাকপি/ফুলকপি' },
+                          { id: 'raw_salad', en: 'Raw Salads', bn: 'কাঁচা সালাদ' },
+                          { id: 'carbonated', en: 'Soft Drinks', bn: 'কোমল পানীয়' },
+                        ].map(tr => {
+                          const isSel = formData.bloating_triggers.includes(tr.id);
+                          return (
+                            <button
+                              key={tr.id}
+                              type="button"
+                              onClick={() => {
+                                const upd = isSel
+                                  ? formData.bloating_triggers.filter(x => x !== tr.id)
+                                  : [...formData.bloating_triggers, tr.id];
+                                setFormData({ ...formData, bloating_triggers: upd });
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                                isSel
+                                  ? 'border-amber-600 bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200'
+                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {bn ? tr.bn : tr.en}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Adaptive Acid Reflux Details */}
+              {formData.acid_reflux && (
+                <div className="bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-900/40 rounded-2xl p-4 space-y-3">
+                  <h4 className="text-xs font-bold text-rose-900 dark:text-rose-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />
+                    {bn ? 'এসিডিটি ও বুক জ্বালাপোড়ার মাত্রা' : 'Reflux Frequency & Common Triggers'}
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {bn ? 'কত ঘন ঘন হয়?' : 'Occurrence Frequency'}
+                      </label>
+                      <select
+                        value={formData.acid_reflux_frequency}
+                        onChange={e => setFormData({ ...formData, acid_reflux_frequency: e.target.value as any })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      >
+                        <option value="daily">{bn ? 'প্রতিদিন প্রায়ই হয়' : 'Daily occurrence'}</option>
+                        <option value="several_times_week">{bn ? 'সপ্তাহে কয়েকবার' : '2-3 times per week'}</option>
+                        <option value="occasional">{bn ? 'মাঝে মাঝে ভারী খাবারের পর' : 'Occasional (post heavy meals)'}</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {bn ? 'কোন অবস্থায় বাড়ে?' : 'Trigger Conditions'}
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'spicy', en: 'Spicy/Oily', bn: 'ঝাল/তেলতেলে' },
+                          { id: 'lying_down', en: 'Lying Down', bn: 'খাওয়ার পর শোয়া' },
+                          { id: 'coffee_tea', en: 'Tea/Coffee', bn: 'চা/কফি' },
+                          { id: 'empty_stomach', en: 'Empty Stomach', bn: 'খালি পেট' },
+                        ].map(tr => {
+                          const isSel = formData.acid_reflux_triggers.includes(tr.id);
+                          return (
+                            <button
+                              key={tr.id}
+                              type="button"
+                              onClick={() => {
+                                const upd = isSel
+                                  ? formData.acid_reflux_triggers.filter(x => x !== tr.id)
+                                  : [...formData.acid_reflux_triggers, tr.id];
+                                setFormData({ ...formData, acid_reflux_triggers: upd });
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                                isSel
+                                  ? 'border-rose-600 bg-rose-100 text-rose-900 dark:bg-rose-900/60 dark:text-rose-200'
+                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {bn ? tr.bn : tr.en}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -623,6 +924,111 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Adaptive Section: Fasting Experience */}
+              <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                      {bn ? 'ফাস্টিং বা রোজা রাখার আগ্রহ / অভ্যাস আছে কি?' : 'Interested in or Practicing Intermittent Fasting?'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      {bn ? 'ক্লিনিক্যাল নিরাপত্তার জন্য আপনার ফাস্টিং সহনশীলতা জানা প্রয়োজন।' : 'Helps our clinical engine evaluate metabolic flexibility and fasting safety.'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, fasting_interested: false })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                        !formData.fasting_interested
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {bn ? 'না' : 'No'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, fasting_interested: true })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                        formData.fasting_interested
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {bn ? 'হ্যাঁ' : 'Yes'}
+                    </button>
+                  </div>
+                </div>
+
+                {formData.fasting_interested && (
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {bn ? 'পছন্দের ফাস্টিং উইন্ডো' : 'Target / Current Fasting Schedule'}
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: '14_10', label: '14:10 (Gentle)' },
+                          { id: '16_8', label: '16:8 (Standard)' },
+                          { id: '20_4', label: '20:4 (Warrior)' },
+                          { id: 'intermittent_24h', label: '24h / Weekly' },
+                        ].map(f => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setFormData({ ...formData, fasting_pattern: f.id as any })}
+                            className={`p-2 rounded-xl border text-xs font-semibold text-center transition ${
+                              formData.fasting_pattern === f.id
+                                ? 'border-emerald-600 bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200'
+                                : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {bn ? 'উপবাসে কোনো অস্বাভাবিক উপসর্গ হয়? (রক্তে শর্করা হ্রাস লক্ষণ)' : 'Symptoms during fasting (Hypoglycemia checks)'}
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'none', en: 'No adverse symptoms', bn: 'কোনো সমস্যা হয় না' },
+                          { id: 'dizziness', en: 'Dizziness / Lightheadedness', bn: 'মাথা ঘোরা' },
+                          { id: 'shakiness', en: 'Shaking / Tremors', bn: 'হাত কাঁপা' },
+                          { id: 'headache', en: 'Headache', bn: 'মাথাব্যথা' },
+                          { id: 'extreme_hunger', en: 'Extreme Hunger / Irritability', bn: 'অতিরিক্ত ক্ষুধা/মেজাজ খিটখিটে' },
+                        ].map(sym => {
+                          const isSel = formData.fasting_hypoglycemia_symptoms.includes(sym.id);
+                          return (
+                            <button
+                              key={sym.id}
+                              type="button"
+                              onClick={() => {
+                                const upd = isSel
+                                  ? formData.fasting_hypoglycemia_symptoms.filter(x => x !== sym.id)
+                                  : [...formData.fasting_hypoglycemia_symptoms, sym.id];
+                                setFormData({ ...formData, fasting_hypoglycemia_symptoms: upd });
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                                isSel
+                                  ? 'border-emerald-600 bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200'
+                                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {bn ? sym.bn : sym.en}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Water & Beverage */}
@@ -747,22 +1153,116 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
                 </div>
               </div>
 
-              {/* Active Medications */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {bn ? 'নিয়মিত সেবনকৃত ওষুধের তালিকা (নাম ও ডোজ)' : 'Active Prescription Medications & Supplements'}
-                </label>
-                <textarea
-                  rows={3}
-                  value={formData.active_medications_text}
-                  onChange={e => setFormData({ ...formData, active_medications_text: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder={
-                    bn
-                      ? 'উদাহরণ: মেটফর্মিন ৫০০ মিগ্রা (রাতে), থাইরক্সিন ৫০ এমসিজি (সকালে খালি পেটে)...'
-                      : 'e.g., Metformin 500mg (dinner), Thyroxine 50mcg (morning empty stomach)...'
-                  }
-                />
+              {/* Active Prescription Medications (Adaptive) */}
+              <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                      {bn ? 'আপনি কি বর্তমানে কোনো প্রেসক্রিপশনের ওষুধ খাচ্ছেন?' : 'Are you currently taking prescription medications?'}
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      {bn ? 'মেডিসিন-নিউট্রিয়েন্ট ইন্টারঅ্যাকশন ও পুষ্টি উপাদানের অপচয় রোধে জরুরি।' : 'Essential for checking drug-nutrient depletions and timing rules.'}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, has_active_medications: false })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                        !formData.has_active_medications
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {bn ? 'না' : 'No'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, has_active_medications: true })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                        formData.has_active_medications
+                          ? 'border-emerald-600 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          : 'border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {bn ? 'হ্যাঁ' : 'Yes'}
+                    </button>
+                  </div>
+                </div>
+
+                {formData.has_active_medications && (
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        {bn ? 'ওষুধের নাম, ডোজ ও সেবনের সময়' : 'Medication Names, Dosages & Frequency'}
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={formData.active_medications_text}
+                        onChange={e => setFormData({ ...formData, active_medications_text: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder={
+                          bn
+                            ? 'উদাহরণ: মেটফর্মিন ৫০০ মিগ্রা (রাতে খাবারের পর), থাইরক্সিন ৫০ এমসিজি...'
+                            : 'e.g., Metformin 500mg (dinner), Levothyroxine 50mcg (morning fasting)...'
+                        }
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          {bn ? 'সেবনের প্রধান সময়' : 'Typical Medication Timing'}
+                        </label>
+                        <select
+                          value={formData.medication_timing}
+                          onChange={e => setFormData({ ...formData, medication_timing: e.target.value as any })}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        >
+                          <option value="morning_empty_stomach">{bn ? 'সকালে খালি পেটে' : 'Morning Empty Stomach'}</option>
+                          <option value="with_meals">{bn ? 'খাবারের সাথে বা পরপর' : 'With / After Meals'}</option>
+                          <option value="bedtime">{bn ? 'রাতে ঘুমানোর আগে' : 'Bedtime'}</option>
+                          <option value="variable">{bn ? 'বিভিন্ন সময়ে (একাধিক ওষুধ)' : 'Variable / Multiple Times'}</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                          {bn ? 'পার্শ্বপ্রতিক্রিয়া অনুভূত হয় কি?' : 'Experienced Side Effects'}
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            { id: 'none', en: 'None', bn: 'নেই' },
+                            { id: 'nausea', en: 'Nausea / Acidity', bn: 'বমি বমি ভাব' },
+                            { id: 'fatigue', en: 'Fatigue / Drowsy', bn: 'ক্লান্তি' },
+                            { id: 'dizziness', en: 'Dizziness', bn: 'মাথা ঘোরা' },
+                          ].map(se => {
+                            const isSel = formData.medication_side_effects.includes(se.id);
+                            return (
+                              <button
+                                key={se.id}
+                                type="button"
+                                onClick={() => {
+                                  const upd = isSel
+                                    ? formData.medication_side_effects.filter(x => x !== se.id)
+                                    : [...formData.medication_side_effects, se.id];
+                                  setFormData({ ...formData, medication_side_effects: upd });
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition ${
+                                  isSel
+                                    ? 'border-emerald-600 bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200'
+                                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                }`}
+                              >
+                                {bn ? se.bn : se.en}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
