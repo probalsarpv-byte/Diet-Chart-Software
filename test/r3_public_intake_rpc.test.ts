@@ -332,6 +332,128 @@ async function runTests() {
   resetPracticeRepository();
   assert(true, 'resetPracticeRepository successfully resets singleton repository cache');
 
+  // --- 9. Cloud Fallback Prevention & Strict Consent Enforcement ---
+  console.log('\n--- 9. Cloud Fallback Prevention & Strict Consent Enforcement ---');
+  const { SupabasePracticeRepository } = await import('../src/repositories/SupabasePracticeRepository');
+
+  // Track any unauthorized direct table writes
+  const directTableWrites: string[] = [];
+
+  // Mock SupabaseClient that simulates RPC failures and catches direct table access attempts
+  const mockClient: any = {
+    rpc: async (fn: string, params: any) => {
+      if (fn === 'issue_assessment_invitation') {
+        return { data: null, error: { message: 'Database connection failed' } };
+      }
+      if (fn === 'rotate_assessment_invitation') {
+        return { data: null, error: { message: 'Database transaction lock timeout' } };
+      }
+      if (fn === 'revoke_assessment_invitation') {
+        return { data: null, error: { message: 'Clinician unauthorized for invitation' } };
+      }
+      if (fn === 'reconcile_intake_submission_atomic') {
+        return { data: null, error: { message: 'Safety constraint violation during atomic merge' } };
+      }
+      if (fn === 'submit_public_intake_assessment') {
+        // Assert exact 4 parameters are passed
+        assert('p_token' in params, 'RPC received p_token');
+        assert('p_responses' in params, 'RPC received p_responses');
+        assert('p_client_ip' in params, 'RPC received p_client_ip');
+        assert('p_patient_acknowledged_consent' in params, 'RPC received p_patient_acknowledged_consent');
+        assert(params.p_patient_acknowledged_consent === true, 'RPC strictly received true for p_patient_acknowledged_consent');
+        return { data: { success: true, submission_id: 'sub_mock_123', submitted_at: new Date().toISOString() }, error: null };
+      }
+      return { data: null, error: { message: `Unknown RPC function: ${fn}` } };
+    },
+    from: (table: string) => {
+      return {
+        select: (cols: string) => ({
+          eq: (col: string, val: any) => ({
+            maybeSingle: async () => ({ data: { id: 'patient_uuid_123', client_id: val }, error: null }),
+            single: async () => ({ data: { id: val, patient_id: 'patient_uuid_123' }, error: null }),
+            order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) })
+          })
+        }),
+        insert: (payload: any) => {
+          directTableWrites.push(`insert:${table}`);
+          return {
+            select: () => ({
+              single: async () => ({ data: { id: 'fallback_id' }, error: null })
+            })
+          };
+        },
+        update: (payload: any) => {
+          directTableWrites.push(`update:${table}`);
+          return {
+            eq: () => Promise.resolve({ error: null })
+          };
+        }
+      };
+    }
+  };
+
+  const cloudRepo = new SupabasePracticeRepository(mockClient, 'org_test_123');
+
+  // Test 9.1: createAssessmentInvitation fails closed when RPC fails (zero fallback writes)
+  let createFailedClosed = false;
+  try {
+    await cloudRepo.createAssessmentInvitation('patient_123', mockClinician, 14);
+  } catch (err: any) {
+    createFailedClosed = true;
+    assert(err.message.includes('Invitation creation failed'), 'createAssessmentInvitation strictly throws on RPC failure');
+  }
+  assert(createFailedClosed, 'createAssessmentInvitation fail-closed confirmed');
+  assert(!directTableWrites.includes('insert:assessment_invitations'), 'createAssessmentInvitation NEVER falls back to direct table inserts');
+
+  // Test 9.2: rotateAssessmentInvitation fails closed when RPC fails (zero fallback writes)
+  let rotateFailedClosed = false;
+  try {
+    await cloudRepo.rotateAssessmentInvitation('inv_123', mockClinician, 14);
+  } catch (err: any) {
+    rotateFailedClosed = true;
+    assert(err.message.includes('Invitation rotation failed'), 'rotateAssessmentInvitation strictly throws on RPC failure');
+  }
+  assert(rotateFailedClosed, 'rotateAssessmentInvitation fail-closed confirmed');
+  assert(!directTableWrites.includes('update:assessment_invitations'), 'rotateAssessmentInvitation NEVER falls back to direct client updates');
+
+  // Test 9.3: revokeAssessmentInvitation strictly throws when RPC fails
+  let revokeFailedClosed = false;
+  try {
+    await cloudRepo.revokeAssessmentInvitation('inv_123', mockClinician);
+  } catch (err: any) {
+    revokeFailedClosed = true;
+    assert(err.message.includes('Revocation failed'), 'revokeAssessmentInvitation strictly throws on RPC failure');
+  }
+  assert(revokeFailedClosed, 'revokeAssessmentInvitation fail-closed confirmed');
+
+  // Test 9.4: submitPublicIntakeAssessment rejects missing consent before calling RPC
+  let missingConsentRejected = false;
+  try {
+    await cloudRepo.submitPublicIntakeAssessment('sh_inv_test', { weight: 65 });
+  } catch (err: any) {
+    missingConsentRejected = true;
+    assert(err.message.includes('Consent Not Acknowledged'), 'submitPublicIntakeAssessment rejects missing consent');
+  }
+  assert(missingConsentRejected, 'Missing consent strictly rejected before network call');
+
+  // Test 9.5: submitPublicIntakeAssessment rejects false consent
+  let falseConsentRejected = false;
+  try {
+    await cloudRepo.submitPublicIntakeAssessment('sh_inv_test', { weight: 65 }, false);
+  } catch (err: any) {
+    falseConsentRejected = true;
+    assert(err.message.includes('Consent Not Acknowledged'), 'submitPublicIntakeAssessment rejects explicit false consent');
+  }
+  assert(falseConsentRejected, 'False consent strictly rejected');
+
+  // Test 9.6: submitPublicIntakeAssessment succeeds with valid consent and passes all 4 parameters
+  const submitWithConsent = await cloudRepo.submitPublicIntakeAssessment('sh_inv_test', {
+    weight: 65,
+    patient_acknowledged_consent: true
+  });
+  assert(submitWithConsent.success === true, 'submitPublicIntakeAssessment succeeds with verified consent');
+  assert(submitWithConsent.submission_id === 'sub_mock_123', 'Returned authoritative submission ID');
+
   console.log('\n================================================================');
   console.log('R3 PUBLIC INTAKE RPC RESULTS: ALL CHECKS PASSED (0 FAILED)');
   console.log('================================================================\n');

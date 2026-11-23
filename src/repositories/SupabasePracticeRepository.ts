@@ -505,75 +505,34 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     }
     const patientUuid = await this.resolvePatientUuid(patientId);
 
-    // 1. Authoritative Backend Generation RPC (Security Definer)
-    try {
-      const { data: rpcData, error: rpcErr } = await this.client.rpc('issue_assessment_invitation', {
-        p_patient_id: patientUuid,
-        p_expires_days: expiresDays,
-        p_sent_via: 'link'
-      });
-
-      if (!rpcErr && rpcData?.success) {
-        return {
-          id: rpcData.invitation_id,
-          organization_id: orgId,
-          patient_id: patientId,
-          invitation_token: rpcData.token, // Plaintext returned ONCE to clinician
-          token_hash: rpcData.token_hash,
-          access_count: 0,
-          expires_at: rpcData.expires_at,
-          status: 'pending',
-          sent_via: 'link',
-          created_at: new Date().toISOString()
-        };
-      }
-    } catch (e) {
-      console.warn('Backend RPC issue_assessment_invitation fallback:', e);
-    }
-
-    // 2. Fallback Generation (256-bit cryptographically secure, HASH ONLY in database)
-    const token = generateSecureIntakeToken('sh_inv_');
-    const tokenHash = await computeSha256(token);
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + expiresDays);
-
-    const payload = {
-      organization_id: orgId,
-      patient_id: patientUuid,
-      token_hash: tokenHash,
-      token: null,
-      invitation_token: null, // Hash-only architecture
-      access_count: 0,
-      expires_at: expiresAt.toISOString(),
-      status: 'pending',
-      sent_via: 'link'
-    };
-
-    const { data, error } = await this.client
-      .from('assessment_invitations')
-      .insert(payload)
-      .select('*')
-      .single();
-
-    if (error) throw error;
-
-    await this.logAuditEvent({
-      organization_id: orgId,
-      event_type: 'INTAKE_INVITATION_CREATED',
-      entity_type: 'assessment_invitation',
-      entity_id: data.id,
-      patient_id: patientId,
-      clinician_id: clinician.id,
-      clinician_name: clinician.name,
-      payload_after: {
-        token_hash_preview: tokenHash.substring(0, 10),
-        expires_at: data.expires_at
-      }
+    // Authoritative Backend Generation RPC (Security Definer) ONLY
+    // Production clinical operations strictly fail closed without client-side fallback
+    const { data: rpcData, error: rpcErr } = await this.client.rpc('issue_assessment_invitation', {
+      p_patient_id: patientUuid,
+      p_expires_days: expiresDays,
+      p_sent_via: 'link'
     });
 
+    if (rpcErr) {
+      console.error('issue_assessment_invitation RPC error:', rpcErr);
+      throw new Error(`Invitation creation failed: ${rpcErr.message}`);
+    }
+
+    if (!rpcData?.success) {
+      throw new Error('Invitation creation failed: invalid backend response.');
+    }
+
     return {
-      ...data,
-      invitation_token: token
+      id: rpcData.invitation_id,
+      organization_id: orgId,
+      patient_id: patientId,
+      invitation_token: rpcData.token, // Plaintext returned ONCE to clinician
+      token_hash: rpcData.token_hash,
+      access_count: 0,
+      expires_at: rpcData.expires_at,
+      status: 'pending',
+      sent_via: 'link',
+      created_at: new Date().toISOString()
     };
   }
 
@@ -581,33 +540,29 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     invitationId: string,
     clinician: ClinicianAuthProfile
   ): Promise<boolean> {
-    try {
-      const { error: rpcError } = await this.client.rpc('revoke_assessment_invitation', {
-        p_invitation_id: invitationId
-      });
+    // Authoritative Backend Revocation RPC (Security Definer) ONLY
+    const { error: rpcError } = await this.client.rpc('revoke_assessment_invitation', {
+      p_invitation_id: invitationId
+    });
 
-      if (rpcError) {
-        // RPC failed — do NOT fall back to direct table write (bypasses org/auth checks)
-        throw new Error(`Revocation RPC failed: ${rpcError.message}`);
-      }
-
-      await this.logAuditEvent({
-        organization_id: clinician.organization_id || this.currentOrgId,
-        event_type: 'INTAKE_INVITATION_REVOKED',
-        entity_type: 'assessment_invitation',
-        entity_id: invitationId,
-        clinician_id: clinician.id,
-        clinician_name: clinician.name,
-        payload_after: {
-          revoked_at: new Date().toISOString()
-        }
-      });
-
-      return true;
-    } catch (err) {
-      console.error('Failed to revoke assessment invitation:', err);
-      return false;
+    if (rpcError) {
+      console.error('revoke_assessment_invitation RPC error:', rpcError);
+      throw new Error(`Revocation failed: ${rpcError.message}`);
     }
+
+    await this.logAuditEvent({
+      organization_id: clinician.organization_id || this.currentOrgId,
+      event_type: 'INTAKE_INVITATION_REVOKED',
+      entity_type: 'assessment_invitation',
+      entity_id: invitationId,
+      clinician_id: clinician.id,
+      clinician_name: clinician.name,
+      payload_after: {
+        revoked_at: new Date().toISOString()
+      }
+    });
+
+    return true;
   }
 
   async rotateAssessmentInvitation(
@@ -615,47 +570,33 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     clinician: ClinicianAuthProfile,
     expiresDays: number = 14
   ): Promise<AssessmentInvitation> {
-    try {
-      const { data: rpcData, error: rpcErr } = await this.client.rpc('rotate_assessment_invitation', {
-        p_invitation_id: invitationId,
-        p_expires_days: expiresDays
-      });
+    // Authoritative Backend Rotation RPC (Security Definer) ONLY
+    const { data: rpcData, error: rpcErr } = await this.client.rpc('rotate_assessment_invitation', {
+      p_invitation_id: invitationId,
+      p_expires_days: expiresDays
+    });
 
-      if (!rpcErr && rpcData?.success) {
-        return {
-          id: rpcData.invitation_id,
-          organization_id: clinician.organization_id || this.currentOrgId,
-          patient_id: '',
-          invitation_token: rpcData.token,
-          token_hash: rpcData.token_hash,
-          access_count: 0,
-          expires_at: rpcData.expires_at,
-          status: 'pending',
-          sent_via: 'link',
-          created_at: new Date().toISOString()
-        };
-      }
-    } catch (e) {
-      console.warn('Backend RPC rotate_assessment_invitation fallback:', e);
+    if (rpcErr) {
+      console.error('rotate_assessment_invitation RPC error:', rpcErr);
+      throw new Error(`Invitation rotation failed: ${rpcErr.message}`);
     }
 
-    const { data: existing, error: fetchErr } = await this.client
-      .from('assessment_invitations')
-      .select('*')
-      .eq('id', invitationId)
-      .single();
-
-    if (fetchErr || !existing) {
-      throw new Error(`Invitation [${invitationId}] not found.`);
+    if (!rpcData?.success) {
+      throw new Error('Invitation rotation failed: invalid backend response.');
     }
 
-    await this.revokeAssessmentInvitation(invitationId, clinician);
-
-    return this.createAssessmentInvitation(
-      existing.patient_id,
-      clinician,
-      expiresDays
-    );
+    return {
+      id: rpcData.invitation_id,
+      organization_id: clinician.organization_id || this.currentOrgId,
+      patient_id: '',
+      invitation_token: rpcData.token,
+      token_hash: rpcData.token_hash,
+      access_count: 0,
+      expires_at: rpcData.expires_at,
+      status: 'pending',
+      sent_via: 'link',
+      created_at: new Date().toISOString()
+    };
   }
 
   async getAssessmentInvitations(patientId?: string): Promise<AssessmentInvitation[]> {
@@ -694,56 +635,19 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     invitationToken: string,
     responses: Record<string, any>
   ): Promise<AssessmentSubmission> {
-    const invitation = await this.getAssessmentInvitationByToken(invitationToken);
-    if (!invitation) {
-      throw new Error('Invalid assessment invitation token.');
+    // Authoritative Backend Submission RPC (Security Definer) ONLY
+    // Delegates to submitPublicIntakeAssessment to enforce server-side consent,
+    // atomic one-time invitation consumption, and token sanitization.
+    const consent = Boolean(responses?.patient_acknowledged_consent);
+    if (!consent) {
+      throw new Error('Consent Not Acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data.');
     }
-
-    if (invitation.status === 'expired' || new Date(invitation.expires_at) < new Date()) {
-      throw new Error('Assessment invitation has expired.');
+    const res = await this.submitPublicIntakeAssessment(invitationToken, responses, consent);
+    const sub = await this.getSubmissionById(res.submission_id);
+    if (!sub) {
+      throw new Error('Failed to retrieve staged assessment submission.');
     }
-    if (invitation.status === 'revoked') {
-      throw new Error('Assessment invitation has been revoked.');
-    }
-    if (invitation.status === 'completed') {
-      throw new Error('Assessment has already been completed for this invitation.');
-    }
-
-    const payload = {
-      organization_id: invitation.organization_id,
-      invitation_id: invitation.id,
-      patient_id: invitation.patient_id,
-      responses_json: responses,
-      submitted_at: new Date().toISOString()
-    };
-
-    const { data, error } = await this.client
-      .from('assessment_submissions')
-      .insert(payload)
-      .select('*')
-      .single();
-
-    if (error) throw error;
-
-    // Transition invitation to completed
-    await this.client
-      .from('assessment_invitations')
-      .update({ status: 'completed' })
-      .eq('id', invitation.id);
-
-    await this.logAuditEvent({
-      organization_id: invitation.organization_id,
-      event_type: 'INTAKE_SUBMITTED',
-      entity_type: 'assessment_submission',
-      entity_id: data.id,
-      patient_id: invitation.patient_id,
-      payload_after: {
-        submission_id: data.id,
-        response_keys: Object.keys(responses)
-      }
-    });
-
-    return data;
+    return sub;
   }
 
   async getStagedSubmissions(patientId?: string): Promise<AssessmentSubmission[]> {

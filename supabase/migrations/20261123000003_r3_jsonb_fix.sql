@@ -1,31 +1,40 @@
 -- =====================================================================
 -- SHUDDHO CLINICAL FUNCTIONAL & PRECISION NUTRITION PLATFORM
--- R3 CORRECTIVE MIGRATION: JSONB FIX + CONSENT ENFORCEMENT
+-- R3 FINAL CORRECTIVE MIGRATION: CONSENT ENFORCEMENT & JSONB MERGE FIX
 -- Migration: 20261123000003_r3_jsonb_fix.sql
 --
--- Safe, forward-only, idempotent corrective migration for:
--- 1. JSONB type mismatch fix: confirmed_allergies is JSONB NOT NULL DEFAULT '[]'::jsonb
---    but previous migration used ARRAY(SELECT jsonb_array_elements_text(...)) which
---    produces text[] — corrected to store v_new_allergies JSONB directly.
--- 2. Server-side consent enforcement: adds p_patient_acknowledged_consent parameter
---    to submit_public_intake_assessment with dual-layer validation.
---
--- Prerequisites: 20261123000001 and 20261123000002 must be applied.
--- Safe to re-run: CREATE OR REPLACE on all functions.
--- Does NOT modify tables, drop columns, or delete data.
+-- Safe, forward-only, idempotent, transactional corrective migration:
+-- 1. Drops obsolete legacy 3-argument submit_public_intake_assessment(TEXT, JSONB, TEXT)
+--    to prevent any anonymous caller from bypassing patient consent verification.
+-- 2. Enforces single, unambiguous 4-argument submit_public_intake_assessment signature
+--    with NO defaults on consent, strictly requiring p_patient_acknowledged_consent = TRUE.
+-- 3. Corrects confirmed_allergies update in reconcile_intake_submission_atomic to
+--    store v_new_allergies JSONB directly into JSONB column (fixes PostgreSQL text[] mismatch).
+-- 4. Revokes and grants exact, least-privilege RPC execution rights.
 -- =====================================================================
+
+BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ---------------------------------------------------------------------
--- 1. FIX: submit_public_intake_assessment — Add server-side consent check
---    and retain JSONB-safe allergies handling (responses are JSONB).
+-- 1. DROP OBSOLETE LEGACY 3-ARGUMENT RPC & OVERLOADS
+-- ---------------------------------------------------------------------
+-- Revoke all execute privileges on any legacy 3-argument function to eliminate consent bypass
+REVOKE ALL ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
+DROP FUNCTION IF EXISTS public.submit_public_intake_assessment(TEXT, JSONB, TEXT);
+
+-- Drop previous 4-argument function to remove obsolete default parameters
+DROP FUNCTION IF EXISTS public.submit_public_intake_assessment(TEXT, JSONB, TEXT, BOOLEAN);
+
+-- ---------------------------------------------------------------------
+-- 2. AUTHORITATIVE 4-ARGUMENT INTAKE SUBMISSION RPC (No defaults)
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.submit_public_intake_assessment(
     p_token TEXT,
     p_responses JSONB,
-    p_client_ip TEXT DEFAULT NULL,
-    p_patient_acknowledged_consent BOOLEAN DEFAULT FALSE
+    p_client_ip TEXT,
+    p_patient_acknowledged_consent BOOLEAN
 )
 RETURNS JSONB
 SECURITY DEFINER
@@ -42,10 +51,9 @@ BEGIN
         RAISE EXCEPTION 'Invalid Token: Token parameter is required.';
     END IF;
 
-    -- Server-side consent enforcement: reject if patient has not acknowledged consent.
-    -- Accepts consent either as dedicated parameter (p_patient_acknowledged_consent = true)
-    -- or embedded in p_responses as {"patient_acknowledged_consent": true}.
-    IF NOT p_patient_acknowledged_consent AND NOT COALESCE((p_responses->>'patient_acknowledged_consent')::boolean, false) THEN
+    -- Strict Server-Side Consent Enforcement:
+    -- Consent must be explicitly TRUE. NULL, FALSE, or omitted values are rejected immediately.
+    IF p_patient_acknowledged_consent IS NOT TRUE THEN
         RAISE EXCEPTION 'Consent Not Acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data.';
     END IF;
 
@@ -162,7 +170,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ---------------------------------------------------------------------
--- 2. FIX: reconcile_intake_submission_atomic — JSONB allergy merge fix
+-- 3. FIX: reconcile_intake_submission_atomic — JSONB allergy merge fix
 --    confirmed_allergies is JSONB NOT NULL DEFAULT '[]'.
 --    Store v_new_allergies directly (it is already JSONB), not as text[].
 -- ---------------------------------------------------------------------
@@ -497,36 +505,44 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ---------------------------------------------------------------------
--- 3. GRANT privileges for new function signature
+-- 4. STRICT PRIVILEGE BOUNDARIES
 -- ---------------------------------------------------------------------
+-- Ensure anon and authenticated can ONLY execute the authoritative 4-argument signature
 GRANT EXECUTE ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT, BOOLEAN) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reconcile_intake_submission_atomic(UUID, JSONB, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reconcile_intake_submission_atomic(UUID, UUID, UUID, JSONB, TEXT) TO authenticated;
 
 -- ---------------------------------------------------------------------
--- 4. VERIFY: Post-migration sanity checks (run these in Supabase SQL Editor)
--- ---------------------------------------------------------------------
--- To verify after applying:
--- SELECT pg_typeof(confirmed_allergies) FROM patients LIMIT 1;
--- Should return: jsonb
---
--- SELECT proname, pg_get_function_arguments(oid) 
--- FROM pg_proc WHERE proname = 'submit_public_intake_assessment';
--- Should list 4-argument version with p_patient_acknowledged_consent boolean
---
--- SELECT proname, pg_get_function_arguments(oid)
--- FROM pg_proc WHERE proname = 'reconcile_intake_submission_atomic';
--- Should list both overloads
-
--- ---------------------------------------------------------------------
--- Record migration
+-- 5. RECORD MIGRATION
 -- ---------------------------------------------------------------------
 INSERT INTO public.schema_migrations (version, description, applied_at)
 VALUES (
     '20261123000003',
-    'R3 corrective: JSONB allergy fix (confirmed_allergies is JSONB not text[]), server-side consent enforcement in submit_public_intake_assessment',
+    'R3 final corrective: drop legacy 3-arg intake RPC to eliminate consent bypass, enforce authoritative 4-arg submit_public_intake_assessment without defaults, and verify JSONB allergy storage',
     timezone('utc'::text, now())
 )
 ON CONFLICT (version) DO UPDATE SET
     description = EXCLUDED.description,
     applied_at = EXCLUDED.applied_at;
+
+COMMIT;
+
+-- ---------------------------------------------------------------------
+-- 6. POST-MIGRATION VERIFICATION QUERIES
+-- ---------------------------------------------------------------------
+-- Run in Supabase SQL Editor to verify clean state:
+--
+-- 1. Verify ONLY ONE submit_public_intake_assessment signature exists (must return exactly 1 row with 4 arguments):
+-- SELECT proname, pg_get_function_arguments(oid)
+-- FROM pg_proc WHERE proname = 'submit_public_intake_assessment';
+-- Expected:
+-- submit_public_intake_assessment | p_token text, p_responses jsonb, p_client_ip text, p_patient_acknowledged_consent boolean
+--
+-- 2. Verify confirmed_allergies column is jsonb:
+-- SELECT table_name, column_name, data_type
+-- FROM information_schema.columns
+-- WHERE table_name = 'patients' AND column_name = 'confirmed_allergies';
+-- Expected: jsonb
+--
+-- 3. Verify schema migration recorded:
+-- SELECT version, description, applied_at FROM public.schema_migrations WHERE version = '20261123000003';

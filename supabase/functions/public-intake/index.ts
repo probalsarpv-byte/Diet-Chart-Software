@@ -81,7 +81,8 @@ serve(async (req: Request) => {
       }
 
       // Server-side consent enforcement: reject submission if patient has not explicitly acknowledged consent
-      if (!patient_acknowledged_consent) {
+      const hasConsent = Boolean(patient_acknowledged_consent || responses?.patient_acknowledged_consent);
+      if (!hasConsent) {
         return new Response(
           JSON.stringify({ error: "Consent not acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -471,11 +471,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Revoke and drop any legacy 3-argument signature to prevent consent bypass
+REVOKE ALL ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
+DROP FUNCTION IF EXISTS public.submit_public_intake_assessment(TEXT, JSONB, TEXT);
+DROP FUNCTION IF EXISTS public.submit_public_intake_assessment(TEXT, JSONB, TEXT, BOOLEAN);
+
 CREATE OR REPLACE FUNCTION public.submit_public_intake_assessment(
     p_token TEXT,
     p_responses JSONB,
-    p_client_ip TEXT DEFAULT NULL,
-    p_patient_acknowledged_consent BOOLEAN DEFAULT FALSE
+    p_client_ip TEXT,
+    p_patient_acknowledged_consent BOOLEAN
 )
 RETURNS JSONB
 SECURITY DEFINER
@@ -492,10 +497,9 @@ BEGIN
         RAISE EXCEPTION 'Invalid Token: Token parameter is required.';
     END IF;
 
-    -- Server-side consent enforcement: reject if patient has not acknowledged consent.
-    -- Accepts consent either as a dedicated parameter (from Edge Function layer)
-    -- or embedded in p_responses as 'patient_acknowledged_consent' (from direct RPC calls).
-    IF NOT p_patient_acknowledged_consent AND NOT COALESCE((p_responses->>'patient_acknowledged_consent')::boolean, false) THEN
+    -- Strict Server-Side Consent Enforcement:
+    -- Consent must be explicitly TRUE. NULL, FALSE, or omitted values are rejected immediately.
+    IF p_patient_acknowledged_consent IS NOT TRUE THEN
         RAISE EXCEPTION 'Consent Not Acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data.';
     END IF;
 
@@ -1118,7 +1122,6 @@ GRANT EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(TEXT, TEXT, INTEG
 GRANT EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(UUID, TEXT, TEXT, UUID, TEXT, INTEGER, TEXT) TO authenticated;
 
 GRANT EXECUTE ON FUNCTION public.verify_public_intake_token(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT, BOOLEAN) TO anon, authenticated;
 
 -- ---------------------------------------------------------------------
