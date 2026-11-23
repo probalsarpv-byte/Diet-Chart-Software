@@ -20,8 +20,19 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- ---------------------------------------------------------------------
 -- 1. DROP OBSOLETE LEGACY 3-ARGUMENT RPC & OVERLOADS
 -- ---------------------------------------------------------------------
--- Revoke all execute privileges on any legacy 3-argument function to eliminate consent bypass
-REVOKE ALL ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
+-- Safely revoke execute privileges if the legacy 3-argument function exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_proc p 
+        JOIN pg_namespace n ON p.pronamespace = n.oid 
+        WHERE n.nspname = 'public' 
+          AND p.proname = 'submit_public_intake_assessment' 
+          AND p.pronargs = 3
+    ) THEN
+        EXECUTE 'REVOKE ALL ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) FROM PUBLIC, anon, authenticated;';
+    END IF;
+END $$;
 DROP FUNCTION IF EXISTS public.submit_public_intake_assessment(TEXT, JSONB, TEXT);
 
 -- Drop previous 4-argument function to remove obsolete default parameters
@@ -425,7 +436,6 @@ BEGIN
                 organization_id,
                 patient_id,
                 clinician_id,
-                clinician_name,
                 event_type,
                 entity_type,
                 entity_id,
@@ -435,11 +445,11 @@ BEGIN
                 v_clinician.organization_id,
                 v_patient.id,
                 v_clinician.id,
-                v_clinician.name,
                 'PLAN_INVALIDATED',
                 'nutrition_plan',
                 v_patient.id::text,
                 jsonb_build_object(
+                    'clinician_name', v_clinician.name,
                     'reason', array_to_string(v_invalidation_reasons, '; '),
                     'invalidated_plans_count', v_invalidated_count,
                     'review_id', v_review_id
@@ -453,7 +463,6 @@ BEGIN
         organization_id,
         patient_id,
         clinician_id,
-        clinician_name,
         event_type,
         entity_type,
         entity_id,
@@ -463,11 +472,11 @@ BEGIN
         v_clinician.organization_id,
         v_patient.id,
         v_clinician.id,
-        v_clinician.name,
         CASE WHEN v_review_status = 'rejected' THEN 'ASSESSMENT_SUBMISSION_REJECTED' ELSE 'ASSESSMENT_SUBMISSION_ACCEPTED' END,
         'assessment_review',
         v_review_id::text,
         jsonb_build_object(
+            'clinician_name', v_clinician.name,
             'submission_id', p_submission_id,
             'review_id', v_review_id,
             'review_status', v_review_status,

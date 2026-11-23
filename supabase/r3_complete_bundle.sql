@@ -24,6 +24,8 @@
 -- 14. Post-migration verification queries
 -- =====================================================================
 
+BEGIN;
+
 -- ---------------------------------------------------------------------
 -- PREFLIGHT VERIFICATION
 -- ---------------------------------------------------------------------
@@ -236,7 +238,6 @@ BEGIN
         organization_id,
         patient_id,
         clinician_id,
-        clinician_name,
         event_type,
         entity_type,
         entity_id,
@@ -246,11 +247,11 @@ BEGIN
         v_clinician.organization_id,
         v_patient.id,
         v_clinician.id,
-        v_clinician.name,
         'INTAKE_INVITATION_CREATED',
         'assessment_invitation',
         v_inv_id::text,
         jsonb_build_object(
+            'clinician_name', v_clinician.name,
             'invitation_id', v_inv_id,
             'token_hash_preview', substring(v_token_hash from 1 for 10),
             'expires_at', v_expires_at,
@@ -325,7 +326,6 @@ BEGIN
         organization_id,
         patient_id,
         clinician_id,
-        clinician_name,
         event_type,
         entity_type,
         entity_id,
@@ -335,11 +335,11 @@ BEGIN
         v_clinician.organization_id,
         v_inv.patient_id,
         v_clinician.id,
-        v_clinician.name,
         'INTAKE_INVITATION_REVOKED',
         'assessment_invitation',
         p_invitation_id::text,
         jsonb_build_object(
+            'clinician_name', v_clinician.name,
             'invitation_id', p_invitation_id,
             'token_hash_preview', substring(v_inv.token_hash from 1 for 10),
             'revoked_at', now()
@@ -471,8 +471,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Revoke and drop any legacy 3-argument signature to prevent consent bypass
-REVOKE ALL ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) FROM PUBLIC, anon, authenticated;
+-- Safely revoke and drop any legacy 3-argument signature to prevent consent bypass
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_proc p 
+        JOIN pg_namespace n ON p.pronamespace = n.oid 
+        WHERE n.nspname = 'public' 
+          AND p.proname = 'submit_public_intake_assessment' 
+          AND p.pronargs = 3
+    ) THEN
+        EXECUTE 'REVOKE ALL ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) FROM PUBLIC, anon, authenticated;';
+    END IF;
+END $$;
 DROP FUNCTION IF EXISTS public.submit_public_intake_assessment(TEXT, JSONB, TEXT);
 DROP FUNCTION IF EXISTS public.submit_public_intake_assessment(TEXT, JSONB, TEXT, BOOLEAN);
 
@@ -847,7 +858,6 @@ BEGIN
                 organization_id,
                 patient_id,
                 clinician_id,
-                clinician_name,
                 event_type,
                 entity_type,
                 entity_id,
@@ -857,11 +867,11 @@ BEGIN
                 v_clinician.organization_id,
                 v_patient.id,
                 v_clinician.id,
-                v_clinician.name,
                 'PLAN_INVALIDATED',
                 'nutrition_plan',
                 v_patient.id::text,
                 jsonb_build_object(
+                    'clinician_name', v_clinician.name,
                     'reason', array_to_string(v_invalidation_reasons, '; '),
                     'invalidated_plans_count', v_invalidated_count,
                     'review_id', v_review_id
@@ -875,7 +885,6 @@ BEGIN
         organization_id,
         patient_id,
         clinician_id,
-        clinician_name,
         event_type,
         entity_type,
         entity_id,
@@ -885,11 +894,11 @@ BEGIN
         v_clinician.organization_id,
         v_patient.id,
         v_clinician.id,
-        v_clinician.name,
         CASE WHEN v_review_status = 'rejected' THEN 'ASSESSMENT_SUBMISSION_REJECTED' ELSE 'ASSESSMENT_SUBMISSION_ACCEPTED' END,
         'assessment_review',
         v_review_id::text,
         jsonb_build_object(
+            'clinician_name', v_clinician.name,
             'submission_id', p_submission_id,
             'review_id', v_review_id,
             'review_status', v_review_status,
@@ -1032,7 +1041,6 @@ BEGIN
         organization_id,
         patient_id,
         clinician_id,
-        clinician_name,
         event_type,
         entity_type,
         entity_id,
@@ -1042,11 +1050,11 @@ BEGIN
         v_clinician.organization_id,
         v_patient.id,
         v_clinician.id,
-        v_clinician.name,
         'PLAN_APPROVED',
         'approval_record',
         v_approval_id::text,
         jsonb_build_object(
+            'clinician_name', v_clinician.name,
             'plan_id', v_plan.id,
             'client_plan_id', p_client_plan_id,
             'plan_version', p_plan_version,
@@ -1146,3 +1154,5 @@ VALUES (
 ON CONFLICT (version) DO UPDATE SET
     description = EXCLUDED.description,
     applied_at = EXCLUDED.applied_at;
+
+COMMIT;

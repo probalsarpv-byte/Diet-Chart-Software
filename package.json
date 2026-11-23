@@ -32,7 +32,7 @@
     "test:r2:security": "tsx test/r2_rls_security.test.ts && tsx test/r2_multi_org_security.test.ts",
     "test:r2:persistence": "tsx test/r2_persistence.test.ts",
     "test:r2:migration": "tsx test/r2_migration.test.ts",
-    "test:r3": "tsx test/r3_intake_workflow.test.ts && tsx test/r3_portal_security.test.ts && tsx test/r3_public_intake_rpc.test.ts",
+    "test:r3": "tsx test/r3_intake_workflow.test.ts && tsx test/r3_portal_security.test.ts && tsx test/r3_public_intake_rpc.test.ts && tsx test/r3_deployment_contract.test.ts",
     "test:r3:security": "tsx test/r3_portal_security.test.ts",
     "test:r3:browser": "tsx test/r3_browser_e2e.test.ts",
     "test:e2e": "tsx test/step01_browser_e2e.test.ts && tsx test/step02_browser_e2e.test.ts && tsx test/step03_browser_e2e.test.ts && tsx test/step04_browser_e2e.test.ts && tsx test/step05_browser_e2e.test.ts && tsx test/step06_real_structural_redesign_v3.test.ts && tsx test/r1_print_export_acceptance.test.ts && tsx test/r3_browser_e2e.test.ts",
