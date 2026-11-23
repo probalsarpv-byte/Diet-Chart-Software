@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ClinicianAuthProfile, isSupabaseConfigured, getSupabaseClient } from '@/lib/supabaseClient';
+import { ClinicianAuthProfile, isSupabaseConfigured, getSupabaseClient, fetchClinicianProfile } from '@/lib/supabaseClient';
 import { AuditEventPayload } from '@/repositories/types';
 
 interface ClinicianAuthModalProps {
@@ -62,25 +62,12 @@ export const ClinicianAuthModal: React.FC<ClinicianAuthModalProps> = ({
       if (error) throw error;
 
       if (data.user) {
-        // Query clinician profile from clinicians table
-        const { data: profileData, error: profileErr } = await client
-          .from('clinicians')
-          .select('*')
-          .eq('auth_user_id', data.user.id)
-          .maybeSingle();
+        // Query clinician profile strictly from clinicians table
+        const profile = await fetchClinicianProfile(data.user.id);
 
-        if (profileErr) console.warn('Could not fetch clinician profile:', profileErr);
-
-        const profile: ClinicianAuthProfile = {
-          id: profileData?.id || data.user.id,
-          auth_user_id: data.user.id,
-          organization_id: profileData?.organization_id || 'a0000000-0000-0000-0000-000000000001',
-          name: profileData?.name || data.user.email || 'Clinician',
-          email: data.user.email || '',
-          role: (profileData?.role as any) || 'TREATING_NUTRITIONIST',
-          license_number: profileData?.license_number,
-          is_active: true
-        };
+        if (!profile) {
+          throw new Error('Account unlinked: No active clinician profile found in database for this authenticated account. Please contact your Clinical Director.');
+        }
 
         onAuthSuccess(profile);
         onClose();

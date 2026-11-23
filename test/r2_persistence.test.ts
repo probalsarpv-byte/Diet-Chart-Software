@@ -170,7 +170,7 @@ console.log('================================================================\n'
   // -------------------------------------------------------------------
   console.log('\n--- 5. Supabase Practice Repository Unit Assertions ---');
   const mockTableData: Record<string, any[]> = {
-    patients: [{ client_id: 'pt_mock', name: 'Mock Pt', age: 30, gender: 'male', height_cm: 170, weight_kg: 70, organization_id: 'org_mock_01' }],
+    patients: [{ id: 'pt_mock', client_id: 'pt_mock', name: 'Mock Pt', age: 30, gender: 'male', height_cm: 170, weight_kg: 70, organization_id: 'org_mock_01' }],
     visits: [{ client_visit_id: 'vis_mock_01', patient_id: 'pt_mock', visit_number: 1, visit_date: '2026-11-22', visit_type: 'initial_assessment', status: 'completed' }],
     nutrition_plans: [{ client_plan_id: 'plan_mock_01', patient_id: 'pt_mock', visit_id: 'vis_mock_01', version: 1, status: 'draft', is_approved: false }],
     approval_records: [],

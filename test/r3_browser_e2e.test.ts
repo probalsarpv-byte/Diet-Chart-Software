@@ -216,6 +216,27 @@ async function runBrowserE2E() {
       );
     }
 
+    // -------------------------------------------------------------------------
+    // Scenario 4: Dedicated /login route verification
+    // -------------------------------------------------------------------------
+    console.log('\n--- 4. Dedicated Clinician Login Route ---');
+    await page.goto(`${BASE_URL}login/`, { waitUntil: 'networkidle' });
+
+    const loginContent = await page.textContent('body');
+    assert(
+      loginContent?.includes('Clinician Authentication') || loginContent?.includes('ক্লিনিশিয়ান লগইন'),
+      '4. /login renders dedicated Clinician Authentication portal'
+    );
+
+    const emailInput = await page.$('input[type="email"]');
+    assert(emailInput !== null, '4. Login page contains email input field');
+
+    const passwordInput = await page.$('input[type="password"]');
+    assert(passwordInput !== null, '4. Login page contains password input field');
+
+    const signInBtn = await page.$('button[type="submit"]');
+    assert(signInBtn !== null, '4. Login page contains Sign In submit button');
+
     console.log('\n================================================================');
     console.log(`R3 BROWSER E2E RESULTS: ${passedAssertions}/${totalAssertions} PASSED (${failedAssertions} FAILED)`);
     console.log('================================================================\n');

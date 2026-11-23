@@ -84,7 +84,8 @@ import {
   ClinicalObservationsPayload
 } from '@/engine/snapshot/snapshotManager';
 import { generateEntityId } from '@/utils/idGenerator';
-import { ClinicianAuthProfile, isSupabaseConfigured, getSupabaseClient } from '@/lib/supabaseClient';
+import { ClinicianAuthProfile, isSupabaseConfigured, getSupabaseClient, fetchClinicianProfile } from '@/lib/supabaseClient';
+import { AuthState } from '@/lib/authTypes';
 import { getPracticeRepository, PracticeSyncStatus, AuditEventPayload, IPracticeRepository } from '@/repositories';
 import { ClinicianAuthModal } from '@/components/auth/ClinicianAuthModal';
 import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal';
@@ -248,6 +249,10 @@ export interface PracticeContextType {
   clearWeeklyPlanApprovalError: () => void;
 
   // R2 Backend & Multi-Tenancy Authentication
+  authState: AuthState;
+  setAuthState: (state: AuthState) => void;
+  authError: string | null;
+  signOut: () => Promise<void>;
   currentClinician: ClinicianAuthProfile | null;
   setCurrentClinician: (clinician: ClinicianAuthProfile | null) => void;
   syncStatus: PracticeSyncStatus;
@@ -356,7 +361,25 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const clearWeeklyPlanApprovalError = useCallback(() => setWeeklyPlanApprovalError(null), []);
 
   // R2 Backend & Multi-Tenancy Authentication State
-  const [currentClinician, setCurrentClinician] = useState<ClinicianAuthProfile | null>(null);
+  const [authState, setAuthState] = useState<AuthState>(() => 
+    isSupabaseConfigured() ? 'INITIALIZING' : 'AUTHORIZED'
+  );
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [currentClinician, setCurrentClinician] = useState<ClinicianAuthProfile | null>(() => {
+    if (!isSupabaseConfigured()) {
+      return {
+        id: 'c0000000-0000-0000-0000-000000000002',
+        auth_user_id: 'u0000000-0000-0000-0000-000000000002',
+        organization_id: 'a0000000-0000-0000-0000-000000000001',
+        name: 'Dr. Tariqul Islam, MD, PhD, CNS',
+        email: 'clinical.director@shuddho.clinic',
+        role: 'CLINICAL_DIRECTOR',
+        license_number: 'BMDC-A-67123',
+        is_active: true
+      };
+    }
+    return null;
+  });
   const [syncStatus, setSyncStatus] = useState<PracticeSyncStatus>(() => getPracticeRepository().getSyncStatus());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
@@ -367,19 +390,45 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isReconciliationModalOpen, setIsReconciliationModalOpen] = useState(false);
   const [stagedSubmissionsCount, setStagedSubmissionsCount] = useState(0);
 
-  const repository = useMemo(() => getPracticeRepository(), [syncStatus.state]);
+  const repository = useMemo(() => {
+    return getPracticeRepository(false, currentClinician?.organization_id);
+  }, [currentClinician?.organization_id, syncStatus.state]);
 
   const clinicianUser: ClinicianAuthProfile = useMemo(() => {
-    return currentClinician || {
-      id: 'clin_lead_01',
-      auth_user_id: 'local_lead_user',
-      organization_id: 'org_main',
-      email: 'lead.nutritionist@shuddho.clinic',
-      name: 'Treating Nutritionist',
-      role: 'TREATING_NUTRITIONIST',
-      is_active: true,
+    if (currentClinician) return currentClinician;
+    if (!isSupabaseConfigured()) {
+      return {
+        id: 'c0000000-0000-0000-0000-000000000002',
+        auth_user_id: 'u0000000-0000-0000-0000-000000000002',
+        organization_id: 'a0000000-0000-0000-0000-000000000001',
+        name: 'Dr. Tariqul Islam, MD, PhD, CNS',
+        email: 'clinical.director@shuddho.clinic',
+        role: 'CLINICAL_DIRECTOR',
+        license_number: 'BMDC-A-67123',
+        is_active: true
+      };
+    }
+    return {
+      id: '',
+      auth_user_id: '',
+      organization_id: '',
+      name: 'Unauthenticated Clinician',
+      email: '',
+      role: 'ASSISTANT_DIETITIAN',
+      is_active: false
     };
   }, [currentClinician]);
+
+  const signOut = useCallback(async () => {
+    const client = getSupabaseClient();
+    if (client) {
+      await client.auth.signOut();
+    }
+    setCurrentClinician(null);
+    setAuthState('SIGNED_OUT');
+    setAuthError(null);
+    setPatient(createInitialSeedPatient());
+  }, []);
 
   const refreshStagedSubmissionsCount = useCallback(async () => {
     if (!patient?.id) {
@@ -404,57 +453,73 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Restore Supabase session on client-side mount
   useEffect(() => {
-    if (typeof window === 'undefined' || !isSupabaseConfigured()) return;
-    const client = getSupabaseClient();
-    if (!client) return;
+    if (typeof window === 'undefined') return;
+    if (!isSupabaseConfigured()) {
+      setAuthState('AUTHORIZED');
+      return;
+    }
 
-    client.auth.getSession().then(({ data }) => {
-      if (data?.session?.user) {
-        const u = data.session.user;
-        client
-          .from('clinicians')
-          .select('*')
-          .eq('auth_user_id', u.id)
-          .maybeSingle()
-          .then(({ data: profileData }) => {
-            setCurrentClinician({
-              id: profileData?.id || u.id,
-              auth_user_id: u.id,
-              organization_id: profileData?.organization_id || 'a0000000-0000-0000-0000-000000000001',
-              name: profileData?.name || u.email || 'Clinician',
-              email: u.email || '',
-              role: (profileData?.role as any) || 'TREATING_NUTRITIONIST',
-              license_number: profileData?.license_number,
-              is_active: true
-            });
-            refreshSyncStatus();
-          });
+    const client = getSupabaseClient();
+    if (!client) {
+      setAuthState('ERROR');
+      setAuthError('Supabase client failed to initialize');
+      return;
+    }
+
+    setAuthState('INITIALIZING');
+    client.auth.getSession().then(async ({ data: { session }, error: sessionError }) => {
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        setAuthState('ERROR');
+        setAuthError(sessionError.message);
+        return;
       }
+
+      if (!session?.user) {
+        setCurrentClinician(null);
+        setAuthState('SIGNED_OUT');
+        return;
+      }
+
+      setAuthState('PROFILE_LOADING');
+      const profile = await fetchClinicianProfile(session.user.id);
+      if (!profile) {
+        setCurrentClinician(null);
+        setAuthState('UNAUTHORIZED');
+        setAuthError('Account unlinked: No active clinician profile found in database.');
+        return;
+      }
+
+      setCurrentClinician(profile);
+      setAuthState('AUTHORIZED');
+      setAuthError(null);
+      refreshSyncStatus();
+    }).catch((err) => {
+      console.error('Auth initialization error:', err);
+      setAuthState('ERROR');
+      setAuthError(err?.message || 'Authentication error');
     });
 
-    const { data: authListener } = client.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const u = session.user;
-        client
-          .from('clinicians')
-          .select('*')
-          .eq('auth_user_id', u.id)
-          .maybeSingle()
-          .then(({ data: profileData }) => {
-            setCurrentClinician({
-              id: profileData?.id || u.id,
-              auth_user_id: u.id,
-              organization_id: profileData?.organization_id || 'a0000000-0000-0000-0000-000000000001',
-              name: profileData?.name || u.email || 'Clinician',
-              email: u.email || '',
-              role: (profileData?.role as any) || 'TREATING_NUTRITIONIST',
-              license_number: profileData?.license_number,
-              is_active: true
-            });
-            refreshSyncStatus();
-          });
-      } else {
+    const { data: authListener } = client.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT' || !session?.user) {
         setCurrentClinician(null);
+        setAuthState('SIGNED_OUT');
+        refreshSyncStatus();
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        setAuthState('PROFILE_LOADING');
+        const profile = await fetchClinicianProfile(session.user.id);
+        if (!profile) {
+          setCurrentClinician(null);
+          setAuthState('UNAUTHORIZED');
+          setAuthError('Account unlinked: No active clinician profile found in database.');
+        } else {
+          setCurrentClinician(profile);
+          setAuthState('AUTHORIZED');
+          setAuthError(null);
+        }
         refreshSyncStatus();
       }
     });
@@ -3700,6 +3765,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         approveWeeklyPlan,
         weeklyPlanApprovalError,
         clearWeeklyPlanApprovalError,
+        authState,
+        setAuthState,
+        authError,
+        signOut,
         currentClinician,
         setCurrentClinician,
         syncStatus,
@@ -3727,16 +3796,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         currentClinician={currentClinician}
         onAuthSuccess={(clinician) => {
           setCurrentClinician(clinician);
+          setAuthState('AUTHORIZED');
           refreshSyncStatus();
         }}
-        onLogout={async () => {
-          const client = getSupabaseClient();
-          if (client) {
-            await client.auth.signOut();
-          }
-          setCurrentClinician(null);
-          refreshSyncStatus();
-        }}
+        onLogout={signOut}
       />
       <AuditHistoryModal
         isOpen={isAuditModalOpen}

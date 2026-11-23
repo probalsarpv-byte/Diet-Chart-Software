@@ -11,12 +11,32 @@ import {
   AssessmentInvitation,
   AssessmentSubmission,
   AssessmentReview,
-  ReconciliationDecision
+  ReconciliationDecision,
+  PublicIntakeVerificationResult
 } from './types';
 import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
+
+function generateSecureToken(prefix: string = 'sh_inv_'): string {
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    try {
+      const nodeCrypto = require('crypto');
+      const buf = nodeCrypto.randomBytes(16);
+      bytes.set(buf);
+    } catch {
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = Math.floor(Math.random() * 256);
+      }
+    }
+  }
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return `${prefix}${hex}`;
+}
 
 const STORAGE_KEYS = {
   PATIENTS: 'shuddho_saved_patients',
@@ -195,6 +215,9 @@ export class LocalDemoRepository implements IPracticeRepository {
     if (clinician.role === 'ASSISTANT_DIETITIAN') {
       throw new Error('Approval forbidden: Assistant Dietitians cannot approve clinical plans.');
     }
+    if (!clinician.license_number || !clinician.license_number.trim()) {
+      throw new Error('Validation Failed: Professional license number is required for formal sign-off.');
+    }
 
     const approved = approveWeeklyDietPlan(
       plan,
@@ -292,9 +315,9 @@ export class LocalDemoRepository implements IPracticeRepository {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
-    const token = 'sh_inv_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    const token = generateSecureToken('sh_inv_');
     const newInvitation: AssessmentInvitation = {
-      id: `inv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: generateSecureToken('inv_'),
       organization_id: clinician.organization_id || 'org_main',
       patient_id: patientId,
       invitation_token: token,
@@ -574,6 +597,53 @@ export class LocalDemoRepository implements IPracticeRepository {
     } catch {
       return [];
     }
+  }
+
+  async verifyPublicIntakeToken(token: string): Promise<PublicIntakeVerificationResult> {
+    if (!token || !token.trim()) {
+      return { valid: false, reason: 'missing' };
+    }
+    const invitations = this.getStoredInvitations();
+    const inv = invitations.find(i => i.invitation_token === token || (i as any).token === token);
+    if (!inv) {
+      return { valid: false, reason: 'invalid' };
+    }
+    if (inv.status === 'revoked') {
+      return { valid: false, reason: 'revoked' };
+    }
+    if (inv.status === 'completed') {
+      return { valid: false, reason: 'completed' };
+    }
+    if (new Date(inv.expires_at) < new Date()) {
+      return { valid: false, reason: 'expired' };
+    }
+
+    const patient = await this.getPatientById(inv.patient_id);
+    return {
+      valid: true,
+      invitation_id: inv.id,
+      expires_at: inv.expires_at,
+      status: inv.status,
+      patient_display_name: patient?.name || 'Patient',
+      initial_age: patient?.age || 35,
+      initial_gender: patient?.gender || 'female'
+    };
+  }
+
+  async submitPublicIntakeAssessment(
+    token: string,
+    responses: Record<string, any>
+  ): Promise<{ success: boolean; submission_id: string; submitted_at: string }> {
+    const verification = await this.verifyPublicIntakeToken(token);
+    if (!verification.valid) {
+      throw new Error(`Cannot submit assessment: invitation is ${verification.reason}`);
+    }
+    const submission = await this.submitAssessment(token, responses);
+    return {
+      success: true,
+      submission_id: submission.id,
+      submitted_at: submission.submitted_at
+    };
   }
 
   getSyncStatus(): PracticeSyncStatus {

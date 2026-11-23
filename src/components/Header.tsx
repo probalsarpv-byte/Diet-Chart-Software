@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePractice } from '@/context/PracticeContext';
 import { 
@@ -19,9 +19,13 @@ import {
   Flame,
   Menu,
   Compass,
-  GitCompare
+  GitCompare,
+  LogIn,
+  LogOut,
+  ChevronDown
 } from 'lucide-react';
 import { CLINICAL_PHASES } from '@/engine/phaseProgression';
+import { isSupabaseConfigured } from '@/lib/supabaseClient';
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -41,6 +45,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     activeTab,
     setActiveTab,
     currentClinician,
+    authState,
+    signOut,
     setIsAuthModalOpen,
     setIsAuditModalOpen,
     setIsMigrationModalOpen,
@@ -49,8 +55,11 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     syncStatus
   } = usePractice();
 
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
   const phaseInfo = CLINICAL_PHASES[patient.current_phase];
   const bn = language === 'bn';
+  const isCloud = isSupabaseConfigured();
 
   const tabTitles: Record<string, { en: string; bn: string }> = {
     dashboard: { en: 'Practice Overview & Tasks', bn: 'ক্লিনিক্যাল প্র্যাকটিস ওভারভিউ' },
@@ -165,27 +174,109 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
             )}
           </div>
 
-          {/* Clinician Authentication Status Pill */}
-          <button
-            onClick={() => setIsAuthModalOpen(true)}
-            data-testid="header-btn-auth"
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all hover:scale-[1.02] ${
-              currentClinician
-                ? 'bg-teal-950/60 border-teal-500/40 text-teal-300'
-                : 'bg-card border-border hover:bg-secondary text-muted-foreground'
-            }`}
-            title={currentClinician ? `Clinician: ${currentClinician.name} (${currentClinician.role})` : 'Clinician Authentication / Demo Mode'}
-          >
-            <UserCheck className={`h-3.5 w-3.5 ${currentClinician ? 'text-teal-400' : 'text-muted-foreground'}`} />
-            <span className="max-w-[100px] sm:max-w-[140px] truncate">
-              {currentClinician ? currentClinician.name : (bn ? 'ডেমো মোড' : 'Demo Mode')}
-            </span>
-            {currentClinician && (
-              <span className="text-[10px] px-1 py-0.2 rounded bg-teal-800/80 text-teal-200 hidden md:inline">
-                {currentClinician.role === 'CLINICAL_DIRECTOR' ? 'DIR' : currentClinician.role === 'TREATING_NUTRITIONIST' ? 'CNS' : 'ASST'}
-              </span>
-            )}
-          </button>
+          {/* Clinician Authentication Profile Dropdown / Login Gate */}
+          {currentClinician ? (
+            <div className="relative">
+              <button
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                data-testid="header-btn-auth"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border bg-teal-950/60 border-teal-500/40 text-teal-300 transition-all hover:scale-[1.02]"
+                title={`Clinician: ${currentClinician.name} (${currentClinician.role})`}
+              >
+                <UserCheck className="h-3.5 w-3.5 text-teal-400" />
+                <span className="max-w-[100px] sm:max-w-[140px] truncate">
+                  {currentClinician.name}
+                </span>
+                <span className={`text-[10px] px-1 py-0.2 rounded font-bold ${
+                  currentClinician.role === 'CLINICAL_DIRECTOR' 
+                    ? 'bg-purple-800/80 text-purple-200' 
+                    : currentClinician.role === 'TREATING_NUTRITIONIST'
+                    ? 'bg-emerald-800/80 text-emerald-200'
+                    : 'bg-amber-800/80 text-amber-200'
+                }`}>
+                  {currentClinician.role === 'CLINICAL_DIRECTOR' ? 'DIR' : currentClinician.role === 'TREATING_NUTRITIONIST' ? 'CNS' : 'ASST'}
+                </span>
+                <ChevronDown className="h-3 w-3 text-teal-400 opacity-70" />
+              </button>
+
+              {isProfileMenuOpen && (
+                <div 
+                  className="absolute right-0 top-full mt-1.5 w-64 bg-card border border-border rounded-2xl shadow-2xl p-2.5 z-50 animate-in fade-in slide-in-from-top-1"
+                  onMouseLeave={() => setIsProfileMenuOpen(false)}
+                >
+                  <div className="p-2 border-b border-border/60 mb-2">
+                    <p className="text-xs font-bold text-foreground truncate">{currentClinician.name}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{currentClinician.email}</p>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="text-[10px] font-semibold text-primary">
+                        {currentClinician.role.replace('_', ' ')}
+                      </span>
+                      {currentClinician.license_number && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          • {currentClinician.license_number}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        setIsAuditModalOpen(true);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-secondary flex items-center gap-2 text-foreground transition-colors"
+                    >
+                      <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{bn ? 'ক্লিনিক্যাল অডিট লগ' : 'Clinical Audit Trail'}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-secondary flex items-center gap-2 text-foreground transition-colors"
+                    >
+                      <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{bn ? 'অ্যাকাউন্ট বিবরণী' : 'Account Details'}</span>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setIsProfileMenuOpen(false);
+                        await signOut();
+                      }}
+                      className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-destructive/10 flex items-center gap-2 text-destructive transition-colors border-t border-border/40 mt-1 pt-1.5"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      <span>{bn ? 'লগ আউট' : 'Sign Out'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <Link
+                href="/login"
+                data-testid="header-btn-login"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all hover:scale-[1.02]"
+                title="Sign In to Clinical Workspace"
+              >
+                <LogIn className="h-3.5 w-3.5" />
+                <span>{bn ? 'লগইন' : 'Sign In'}</span>
+              </Link>
+
+              {!isCloud && (
+                <button
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="px-2 py-1 rounded-lg text-[10px] font-semibold border border-border bg-card text-muted-foreground hover:bg-secondary"
+                  title="Simulate Clinician Roles (Demo Mode)"
+                >
+                  Demo
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Clinical Audit Log Trigger (U18) */}
           <button
@@ -280,4 +371,3 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     </header>
   );
 };
-

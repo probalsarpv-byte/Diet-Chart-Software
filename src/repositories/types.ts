@@ -97,6 +97,17 @@ export interface AssessmentReview {
   reviewed_at: string;
 }
 
+export interface PublicIntakeVerificationResult {
+  valid: boolean;
+  reason?: 'missing' | 'invalid' | 'revoked' | 'completed' | 'expired';
+  invitation_id?: string;
+  expires_at?: string;
+  status?: string;
+  patient_display_name?: string;
+  initial_age?: number;
+  initial_gender?: 'male' | 'female';
+}
+
 export interface IPracticeRepository {
   readonly isCloud: boolean;
   
@@ -139,6 +150,13 @@ export interface IPracticeRepository {
     decisions: Record<string, ReconciliationDecision>,
     notes?: string
   ): Promise<{ review: AssessmentReview; updatedPatient: PatientProfile }>;
+
+  // R3 Secure Public Intake Portal Operations (Security Definer RPC or Demo)
+  verifyPublicIntakeToken(token: string): Promise<PublicIntakeVerificationResult>;
+  submitPublicIntakeAssessment(
+    token: string,
+    responses: Record<string, any>
+  ): Promise<{ success: boolean; submission_id: string; submitted_at: string }>;
 
   // Audit Operations
   logAuditEvent(event: Omit<AuditEventPayload, 'id' | 'timestamp'>): Promise<void>;

@@ -2,6 +2,12 @@
  * SHUDDHO Clinical Functional Nutrition Platform
  * Supabase Practice Repository Implementation
  * Interfaces with PostgreSQL tables enforcing Multi-Tenancy and RLS policies.
+ * 
+ * Provides:
+ * - Robust UUID <-> Client ID bidirectional resolution & caching
+ * - Atomic stored procedure plan approvals (public.approve_nutrition_plan_atomic)
+ * - Cryptographically secure token generation (crypto.getRandomValues)
+ * - Security-Definer public intake verification & atomic submission RPCs
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -12,12 +18,32 @@ import {
   AssessmentInvitation,
   AssessmentSubmission,
   AssessmentReview,
-  ReconciliationDecision
+  ReconciliationDecision,
+  PublicIntakeVerificationResult
 } from './types';
 import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
-import { ClinicianAuthProfile, getSupabaseClient } from '@/lib/supabaseClient';
+import { ClinicianAuthProfile } from '@/lib/supabaseClient';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
+
+function generateSecureToken(prefix: string = 'sh_inv_'): string {
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    try {
+      const nodeCrypto = require('crypto');
+      const buf = nodeCrypto.randomBytes(16);
+      bytes.set(buf);
+    } catch {
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = Math.floor(Math.random() * 256);
+      }
+    }
+  }
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  return `${prefix}${hex}`;
+}
 
 export class SupabasePracticeRepository implements IPracticeRepository {
   public readonly isCloud = true;
@@ -30,9 +56,66 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     isCloudConnected: true
   };
 
+  // In-memory mapping cache for Client ID <-> PostgreSQL UUID
+  private patientClientToUuid = new Map<string, string>();
+  private patientUuidToClient = new Map<string, string>();
+
   constructor(client: SupabaseClient, organizationId: string = 'a0000000-0000-0000-0000-000000000001') {
     this.client = client;
     this.currentOrgId = organizationId;
+  }
+
+  public isUuid(val: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  }
+
+  public async resolvePatientUuid(clientOrUuid: string): Promise<string> {
+    if (!clientOrUuid) return clientOrUuid;
+    if (this.isUuid(clientOrUuid)) return clientOrUuid;
+    if (this.patientClientToUuid.has(clientOrUuid)) {
+      const cached = this.patientClientToUuid.get(clientOrUuid);
+      if (cached) return cached;
+    }
+    try {
+      const { data } = await this.client
+        .from('patients')
+        .select('id, client_id')
+        .eq('client_id', clientOrUuid)
+        .maybeSingle();
+
+      if (data?.id) {
+        this.patientClientToUuid.set(clientOrUuid, data.id);
+        this.patientUuidToClient.set(data.id, clientOrUuid);
+        return data.id;
+      }
+    } catch (err) {
+      console.warn(`Could not resolve patient UUID for client_id [${clientOrUuid}]:`, err);
+    }
+    return clientOrUuid;
+  }
+
+  public async resolvePatientClientId(uuidOrClient: string): Promise<string> {
+    if (!uuidOrClient) return uuidOrClient;
+    if (!this.isUuid(uuidOrClient)) return uuidOrClient;
+    if (this.patientUuidToClient.has(uuidOrClient)) {
+      return this.patientUuidToClient.get(uuidOrClient)!;
+    }
+    try {
+      const { data } = await this.client
+        .from('patients')
+        .select('id, client_id')
+        .eq('id', uuidOrClient)
+        .maybeSingle();
+
+      if (data?.client_id) {
+        this.patientUuidToClient.set(uuidOrClient, data.client_id);
+        this.patientClientToUuid.set(data.client_id, uuidOrClient);
+        return data.client_id;
+      }
+    } catch (err) {
+      console.warn(`Could not resolve client_id for patient UUID [${uuidOrClient}]:`, err);
+    }
+    return uuidOrClient;
   }
 
   private mapRowToPatient(row: any): PatientProfile {
@@ -84,7 +167,13 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       if (error) throw error;
       this.syncStatus.state = 'synced';
       this.syncStatus.lastSyncedAt = new Date().toISOString();
-      return (data || []).map(row => this.mapRowToPatient(row));
+      return (data || []).map(row => {
+        if (row.id && row.client_id) {
+          this.patientClientToUuid.set(row.client_id, row.id);
+          this.patientUuidToClient.set(row.id, row.client_id);
+        }
+        return this.mapRowToPatient(row);
+      });
     } catch (e: any) {
       this.syncStatus.state = 'error';
       this.syncStatus.errorMessage = e.message;
@@ -94,14 +183,23 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
   async getPatientById(patientId: string): Promise<PatientProfile | null> {
     try {
-      const { data, error } = await this.client
-        .from('patients')
-        .select('*')
-        .or(`client_id.eq.${patientId},id.eq.${patientId}`)
-        .maybeSingle();
+      let query = this.client.from('patients').select('*');
+      if (this.isUuid(patientId)) {
+        query = query.eq('id', patientId);
+      } else {
+        query = query.eq('client_id', patientId);
+      }
+      const { data, error } = await query.maybeSingle();
 
       if (error) throw error;
-      return data ? this.mapRowToPatient(data) : null;
+      if (data) {
+        if (data.id && data.client_id) {
+          this.patientClientToUuid.set(data.client_id, data.id);
+          this.patientUuidToClient.set(data.id, data.client_id);
+        }
+        return this.mapRowToPatient(data);
+      }
+      return null;
     } catch (e: any) {
       console.error('Failed to get patient by ID:', e);
       return null;
@@ -155,6 +253,11 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
       if (error) throw error;
 
+      if (data && data.id && data.client_id) {
+        this.patientClientToUuid.set(data.client_id, data.id);
+        this.patientUuidToClient.set(data.id, data.client_id);
+      }
+
       await this.logAuditEvent({
         organization_id: this.currentOrgId,
         patient_id: patient.id,
@@ -177,10 +280,13 @@ export class SupabasePracticeRepository implements IPracticeRepository {
   async deletePatient(patientId: string): Promise<boolean> {
     try {
       this.syncStatus.state = 'saving';
-      const { error } = await this.client
-        .from('patients')
-        .delete()
-        .or(`client_id.eq.${patientId},id.eq.${patientId}`);
+      let query = this.client.from('patients').delete();
+      if (this.isUuid(patientId)) {
+        query = query.eq('id', patientId);
+      } else {
+        query = query.eq('client_id', patientId);
+      }
+      const { error } = await query;
 
       if (error) throw error;
 
@@ -203,10 +309,11 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
   async getVisits(patientId: string): Promise<ClinicalVisit[]> {
     try {
+      const patientUuid = await this.resolvePatientUuid(patientId);
       const { data, error } = await this.client
         .from('visits')
         .select('*')
-        .eq('patient_id', patientId)
+        .eq('patient_id', patientUuid)
         .order('visit_number', { ascending: true });
 
       if (error) throw error;
@@ -229,10 +336,11 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
   async saveVisit(visit: ClinicalVisit): Promise<ClinicalVisit> {
     try {
+      const patientUuid = await this.resolvePatientUuid(visit.patient_id);
       const payload = {
         client_visit_id: visit.visit_id,
         organization_id: this.currentOrgId,
-        patient_id: visit.patient_id,
+        patient_id: patientUuid,
         visit_number: visit.visit_number || 1,
         visit_date: visit.visit_date,
         phase_number: 1,
@@ -268,10 +376,11 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
   async getNutritionPlan(patientId: string, visitId?: string): Promise<WeeklyDietPlan | null> {
     try {
+      const patientUuid = await this.resolvePatientUuid(patientId);
       let query = this.client
         .from('nutrition_plans')
         .select('*')
-        .eq('patient_id', patientId);
+        .eq('patient_id', patientUuid);
 
       if (visitId) {
         query = query.eq('visit_id', visitId);
@@ -287,7 +396,7 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
       return {
         plan_id: data.client_plan_id,
-        patient_id: data.patient_id,
+        patient_id: patientId,
         visit_id: data.visit_id,
         version: data.version,
         schema_version: 2,
@@ -313,10 +422,11 @@ export class SupabasePracticeRepository implements IPracticeRepository {
   async saveNutritionPlan(plan: WeeklyDietPlan): Promise<WeeklyDietPlan> {
     try {
       this.syncStatus.state = 'saving';
+      const patientUuid = await this.resolvePatientUuid(plan.patient_id);
       const payload = {
         client_plan_id: plan.plan_id,
         organization_id: this.currentOrgId,
-        patient_id: plan.patient_id,
+        patient_id: patientUuid,
         visit_id: plan.visit_id,
         version: plan.version,
         status: plan.status,
@@ -365,48 +475,34 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       throw new Error('Approval forbidden: Assistant Dietitians are not authorized to approve nutrition plans.');
     }
 
+    if (!clinician.license_number || !clinician.license_number.trim()) {
+      throw new Error('Validation Failed: Professional license number is required for formal sign-off.');
+    }
+
+    // 1. Save latest plan contents
+    await this.saveNutritionPlan(plan);
+
+    // 2. Execute authoritative atomic approval RPC
+    const { data: rpcResult, error: rpcErr } = await this.client.rpc('approve_nutrition_plan_atomic', {
+      p_organization_id: this.currentOrgId,
+      p_client_plan_id: plan.plan_id,
+      p_client_patient_id: plan.patient_id,
+      p_clinician_id: clinician.id,
+      p_license_number: clinician.license_number,
+      p_plan_version: plan.version,
+      p_notes: notes || null
+    });
+
+    if (rpcErr) {
+      console.error('Atomic plan approval RPC error:', rpcErr);
+      throw new Error(`Plan approval failed: ${rpcErr.message}`);
+    }
+
     const approvedPlan = approveWeeklyDietPlan(
       plan,
       clinician.name || clinician.email,
       notes
     );
-
-    // Save plan first
-    await this.saveNutritionPlan(approvedPlan);
-
-    // Record formal legal signoff in approval_records
-    const { error: approvalErr } = await this.client
-      .from('approval_records')
-      .insert({
-        organization_id: this.currentOrgId,
-        plan_id: approvedPlan.plan_id,
-        patient_id: approvedPlan.patient_id,
-        clinician_id: clinician.id,
-        clinician_name: clinician.name,
-        license_number: clinician.license_number || 'BMDC-VERIFIED',
-        plan_version: approvedPlan.version,
-        notes: notes || undefined
-      });
-
-    if (approvalErr) {
-      console.warn('Failed to insert into approval_records directly (RLS gate):', approvalErr);
-    }
-
-    await this.logAuditEvent({
-      organization_id: this.currentOrgId,
-      patient_id: approvedPlan.patient_id,
-      clinician_id: clinician.id,
-      clinician_name: clinician.name,
-      event_type: 'PLAN_APPROVED',
-      entity_type: 'approval_record',
-      entity_id: approvedPlan.plan_id,
-      payload_after: {
-        plan_version: approvedPlan.version,
-        clinician_name: clinician.name,
-        license: clinician.license_number,
-        notes
-      }
-    });
 
     return approvedPlan;
   }
@@ -423,10 +519,12 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
-    const token = 'sh_inv_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+    const token = generateSecureToken('sh_inv_');
+    const patientUuid = await this.resolvePatientUuid(patientId);
+
     const payload = {
       organization_id: this.currentOrgId,
-      patient_id: patientId,
+      patient_id: patientUuid,
       invitation_token: token,
       expires_at: expiresAt.toISOString(),
       status: 'pending',
@@ -465,7 +563,8 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       .order('created_at', { ascending: false });
 
     if (patientId) {
-      query = query.eq('patient_id', patientId);
+      const patientUuid = await this.resolvePatientUuid(patientId);
+      query = query.eq('patient_id', patientUuid);
     }
 
     const { data, error } = await query;
@@ -550,7 +649,8 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       .order('submitted_at', { ascending: false });
 
     if (patientId) {
-      query = query.eq('patient_id', patientId);
+      const patientUuid = await this.resolvePatientUuid(patientId);
+      query = query.eq('patient_id', patientUuid);
     }
 
     const { data, error } = await query;
@@ -698,6 +798,46 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     });
 
     return { review: reviewData, updatedPatient: savedPatient };
+  }
+
+  // -------------------------------------------------------------------
+  // R3 Secure Public Intake Operations (Security Definer RPC)
+  // -------------------------------------------------------------------
+
+  async verifyPublicIntakeToken(token: string): Promise<PublicIntakeVerificationResult> {
+    try {
+      const { data, error } = await this.client.rpc('verify_public_intake_token', {
+        p_token: token
+      });
+
+      if (error) {
+        console.error('RPC verify_public_intake_token error:', error);
+        return { valid: false, reason: 'invalid' };
+      }
+
+      return data as PublicIntakeVerificationResult;
+    } catch (err: any) {
+      console.error('Failed to verify public intake token:', err);
+      return { valid: false, reason: 'invalid' };
+    }
+  }
+
+  async submitPublicIntakeAssessment(
+    token: string,
+    responses: Record<string, any>
+  ): Promise<{ success: boolean; submission_id: string; submitted_at: string }> {
+    const { data, error } = await this.client.rpc('submit_public_intake_assessment', {
+      p_token: token,
+      p_responses: responses,
+      p_client_ip: null
+    });
+
+    if (error) {
+      console.error('RPC submit_public_intake_assessment error:', error);
+      throw new Error(error.message || 'Failed to submit intake assessment.');
+    }
+
+    return data;
   }
 
   async logAuditEvent(event: Omit<AuditEventPayload, 'id' | 'timestamp'>): Promise<void> {

@@ -11,26 +11,33 @@ import { SupabasePracticeRepository } from './SupabasePracticeRepository';
 import { isSupabaseConfigured, getSupabaseClient } from '@/lib/supabaseClient';
 
 let repositoryInstance: IPracticeRepository | null = null;
+let currentBoundOrgId: string | undefined = undefined;
 
-export function getPracticeRepository(forceDemo: boolean = false): IPracticeRepository {
+export function getPracticeRepository(forceDemo: boolean = false, organizationId?: string): IPracticeRepository {
   if (forceDemo) {
     return new LocalDemoRepository();
   }
 
-  if (!repositoryInstance) {
-    if (isSupabaseConfigured()) {
-      const client = getSupabaseClient();
-      if (client) {
-        repositoryInstance = new SupabasePracticeRepository(client);
-      } else {
-        repositoryInstance = new LocalDemoRepository();
+  if (isSupabaseConfigured()) {
+    const client = getSupabaseClient();
+    if (client) {
+      if (!repositoryInstance || (organizationId && organizationId !== currentBoundOrgId)) {
+        repositoryInstance = new SupabasePracticeRepository(client, organizationId);
+        currentBoundOrgId = organizationId;
       }
-    } else {
-      repositoryInstance = new LocalDemoRepository();
+      return repositoryInstance;
     }
   }
 
+  if (!repositoryInstance) {
+    repositoryInstance = new LocalDemoRepository();
+  }
   return repositoryInstance;
+}
+
+export function resetPracticeRepository(): void {
+  repositoryInstance = null;
+  currentBoundOrgId = undefined;
 }
 
 export * from './types';

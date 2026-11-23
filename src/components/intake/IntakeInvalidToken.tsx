@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { AlertCircle, ShieldAlert, ArrowLeft, RefreshCw, PhoneCall } from 'lucide-react';
 
 interface IntakeInvalidTokenProps {
-  reason?: 'missing' | 'expired' | 'revoked' | 'completed' | 'error';
+  reason?: 'missing' | 'expired' | 'revoked' | 'completed' | 'error' | 'invalid';
   errorMessage?: string;
   onRetry?: () => void;
 }
@@ -34,6 +34,10 @@ export const IntakeInvalidToken: React.FC<IntakeInvalidTokenProps> = ({
       en: 'Assessment Already Submitted',
       bn: 'অ্যাসেসমেন্ট ইতিমধ্যে জমা দেওয়া হয়েছে',
     },
+    invalid: {
+      en: 'Assessment Link Invalid',
+      bn: 'অ্যাসেসমেন্ট লিংকটি সঠিক নয়',
+    },
     error: {
       en: 'Unable to Load Assessment',
       bn: 'অ্যাসেসমেন্ট লোড করা যায়নি',
@@ -56,6 +60,10 @@ export const IntakeInvalidToken: React.FC<IntakeInvalidTokenProps> = ({
     completed: {
       en: 'Your responses have already been safely recorded and staged in your clinical dossier. Your nutritionist will review them during your consultation.',
       bn: 'আপনার তথ্যসমূহ নিরাপদে গ্রহণ করা হয়েছে এবং ক্লিনিক্যাল রেকর্ডে সংরক্ষিত আছে। আপনার অ্যাপয়েন্টমেন্টে পুষ্টিবিদ এটি পর্যালোচনা করবেন।',
+    },
+    invalid: {
+      en: 'The security token provided is invalid or has not been issued by the clinic. Please click the exact link provided or contact your clinic.',
+      bn: 'প্রদত্ত সিকিউরিটি টোকেনটি সঠিক নয়। অনুগ্রহ করে লিংকটি পুনরায় পরীক্ষা করুন বা ক্লিনিকের সাথে যোগাযোগ করুন।',
     },
     error: {
       en: errorMessage || 'An unexpected error occurred while verifying your intake session. Please check your internet connection and try again.',

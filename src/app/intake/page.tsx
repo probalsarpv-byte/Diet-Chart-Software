@@ -16,7 +16,7 @@ function IntakePageContent() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [invitationStatus, setInvitationStatus] = useState<
-    'missing' | 'expired' | 'revoked' | 'completed' | 'error' | 'ready' | 'submitted'
+    'missing' | 'invalid' | 'expired' | 'revoked' | 'completed' | 'error' | 'ready' | 'submitted'
   >('missing');
 
   const [invitation, setInvitation] = useState<AssessmentInvitation | null>(null);
@@ -37,50 +37,28 @@ function IntakePageContent() {
       setLoading(true);
       setErrorMsg(null);
       const repo = getPracticeRepository();
-      const inv = await repo.getAssessmentInvitationByToken(token);
+      const res = await repo.verifyPublicIntakeToken(token);
 
-      if (!inv) {
-        setInvitationStatus('missing');
+      if (!res.valid) {
+        setInvitationStatus((res.reason as any) || 'invalid');
         setLoading(false);
         return;
       }
 
-      setInvitation(inv);
+      const invObj: AssessmentInvitation = {
+        id: res.invitation_id || 'inv_active',
+        organization_id: '',
+        patient_id: '',
+        invitation_token: token,
+        expires_at: res.expires_at || new Date(Date.now() + 86400000).toISOString(),
+        status: (res.status as any) || 'pending',
+        created_at: new Date().toISOString()
+      };
 
-      // Check revocation
-      if (inv.status === 'revoked') {
-        setInvitationStatus('revoked');
-        setLoading(false);
-        return;
-      }
-
-      // Check expiration
-      const expiresAt = new Date(inv.expires_at).getTime();
-      if (expiresAt < Date.now()) {
-        setInvitationStatus('expired');
-        setLoading(false);
-        return;
-      }
-
-      // Check already completed
-      if (inv.status === 'completed') {
-        setInvitationStatus('completed');
-        setLoading(false);
-        return;
-      }
-
-      // Attempt to retrieve active patient name & basic demographics
-      try {
-        const patient = await repo.getPatientById(inv.patient_id);
-        if (patient) {
-          setPatientName(patient.name);
-          setInitialAge(patient.age);
-          setInitialGender(patient.gender);
-        }
-      } catch (err) {
-        // Demographics optional in public portal
-      }
-
+      setInvitation(invObj);
+      setPatientName(res.patient_display_name || 'Patient');
+      setInitialAge(res.initial_age || 35);
+      setInitialGender(res.initial_gender || 'female');
       setInvitationStatus('ready');
     } catch (err: any) {
       console.error('Error verifying intake token:', err);
@@ -101,8 +79,18 @@ function IntakePageContent() {
     try {
       setIsSubmitting(true);
       const repo = getPracticeRepository();
-      const submission = await repo.submitAssessment(token, responses);
-      setSubmittedRecord(submission);
+      const result = await repo.submitPublicIntakeAssessment(token, responses);
+
+      const subRecord: AssessmentSubmission = {
+        id: result.submission_id,
+        organization_id: '',
+        invitation_id: invitation?.id || '',
+        patient_id: '',
+        responses_json: responses,
+        submitted_at: result.submitted_at || new Date().toISOString()
+      };
+
+      setSubmittedRecord(subRecord);
       setInvitationStatus('submitted');
     } catch (err: any) {
       console.error('Error submitting assessment:', err);
