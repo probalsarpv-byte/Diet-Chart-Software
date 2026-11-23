@@ -92,6 +92,12 @@ import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal';
 import { DataMigrationWizard } from '@/components/migration/DataMigrationWizard';
 import { ClinicianInvitationModal } from '@/components/intake/ClinicianInvitationModal';
 import { IntakeReconciliationModal } from '@/components/intake/IntakeReconciliationModal';
+import { R4ProtocolStudioData } from '@/types/r4Protocol';
+import { 
+  generateAutomaticProtocolDraft, 
+  createManualProtocolTemplate, 
+  recalculateProtocolSafety 
+} from '@/engine/r4ProtocolStudioEngine';
 
 export function generateCollisionResistantId(prefix: string): string {
   return generateEntityId(prefix);
@@ -125,8 +131,16 @@ export interface PracticeContextType {
   setLanguage: (lang: 'bn' | 'en') => void;
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
-  activeTab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni';
-  setActiveTab: (tab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni') => void;
+  activeTab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio';
+  setActiveTab: (tab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio') => void;
+
+  r4Protocol: R4ProtocolStudioData | null;
+  isR4ProtocolDirty: boolean;
+  generateR4Draft: () => Promise<R4ProtocolStudioData>;
+  createManualR4Protocol: () => Promise<R4ProtocolStudioData>;
+  updateR4Protocol: (updated: R4ProtocolStudioData) => void;
+  saveR4Protocol: () => Promise<R4ProtocolStudioData | null>;
+  approveR4Protocol: (notes?: string) => Promise<R4ProtocolStudioData | null>;
 
   allFoods: FoodItem[];
   allMedicines: MedicineItem[];
@@ -343,7 +357,10 @@ function createInitialSeedPatient(): PatientProfile {
 export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio'>('dashboard');
+
+  const [r4Protocol, setR4Protocol] = useState<R4ProtocolStudioData | null>(null);
+  const [isR4ProtocolDirty, setIsR4ProtocolDirty] = useState<boolean>(false);
 
   const [patient, setPatient] = useState<PatientProfile>(createInitialSeedPatient);
   const [visits, setVisits] = useState<LongitudinalVisit[]>([]);
@@ -2044,6 +2061,91 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     return true;
   }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult, allFoods, savedPatients, currentClinician]);
+
+  // -------------------------------------------------------------------
+  // R4 Protocol Studio Orchestration & Lifecycle
+  // -------------------------------------------------------------------
+
+  const generateR4Draft = useCallback(async (): Promise<R4ProtocolStudioData> => {
+    const draft = generateAutomaticProtocolDraft(patient, currentClinician || undefined);
+    setR4Protocol(draft);
+    setIsR4ProtocolDirty(true);
+    try {
+      await getPracticeRepository().saveLifestylePlan(draft);
+      setIsR4ProtocolDirty(false);
+    } catch (e) {
+      console.warn('Failed to auto-save R4 draft:', e);
+    }
+    return draft;
+  }, [patient, currentClinician]);
+
+  const createManualR4Protocol = useCallback(async (): Promise<R4ProtocolStudioData> => {
+    const template = createManualProtocolTemplate(patient, currentClinician || undefined);
+    setR4Protocol(template);
+    setIsR4ProtocolDirty(true);
+    return template;
+  }, [patient, currentClinician]);
+
+  const updateR4Protocol = useCallback((updated: R4ProtocolStudioData) => {
+    setR4Protocol(updated);
+    setIsR4ProtocolDirty(true);
+  }, []);
+
+  const saveR4Protocol = useCallback(async (): Promise<R4ProtocolStudioData | null> => {
+    if (!r4Protocol) return null;
+    const saved = await getPracticeRepository().saveLifestylePlan(r4Protocol);
+    setR4Protocol(saved);
+    setIsR4ProtocolDirty(false);
+    return saved;
+  }, [r4Protocol]);
+
+  const approveR4Protocol = useCallback(async (notes?: string): Promise<R4ProtocolStudioData | null> => {
+    if (!r4Protocol) return null;
+    const activeClinician: ClinicianAuthProfile = currentClinician || {
+      id: 'clinician-default-director',
+      auth_user_id: 'auth-default-director',
+      organization_id: 'org-shuddho-default',
+      email: 'director@shuddho.clinic',
+      name: 'Clinical Director',
+      role: 'CLINICAL_DIRECTOR',
+      license_number: 'REG-BD-2026-NUTR',
+      is_active: true
+    };
+    const approved = await getPracticeRepository().approveLifestylePlan(r4Protocol, activeClinician, notes);
+    setR4Protocol(approved);
+    setIsR4ProtocolDirty(false);
+    return approved;
+  }, [r4Protocol, currentClinician]);
+
+  // Rehydrate or lazily initialize R4 protocol on patient/visit changes
+  useEffect(() => {
+    let isCancelled = false;
+    async function loadProtocol() {
+      try {
+        const repo = getPracticeRepository();
+        const existing = await repo.getLifestylePlan(patient.id, patient.current_visit_id);
+        if (!isCancelled) {
+          if (existing) {
+            setR4Protocol(existing);
+            setIsR4ProtocolDirty(false);
+          } else {
+            const autoDraft = generateAutomaticProtocolDraft(patient, currentClinician || undefined);
+            setR4Protocol(autoDraft);
+            setIsR4ProtocolDirty(false);
+            repo.saveLifestylePlan(autoDraft).catch(() => {});
+          }
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          const autoDraft = generateAutomaticProtocolDraft(patient, currentClinician || undefined);
+          setR4Protocol(autoDraft);
+          setIsR4ProtocolDirty(false);
+        }
+      }
+    }
+    loadProtocol();
+    return () => { isCancelled = true; };
+  }, [patient.id, patient.current_visit_id]);
 
   const updateMealItemRawGrams = useCallback((mealId: string, itemId: string, rawGrams: number) => {
     if (weeklyDietPlan) {
@@ -3787,7 +3889,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isReconciliationModalOpen,
         setIsReconciliationModalOpen,
         stagedSubmissionsCount,
-        refreshStagedSubmissionsCount
+        refreshStagedSubmissionsCount,
+        r4Protocol,
+        isR4ProtocolDirty,
+        generateR4Draft,
+        createManualR4Protocol,
+        updateR4Protocol,
+        saveR4Protocol,
+        approveR4Protocol
       }}
     >
       {children}

@@ -9,6 +9,7 @@ import type {
 } from './clinical';
 export * from './clinical';
 export * from './assessment';
+export * from './r4Protocol';
 
 export const CURRENT_SCHEMA_VERSION = 2;
 

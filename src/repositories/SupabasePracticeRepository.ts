@@ -23,6 +23,7 @@ import {
 } from './types';
 import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
+import { R4ProtocolStudioData } from '@/types/r4Protocol';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
 import { computeSha256, generateSecureIntakeToken } from '@/lib/hashUtils';
@@ -488,6 +489,169 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     );
 
     return approvedPlan;
+  }
+
+  // -------------------------------------------------------------------
+  // R4 Lifestyle & Protocol Studio Operations
+  // -------------------------------------------------------------------
+
+  async getLifestylePlan(patientId: string, visitId?: string): Promise<R4ProtocolStudioData | null> {
+    try {
+      const patientUuid = await this.resolvePatientUuid(patientId);
+      let query = this.client
+        .from('lifestyle_plans')
+        .select('*')
+        .eq('patient_id', patientUuid);
+
+      if (visitId) {
+        query = query.eq('visit_id', visitId);
+      }
+
+      const { data, error } = await query
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) return null;
+
+      return {
+        id: data.id,
+        patient_id: patientId,
+        visit_id: data.visit_id || undefined,
+        organization_id: data.organization_id || this.currentOrgId,
+        version: data.version || 1,
+        status: data.status || 'draft',
+        is_approved: Boolean(data.is_approved),
+        approved_by: data.approved_by || undefined,
+        approved_at: data.approved_at || undefined,
+        approval_notes: data.approval_notes || undefined,
+        mode: (data.mode as any) || 'automatic_generated',
+        lifestyle: data.lifestyle_protocol || { recommendations: [], overall_focus_en: '', overall_focus_bn: '' },
+        exercise: data.movement_protocol || { items: [], overall_safety_status: 'SAFE', clinical_contraindications: [], risk_factors_evaluated: [], cardiorespiratory_clearance_status: 'cleared_standard', weekly_aerobic_minutes_target: 150, weekly_resistance_sessions_target: 2 },
+        sleep: data.sleep_protocol || { wake_time: '06:30', bed_time: '23:00', target_sleep_hours: 7.5, sleep_regularity_goal_en: '', sleep_regularity_goal_bn: '', daylight_exposure: { scheduled_time: '07:00', duration_minutes: 20, instructions_en: '', instructions_bn: '' }, evening_light: { cutoff_time: '21:30', blue_blockers_recommended: false, screen_curfew_hours_before_bed: 1.5, instructions_en: '', instructions_bn: '' }, caffeine_curfew_time: '14:00', last_meal_curfew_time: '20:00', exercise_curfew_time: '20:00', is_shift_worker: false, shift_schedule_type: 'regular', relaxation_routine_en: '', relaxation_routine_bn: '' },
+        hydration: data.hydration_protocol || { baseline_fluid_target_ml: 2200, is_restricted: false, hydration_events: [], total_scheduled_ml: 0, timing_guidance_en: '', timing_guidance_bn: '' },
+        supplements: data.supplement_protocol || [],
+        chronotherapy_timeline: data.chronotherapy_schedule || [],
+        safety_evaluation: data.safety_evaluation || { overall_status: 'SAFE', can_approve: true, hard_stops: [], reviews_required: [], cautions: [], nutrient_overlaps: [], timing_conflicts: [], evaluated_at: new Date().toISOString() },
+        created_at: data.created_at,
+        updated_at: data.updated_at
+      };
+    } catch (e) {
+      console.error('Failed to get lifestyle protocol from Supabase:', e);
+      return null;
+    }
+  }
+
+  async saveLifestylePlan(protocol: R4ProtocolStudioData): Promise<R4ProtocolStudioData> {
+    try {
+      this.syncStatus.state = 'saving';
+      const patientUuid = await this.resolvePatientUuid(protocol.patient_id);
+      const payload: any = {
+        organization_id: this.currentOrgId,
+        patient_id: patientUuid,
+        visit_id: protocol.visit_id || null,
+        version: protocol.version || 1,
+        mode: protocol.mode || 'automatic_generated',
+        status: protocol.status || 'draft',
+        is_approved: Boolean(protocol.is_approved),
+        approved_by: protocol.approved_by || null,
+        approved_at: protocol.approved_at || null,
+        approval_notes: protocol.approval_notes || null,
+        lifestyle_protocol: protocol.lifestyle || {},
+        movement_protocol: protocol.exercise || {},
+        sleep_protocol: protocol.sleep || {},
+        hydration_protocol: protocol.hydration || {},
+        supplement_protocol: protocol.supplements || [],
+        chronotherapy_schedule: protocol.chronotherapy_timeline || [],
+        safety_evaluation: protocol.safety_evaluation || {},
+        updated_at: new Date().toISOString()
+      };
+
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(protocol.id);
+      if (isUuid) {
+        payload.id = protocol.id;
+      }
+
+      const { data, error } = await this.client
+        .from('lifestyle_plans')
+        .upsert(payload)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await this.logAuditEvent({
+        organization_id: this.currentOrgId,
+        patient_id: protocol.patient_id,
+        event_type: 'PLAN_UPDATED',
+        entity_type: 'lifestyle_plan',
+        entity_id: data?.id || protocol.id,
+        payload_after: {
+          version: protocol.version,
+          status: protocol.status,
+          safety: protocol.safety_evaluation?.overall_status,
+          can_approve: protocol.safety_evaluation?.can_approve
+        }
+      });
+
+      this.syncStatus.state = 'synced';
+      return {
+        ...protocol,
+        id: data?.id || protocol.id
+      };
+    } catch (e: any) {
+      this.syncStatus.state = 'error';
+      this.syncStatus.errorMessage = e.message;
+      throw e;
+    }
+  }
+
+  async approveLifestylePlan(
+    protocol: R4ProtocolStudioData,
+    clinician: ClinicianAuthProfile,
+    notes?: string
+  ): Promise<R4ProtocolStudioData> {
+    if (clinician.role === 'ASSISTANT_DIETITIAN') {
+      throw new Error('Approval forbidden: Assistant Dietitians cannot approve clinical protocols.');
+    }
+    if (!clinician.license_number || !clinician.license_number.trim()) {
+      throw new Error('Validation Failed: Professional license number is required for formal sign-off.');
+    }
+    if (!protocol.safety_evaluation?.can_approve) {
+      throw new Error('Approval Blocked: Protocol contains unresolved clinical Hard Stops.');
+    }
+
+    const approved: R4ProtocolStudioData = {
+      ...protocol,
+      status: 'active',
+      is_approved: true,
+      approved_by: clinician.id,
+      approved_at: new Date().toISOString(),
+      approval_notes: notes || protocol.approval_notes,
+      version: (protocol.version || 1) + 1,
+      updated_at: new Date().toISOString()
+    };
+
+    const saved = await this.saveLifestylePlan(approved);
+
+    await this.logAuditEvent({
+      organization_id: this.currentOrgId,
+      patient_id: saved.patient_id,
+      event_type: 'PLAN_APPROVED',
+      entity_type: 'approval_record',
+      entity_id: saved.id,
+      clinician_id: clinician.id,
+      clinician_name: clinician.name,
+      payload_after: {
+        protocol_version: saved.version,
+        clinician_name: clinician.name,
+        license: clinician.license_number,
+        notes
+      }
+    });
+
+    return saved;
   }
 
   // -------------------------------------------------------------------

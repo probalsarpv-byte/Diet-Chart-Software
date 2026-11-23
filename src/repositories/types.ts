@@ -5,6 +5,7 @@
 
 import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
+import { R4ProtocolStudioData } from '@/types/r4Protocol';
 
 export type SyncState = 'synced' | 'saving' | 'error' | 'offline' | 'demo';
 
@@ -45,6 +46,7 @@ export interface AuditEventPayload {
     | 'patient' 
     | 'visit' 
     | 'nutrition_plan' 
+    | 'lifestyle_plan'
     | 'approval_record' 
     | 'patient_report' 
     | 'auth'
@@ -136,6 +138,15 @@ export interface IPracticeRepository {
     clinician: ClinicianAuthProfile,
     notes?: string
   ): Promise<WeeklyDietPlan>;
+
+  // R4 Lifestyle & Protocol Studio Operations
+  getLifestylePlan(patientId: string, visitId?: string): Promise<R4ProtocolStudioData | null>;
+  saveLifestylePlan(protocol: R4ProtocolStudioData): Promise<R4ProtocolStudioData>;
+  approveLifestylePlan(
+    protocol: R4ProtocolStudioData,
+    clinician: ClinicianAuthProfile,
+    notes?: string
+  ): Promise<R4ProtocolStudioData>;
 
   // R3 Patient Assessment Operations
   createAssessmentInvitation(

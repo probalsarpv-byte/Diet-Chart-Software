@@ -16,6 +16,7 @@ import {
 } from './types';
 import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
+import { R4ProtocolStudioData } from '@/types/r4Protocol';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
 import { computeSha256Sync, generateSecureIntakeToken } from '@/lib/hashUtils';
@@ -219,6 +220,98 @@ export class LocalDemoRepository implements IPracticeRepository {
       clinician_name: clinician.name,
       payload_after: {
         plan_version: approved.version,
+        clinician_name: clinician.name,
+        license: clinician.license_number,
+        notes
+      }
+    });
+
+    return approved;
+  }
+
+  // -------------------------------------------------------------------
+  // R4 Lifestyle & Protocol Studio Operations
+  // -------------------------------------------------------------------
+
+  async getLifestylePlan(patientId: string, visitId?: string): Promise<R4ProtocolStudioData | null> {
+    if (typeof window === 'undefined') return null;
+    try {
+      const key = `shuddho_lifestyle_plan_${patientId}${visitId ? `_${visitId}` : ''}`;
+      const data = localStorage.getItem(key);
+      if (data) return JSON.parse(data);
+      // Fallback without visit
+      const fallback = localStorage.getItem(`shuddho_lifestyle_plan_${patientId}`);
+      if (fallback) return JSON.parse(fallback);
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async saveLifestylePlan(protocol: R4ProtocolStudioData): Promise<R4ProtocolStudioData> {
+    if (typeof window === 'undefined') return protocol;
+    try {
+      const keyWithVisit = `shuddho_lifestyle_plan_${protocol.patient_id}${protocol.visit_id ? `_${protocol.visit_id}` : ''}`;
+      const baseKey = `shuddho_lifestyle_plan_${protocol.patient_id}`;
+      const serialized = JSON.stringify(protocol);
+      localStorage.setItem(keyWithVisit, serialized);
+      localStorage.setItem(baseKey, serialized);
+
+      await this.logAuditEvent({
+        event_type: 'PLAN_UPDATED',
+        entity_type: 'lifestyle_plan',
+        entity_id: protocol.id,
+        patient_id: protocol.patient_id,
+        payload_after: {
+          version: protocol.version,
+          status: protocol.status,
+          safety: protocol.safety_evaluation?.overall_status,
+          can_approve: protocol.safety_evaluation?.can_approve
+        }
+      });
+    } catch (e) {
+      console.error('Failed to save lifestyle protocol locally:', e);
+    }
+    return protocol;
+  }
+
+  async approveLifestylePlan(
+    protocol: R4ProtocolStudioData,
+    clinician: ClinicianAuthProfile,
+    notes?: string
+  ): Promise<R4ProtocolStudioData> {
+    if (clinician.role === 'ASSISTANT_DIETITIAN') {
+      throw new Error('Approval forbidden: Assistant Dietitians cannot approve clinical protocols.');
+    }
+    if (!clinician.license_number || !clinician.license_number.trim()) {
+      throw new Error('Validation Failed: Professional license number is required for formal sign-off.');
+    }
+    if (!protocol.safety_evaluation?.can_approve) {
+      throw new Error('Approval Blocked: Protocol contains unresolved clinical Hard Stops.');
+    }
+
+    const approved: R4ProtocolStudioData = {
+      ...protocol,
+      status: 'active',
+      is_approved: true,
+      approved_by: clinician.id,
+      approved_at: new Date().toISOString(),
+      approval_notes: notes || protocol.approval_notes,
+      version: (protocol.version || 1) + 1,
+      updated_at: new Date().toISOString()
+    };
+
+    await this.saveLifestylePlan(approved);
+
+    await this.logAuditEvent({
+      event_type: 'PLAN_APPROVED',
+      entity_type: 'approval_record',
+      entity_id: approved.id,
+      patient_id: approved.patient_id,
+      clinician_id: clinician.id,
+      clinician_name: clinician.name,
+      payload_after: {
+        protocol_version: approved.version,
         clinician_name: clinician.name,
         license: clinician.license_number,
         notes

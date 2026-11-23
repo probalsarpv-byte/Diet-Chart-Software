@@ -105,6 +105,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onMobileCl
       label_en: '7. Reports',
       badge: 'A4 Hub',
       badgeColor: 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+    },
+    {
+      id: 'protocol_studio' as const,
+      icon: Sparkles,
+      label_bn: '৮. প্রোটোকল স্টুডিও (R4)',
+      label_en: '8. Protocol Studio (R4)',
+      badge: 'R4 Studio',
+      badgeColor: 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
     }
   ];
 

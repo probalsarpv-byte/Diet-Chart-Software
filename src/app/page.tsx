@@ -16,6 +16,7 @@ import { DietChartTab } from '@/components/tabs/DietChartTab';
 import { FollowUpTab } from '@/components/tabs/FollowUpTab';
 import { ReportTab } from '@/components/tabs/ReportTab';
 import { ClinicalIntelligenceTab } from '@/components/p2/ClinicalIntelligenceTab';
+import { ProtocolStudioTab } from '@/components/protocol-studio/ProtocolStudioTab';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 import { Lock, LogIn, ShieldAlert, Loader2, Stethoscope, ArrowRight } from 'lucide-react';
 
@@ -138,6 +139,7 @@ export default function Home() {
           {activeTab === 'intake' && <IntakeTab />}
           {activeTab === 'conditions' && <ConditionsTab />}
           {activeTab === 'dni' && <DNITab />}
+          {activeTab === 'protocol_studio' && <ProtocolStudioTab />}
         </main>
       </div>
     </div>
