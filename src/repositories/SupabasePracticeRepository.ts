@@ -587,15 +587,8 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       });
 
       if (rpcError) {
-        const { error: updateError } = await this.client
-          .from('assessment_invitations')
-          .update({
-            status: 'revoked',
-            revoked_at: new Date().toISOString()
-          })
-          .eq('id', invitationId);
-
-        if (updateError) throw updateError;
+        // RPC failed — do NOT fall back to direct table write (bypasses org/auth checks)
+        throw new Error(`Revocation RPC failed: ${rpcError.message}`);
       }
 
       await this.logAuditEvent({
@@ -848,7 +841,8 @@ export class SupabasePracticeRepository implements IPracticeRepository {
         )) {
           throw new Error(rpcError.message);
         }
-        console.warn('reconcile_intake_submission_atomic RPC unavailable, executing client fallback:', rpcError);
+        // Any other RPC error — still propagate; no client-side fallback permitted for clinical operations
+        throw new Error(`Reconciliation RPC failed: ${rpcError.message}`);
       }
     } catch (rpcErr: any) {
       if (rpcErr.message && (
@@ -856,200 +850,17 @@ export class SupabasePracticeRepository implements IPracticeRepository {
         rpcErr.message.includes('Forbidden') || 
         rpcErr.message.includes('Validation Failed') ||
         rpcErr.message.includes('Security Violation') ||
-        rpcErr.message.includes('already been reconciled')
+        rpcErr.message.includes('already been reconciled') ||
+        rpcErr.message.includes('Reconciliation RPC failed')
       )) {
         throw rpcErr;
       }
-      console.warn('RPC execution exception, continuing to client-side fallback:', rpcErr);
+      // All other exceptions from the RPC call propagate — no silent fallback
+      throw new Error(`Reconciliation failed: ${rpcErr.message || 'Unknown error'}`);
     }
 
-    // 2. Client-Side Fallback for Standalone Test Environments
-    const patient = await this.getPatientById(submission.patient_id);
-    if (!patient) {
-      throw new Error(`Target patient [${submission.patient_id}] not found.`);
-    }
-
-    const patientBefore = JSON.parse(JSON.stringify(patient));
-    let hasAccepted = false;
-    let hasRejected = false;
-
-    // Strict allowlist validation
-    const ALLOWED_RECONCILE_FIELDS = new Set([
-      'weight_kg', 'height_cm', 'waist_cm', 'sleep_hours', 'activity_level',
-      'bloating', 'bristol_stool_score', 'acid_reflux', 'digestive_fire_agni',
-      'confirmed_allergies', 'reported_allergies'
-    ]);
-
-    for (const field of Object.keys(decisions)) {
-      if (!ALLOWED_RECONCILE_FIELDS.has(field)) {
-        throw new Error(`Security Violation: Field [${field}] is not permitted for chart reconciliation.`);
-      }
-    }
-
-    // Apply granular decisions
-    for (const [field, decision] of Object.entries(decisions)) {
-      if (decision.status === 'accepted' || decision.status === 'edited') {
-        hasAccepted = true;
-        const val = decision.value;
-
-        if (field === 'weight_kg' && val !== undefined) {
-          const num = Number(val);
-          if (isNaN(num) || num < 20 || num > 300) {
-            throw new Error(`Validation Failed: Weight value [${val}] is outside plausible clinical range (20-300 kg).`);
-          }
-          patient.weight_kg = num;
-        } else if (field === 'height_cm' && val !== undefined) {
-          const num = Number(val);
-          if (isNaN(num) || num < 50 || num > 250) {
-            throw new Error(`Validation Failed: Height value [${val}] is outside plausible clinical range (50-250 cm).`);
-          }
-          patient.height_cm = num;
-        } else if (field === 'waist_cm' && val !== undefined) {
-          const num = Number(val);
-          if (isNaN(num) || num < 30 || num > 200) {
-            throw new Error(`Validation Failed: Waist value [${val}] is outside plausible clinical range (30-200 cm).`);
-          }
-          patient.waist_cm = num;
-        } else if (field === 'sleep_hours' && val !== undefined) {
-          const num = Number(val);
-          if (isNaN(num) || num < 0 || num > 24) {
-            throw new Error(`Validation Failed: Sleep hours [${val}] is outside plausible range (0-24 hrs).`);
-          }
-          patient.sleep_hours = num;
-        } else if (field === 'activity_level' && val !== undefined) {
-          patient.activity_level = val;
-        } else if (field === 'bloating' && val !== undefined) {
-          patient.gut_profile.bloating = val;
-        } else if (field === 'bristol_stool_score' && val !== undefined) {
-          patient.gut_profile.bristol_stool_score = Number(val);
-        } else if (field === 'acid_reflux' && val !== undefined) {
-          patient.gut_profile.acid_reflux_hypoacidity = Boolean(val);
-        } else if (field === 'digestive_fire_agni' && val !== undefined) {
-          patient.gut_profile.digestive_fire_agni = val;
-        } else if (field === 'confirmed_allergies' && Array.isArray(val)) {
-          patient.confirmed_allergies = Array.from(new Set([...patient.confirmed_allergies, ...val]));
-          patient.allergy_reconciliation_status = 'allergies_confirmed';
-        }
-      } else if (decision.status === 'rejected') {
-        hasRejected = true;
-      }
-    }
-
-    // Recalculate anthropometrics
-    patient.calculated = calculateAnthropometrics(
-      patient.age,
-      patient.gender,
-      patient.height_cm,
-      patient.weight_kg,
-      patient.waist_cm,
-      patient.activity_level,
-      patient.selected_conditions,
-      patient.population_group,
-      patient.trimester,
-      patient.bmr_floor_strategy,
-      patient.custom_calorie_floor
-    );
-
-    let reviewStatus: 'approved' | 'rejected' | 'partially_accepted' = 'approved';
-    if (hasAccepted && hasRejected) {
-      reviewStatus = 'partially_accepted';
-    } else if (!hasAccepted && hasRejected) {
-      reviewStatus = 'rejected';
-    }
-
-    const reviewPayload = {
-      organization_id: reviewer.organization_id || this.currentOrgId,
-      submission_id: submissionId,
-      clinician_id: reviewer.id,
-      reviewer_id: reviewer.id,
-      reviewer_name: reviewer.name,
-      review_status: reviewStatus,
-      reconciliation_diff_json: decisions,
-      merged_patient_snapshot: patient,
-      review_notes: notes,
-      reviewed_at: new Date().toISOString()
-    };
-
-    const { data: reviewData, error: reviewError } = await this.client
-      .from('assessment_reviews')
-      .insert(reviewPayload)
-      .select('*')
-      .single();
-
-    if (reviewError) throw reviewError;
-
-    // Save updated patient to PostgreSQL
-    const savedPatient = await this.savePatient(patient);
-
-    // Invalidate approved nutrition plan if newly confirmed allergies or major weight shift occurs
-    const allergiesBefore = new Set(patientBefore.confirmed_allergies || []);
-    const allergiesAfter = new Set(patient.confirmed_allergies || []);
-    const hasNewAllergies = [...allergiesAfter].some(a => !allergiesBefore.has(a));
-    const weightBefore = patientBefore.weight_kg;
-    const weightAfter = patient.weight_kg;
-    const hasMajorWeightChange = weightBefore !== undefined && weightAfter !== undefined && Math.abs(weightAfter - weightBefore) >= 3.0;
-
-    if (hasNewAllergies || hasMajorWeightChange) {
-      try {
-        const patientUuid = await this.resolvePatientUuid(patient.id);
-        await this.client
-          .from('nutrition_plans')
-          .update({
-            is_approved: false,
-            status: 'requires_review',
-            updated_at: new Date().toISOString()
-          })
-          .eq('patient_id', patientUuid)
-          .eq('is_approved', true);
-
-        const reason = hasNewAllergies
-          ? 'Newly reconciled allergens require clinical safety recalculation'
-          : `Significant weight delta (${weightBefore}kg -> ${weightAfter}kg) alters baseline energy floor`;
-
-        await this.logAuditEvent({
-          organization_id: reviewer.organization_id || this.currentOrgId,
-          event_type: 'PLAN_INVALIDATED',
-          entity_type: 'nutrition_plan',
-          entity_id: patient.id,
-          patient_id: patient.id,
-          clinician_id: reviewer.id,
-          clinician_name: reviewer.name,
-          payload_after: {
-            reason,
-            new_allergies: [...allergiesAfter].filter(a => !allergiesBefore.has(a)),
-            weight_before: weightBefore,
-            weight_after: weightAfter
-          }
-        });
-      } catch (invalErr) {
-        console.warn('Failed to invalidate nutrition plans after allergy reconciliation:', invalErr);
-      }
-    }
-
-    await this.logAuditEvent({
-      organization_id: reviewer.organization_id || this.currentOrgId,
-      event_type: reviewStatus === 'rejected' ? 'ASSESSMENT_SUBMISSION_REJECTED' : 'ASSESSMENT_SUBMISSION_ACCEPTED',
-      entity_type: 'assessment_review',
-      entity_id: reviewData.id,
-      patient_id: patient.id,
-      clinician_id: reviewer.id,
-      clinician_name: reviewer.name,
-      payload_before: {
-        weight_kg: patientBefore.weight_kg,
-        sleep_hours: patientBefore.sleep_hours,
-        gut_profile: patientBefore.gut_profile
-      },
-      payload_after: {
-        submission_id: submissionId,
-        weight_kg: savedPatient.weight_kg,
-        sleep_hours: savedPatient.sleep_hours,
-        gut_profile: savedPatient.gut_profile,
-        review_status: reviewStatus,
-        notes
-      }
-    });
-
-    return { review: reviewData, updatedPatient: savedPatient };
+    // Should never reach here — RPC always throws or returns
+    throw new Error('Reconciliation: unexpected code path reached.');
   }
 
   // -------------------------------------------------------------------
@@ -1076,12 +887,21 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
   async submitPublicIntakeAssessment(
     token: string,
-    responses: Record<string, any>
+    responses: Record<string, any>,
+    patientAcknowledgedConsent?: boolean
   ): Promise<{ success: boolean; submission_id: string; submitted_at: string }> {
+    // Derive consent: explicit parameter takes priority; fallback to responses field
+    const consentAcknowledged = patientAcknowledgedConsent ?? Boolean(responses?.patient_acknowledged_consent);
+
+    if (!consentAcknowledged) {
+      throw new Error('Consent Not Acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data.');
+    }
+
     const { data, error } = await this.client.rpc('submit_public_intake_assessment', {
       p_token: token,
       p_responses: responses,
-      p_client_ip: null
+      p_client_ip: null,
+      p_patient_acknowledged_consent: consentAcknowledged
     });
 
     if (error) {

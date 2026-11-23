@@ -156,6 +156,20 @@ async function runTests() {
   // --- 4. Public Assessment Submission & Chart Isolation ---
   console.log('\n--- 4. Public Assessment Submission & Isolation ---');
 
+  // A. Missing consent enforcement gate
+  let missingConsentBlocked = false;
+  try {
+    await repo.submitPublicIntakeAssessment(inv.invitation_token, {
+      current_weight_kg: 66.5,
+      patient_acknowledged_consent: false
+    });
+  } catch (err: any) {
+    missingConsentBlocked = true;
+    assert(err.message.includes('Consent Not Acknowledged'), 'Submission rejected when consent is missing or false');
+  }
+  assert(missingConsentBlocked, 'Server-side consent requirement strictly enforced');
+
+  // B. Valid submission with consent
   const intakeResponses = {
     current_weight_kg: 66.5,
     typical_sleep_hours: 8.0,
@@ -166,7 +180,8 @@ async function runTests() {
     bloating_triggers: ['legumes', 'raw_vegetables'],
     fasting_interest: true,
     fasting_schedule: '16_8',
-    active_medications: [{ name: 'Metformin', timing: 'with_meals', side_effects: ['mild_nausea'] }]
+    active_medications: [{ name: 'Metformin', timing: 'with_meals', side_effects: ['mild_nausea'] }],
+    patient_acknowledged_consent: true
   };
 
   const submitResult = await repo.submitPublicIntakeAssessment(inv.invitation_token, intakeResponses);
@@ -186,7 +201,7 @@ async function runTests() {
   // Attempt to submit again on completed token
   let replayBlocked = false;
   try {
-    await repo.submitPublicIntakeAssessment(inv.invitation_token, { weight: 50 });
+    await repo.submitPublicIntakeAssessment(inv.invitation_token, { weight: 50, patient_acknowledged_consent: true });
   } catch (err: any) {
     replayBlocked = true;
     assert(err.message.includes('completed'), 'Replay attack on completed invitation blocked');

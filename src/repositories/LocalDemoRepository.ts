@@ -784,8 +784,14 @@ export class LocalDemoRepository implements IPracticeRepository {
 
   async submitPublicIntakeAssessment(
     token: string,
-    responses: Record<string, any>
+    responses: Record<string, any>,
+    patientAcknowledgedConsent?: boolean
   ): Promise<{ success: boolean; submission_id: string; submitted_at: string }> {
+    // Derive consent from explicit parameter or embedded responses field
+    const consentAcknowledged = patientAcknowledgedConsent ?? Boolean(responses?.patient_acknowledged_consent);
+    if (!consentAcknowledged) {
+      throw new Error('Consent Not Acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data.');
+    }
     const verification = await this.verifyPublicIntakeToken(token);
     if (!verification.valid) {
       throw new Error(`Cannot submit assessment: invitation is ${verification.reason}`);

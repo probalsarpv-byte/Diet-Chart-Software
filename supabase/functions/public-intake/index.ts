@@ -71,11 +71,19 @@ serve(async (req: Request) => {
       }
 
       const body = JSON.parse(rawText);
-      const { token, responses } = body;
+      const { token, responses, patient_acknowledged_consent } = body;
 
       if (!token || !responses) {
         return new Response(
           JSON.stringify({ error: "Both token and responses are required." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Server-side consent enforcement: reject submission if patient has not explicitly acknowledged consent
+      if (!patient_acknowledged_consent) {
+        return new Response(
+          JSON.stringify({ error: "Consent not acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -91,7 +99,8 @@ serve(async (req: Request) => {
       const { data, error } = await supabase.rpc("submit_public_intake_assessment", {
         p_token: token,
         p_responses: responses,
-        p_client_ip: clientIp
+        p_client_ip: clientIp,
+        p_patient_acknowledged_consent: true  // Consent already verified above at Edge Function layer
       });
 
       if (error) {

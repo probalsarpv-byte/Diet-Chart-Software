@@ -452,7 +452,8 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION public.submit_public_intake_assessment(
     p_token TEXT,
     p_responses JSONB,
-    p_client_ip TEXT DEFAULT NULL
+    p_client_ip TEXT DEFAULT NULL,
+    p_patient_acknowledged_consent BOOLEAN DEFAULT FALSE
 )
 RETURNS JSONB
 SECURITY DEFINER
@@ -467,6 +468,13 @@ DECLARE
 BEGIN
     IF p_token IS NULL OR trim(p_token) = '' THEN
         RAISE EXCEPTION 'Invalid Token: Token parameter is required.';
+    END IF;
+
+    -- Server-side consent enforcement: reject if patient has not acknowledged consent.
+    -- Accepts consent either as a dedicated parameter (from Edge Function layer)
+    -- or embedded in p_responses as 'patient_acknowledged_consent' (from direct RPC calls).
+    IF NOT p_patient_acknowledged_consent AND NOT COALESCE((p_responses->>'patient_acknowledged_consent')::boolean, false) THEN
+        RAISE EXCEPTION 'Consent Not Acknowledged: Patient must explicitly acknowledge the consent statement before submitting assessment data.';
     END IF;
 
     -- Payload size verification (1MB limit)
@@ -686,7 +694,7 @@ BEGIN
     v_cur_weight := v_patient.weight_kg;
     v_cur_gut := COALESCE(to_jsonb(v_patient.gut_profile), '{}'::jsonb);
     v_new_gut := v_cur_gut;
-    v_cur_allergies := COALESCE(to_jsonb(v_patient.confirmed_allergies), '[]'::jsonb);
+    v_cur_allergies := COALESCE(v_patient.confirmed_allergies, '[]'::jsonb);
     v_new_allergies := v_cur_allergies;
 
     -- 4. Process Decisions with Strict Allowlist & Validation
@@ -794,9 +802,7 @@ BEGIN
             sleep_hours = COALESCE(v_new_sleep, sleep_hours),
             activity_level = COALESCE(v_new_activity, activity_level),
             gut_profile = v_new_gut,
-            confirmed_allergies = (
-                SELECT ARRAY(SELECT jsonb_array_elements_text(v_new_allergies))
-            ),
+            confirmed_allergies = v_new_allergies,
             allergy_reconciliation_status = CASE 
                 WHEN v_safety_impact THEN 'allergies_confirmed' 
                 ELSE allergy_reconciliation_status 
@@ -1131,6 +1137,7 @@ GRANT EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(UUID, TEXT, TEXT,
 -- Public intake functions: explicitly accessible by anonymous patients and authenticated
 GRANT EXECUTE ON FUNCTION public.verify_public_intake_token(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT, BOOLEAN) TO anon, authenticated;
 
 -- Record in schema_migrations
 INSERT INTO public.schema_migrations (version, description, applied_at)
