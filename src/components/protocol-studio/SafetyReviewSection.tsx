@@ -224,7 +224,7 @@ export const SafetyReviewSection: React.FC<SafetyReviewSectionProps> = ({
               {bn ? 'অনুমোদনকারী ক্লিনিশিয়ান' : 'Signing Clinician'}
             </span>
             <span className="font-bold text-foreground">
-              {clinician?.name || clinician?.email || 'Clinical Director'}
+              {clinician?.name || clinician?.email || (bn ? 'ডেমো ক্লিনিশিয়ান (সিমুলেশন)' : 'Demo Clinician (Simulation)')}
             </span>
           </div>
 
@@ -233,7 +233,7 @@ export const SafetyReviewSection: React.FC<SafetyReviewSectionProps> = ({
               {bn ? 'প্রফেশনাল লাইসেন্স নম্বর' : 'License / Registration #'}
             </span>
             <span className="font-bold text-foreground font-mono">
-              {clinician?.license_number || 'REG-BD-2026-NUTR'}
+              {clinician?.license_number || 'DEMO-SIMULATION-UNVERIFIED'}
             </span>
           </div>
         </div>

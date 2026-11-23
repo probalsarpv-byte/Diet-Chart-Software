@@ -185,7 +185,7 @@ export function buildChronotherapyTimeline(
     let medName = '';
     let medDose = '';
     let medFreq = 'as prescribed';
-    let rawTime = '08:00';
+    let rawTime = '';
 
     if (typeof med === 'string') {
       medName = med;
@@ -193,21 +193,32 @@ export function buildChronotherapyTimeline(
       medName = med.medication_name || med.name || med.generic_name || 'Prescription Medication';
       medDose = med.dose || med.dosage || '';
       medFreq = med.frequency || 'as prescribed';
-      rawTime = med.timing || med.administration_time || '08:00';
+      rawTime = med.timing || med.administration_time || '';
     }
 
-    // Normalize time to HH:mm
-    const normTime = rawTime.includes(':') ? rawTime : '08:00';
+    const hasKnownTiming = Boolean(rawTime && rawTime.includes(':'));
+    const normTime = hasKnownTiming ? rawTime : 'UNKNOWN';
+    const period = hasKnownTiming ? getPeriodForTime(normTime) : 'morning';
+
     items.push({
       id: `chrono-med-${idx}`,
       time: normTime,
-      period: getPeriodForTime(normTime),
+      period: period,
       category: 'medication',
-      title_en: `Prescription: ${medName} ${medDose ? `(${medDose})` : ''}`.trim(),
-      title_bn: `নির্ধারিত ওষুধ: ${medName} ${medDose ? `(${medDose})` : ''}`.trim(),
-      instructions_en: `Prescription medication. Frequency: ${medFreq}. Do not alter without prescribing doctor approval.`,
-      instructions_bn: `চিকিৎসকের প্রেসক্রিপশনকৃত ওষুধ। মাত্রা পরিবর্তন করবেন না।`,
+      title_en: hasKnownTiming
+        ? `Prescription: ${medName} ${medDose ? `(${medDose})` : ''}`.trim()
+        : `Prescription: ${medName} ${medDose ? `(${medDose})` : ''} - UNKNOWN TIMING`.trim(),
+      title_bn: hasKnownTiming
+        ? `নির্ধারিত ওষুধ: ${medName} ${medDose ? `(${medDose})` : ''}`.trim()
+        : `নির্ধারিত ওষুধ: ${medName} ${medDose ? `(${medDose})` : ''} - অজ্ঞাত সময়সূচী`.trim(),
+      instructions_en: hasKnownTiming
+        ? `Prescription medication. Frequency: ${medFreq}. Do not alter without prescribing doctor approval.`
+        : `UNKNOWN — MEDICATION TIMING REQUIRES REVIEW. Dosing schedule is unrecorded. Verify with patient or prescribing doctor before spacing supplements.`,
+      instructions_bn: hasKnownTiming
+        ? `চিকিৎসকের প্রেসক্রিপশনকৃত ওষুধ। মাত্রা পরিবর্তন করবেন না।`
+        : `অজ্ঞাত — ওষুধের সময়সূচী পর্যালোচনা প্রয়োজন। প্রকৃত গ্রহণের সময় লিপিবদ্ধ নেই। সাপ্লিমেন্ট সময়সূচী নির্ধারণের পূর্বে যাচাই করুন।`,
       is_prescription_medication: true,
+      is_timing_unknown: !hasKnownTiming,
       is_editable: false // Meds are locked from accidental rescheduling
     });
   });
@@ -270,7 +281,8 @@ export function buildChronotherapyTimeline(
     for (let j = i + 1; j < items.length; j++) {
       const item1 = items[i];
       const item2 = items[j];
-      const gapHours = calculateCircularDifferenceHours(item1.time, item2.time);
+      const isTimingKnown = !item1.is_timing_unknown && !item2.is_timing_unknown && item1.time !== 'UNKNOWN' && item2.time !== 'UNKNOWN';
+      const gapHours = isTimingKnown ? calculateCircularDifferenceHours(item1.time, item2.time) : 0;
 
       // Rule A: Levothyroxine (Thyroxine / Eltroxin / Thyrox) vs Iron / Calcium / Magnesium
       const isItem1Thyroid = item1.category === 'medication' && medMatches(item1.title_en, ['thyrox', 'eltroxin', 'levothyroxine', 'synthroid']);
@@ -280,9 +292,39 @@ export function buildChronotherapyTimeline(
       const isItem2Mineral = item2.category === 'supplement' && medMatches(item2.title_en, ['calcium', 'iron', 'magnesium', 'ferrous', 'caltrate']);
 
       if ((isItem1Thyroid && isItem2Mineral) || (isItem2Thyroid && isItem1Mineral)) {
-        if (gapHours < 4.0) {
-          const thyroid = isItem1Thyroid ? item1 : item2;
-          const mineral = isItem1Thyroid ? item2 : item1;
+        const thyroid = isItem1Thyroid ? item1 : item2;
+        const mineral = isItem1Thyroid ? item2 : item1;
+
+        if (thyroid.is_timing_unknown || mineral.is_timing_unknown) {
+          const warning: ChronoSpacingWarning = {
+            rule_id: 'RULE_LEVOTHYROXINE_TIMING_UNKNOWN',
+            severity: 'high',
+            message_en: `Levothyroxine administration timing is unrecorded. 4-hour spacing from ${mineral.title_en} cannot be verified. Clinical timing reconciliation required.`,
+            message_bn: `লেভোথাইরক্সিনের সময়সূচী অজ্ঞাত থাকায় ${mineral.title_bn} থেকে ৪ ঘণ্টার ব্যবধান নিশ্চিত করা সম্ভব নয়। সময়সূচী পর্যালোচনা আবশ্যক।`,
+            required_gap_hours: 4.0,
+            actual_gap_hours: 0
+          };
+          item1.collision_detected = true;
+          item2.collision_detected = true;
+          item1.spacing_warnings = item1.spacing_warnings || [];
+          item2.spacing_warnings = item2.spacing_warnings || [];
+          item1.spacing_warnings.push(warning);
+          item2.spacing_warnings.push(warning);
+
+          conflicts.push({
+            item1_title: thyroid.title_en,
+            item2_title: mineral.title_en,
+            time1: thyroid.time,
+            time2: mineral.time,
+            min_interval_hours: 4.0,
+            actual_interval_hours: 0,
+            severity: 'high',
+            warning_en: warning.message_en,
+            warning_bn: warning.message_bn,
+            recommendation_en: `Confirm Levothyroxine morning schedule and space ${mineral.title_en} at least 4 hours later.`,
+            recommendation_bn: `লেভোথাইরক্সিনের সকালের সময় নিশ্চিত করুন এবং ${mineral.title_bn} কমপক্ষে ৪ ঘণ্টা পর গ্রহণ করুন।`
+          });
+        } else if (gapHours < 4.0) {
           const warning: ChronoSpacingWarning = {
             rule_id: 'RULE_LEVOTHYROXINE_MINERAL_SPACING',
             severity: 'critical',

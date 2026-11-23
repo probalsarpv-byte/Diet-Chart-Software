@@ -167,6 +167,9 @@ export interface HydrationProtocol {
   is_restricted: boolean;
   restriction_reason_en?: string;
   restriction_reason_bn?: string;
+  requires_individualized_fluid_review?: boolean;
+  review_reason_en?: string;
+  review_reason_bn?: string;
   hydration_events: HydrationEvent[];
   total_scheduled_ml: number;
   timing_guidance_en: string;
@@ -242,7 +245,7 @@ export interface ChronoSpacingWarning {
 
 export interface ChronotherapyTimelineItem {
   id: string;
-  time: string; // HH:mm
+  time: string; // HH:mm or "UNKNOWN"
   period: 'morning' | 'afternoon' | 'evening' | 'night';
   category: ChronoEventCategory;
   title_en: string;
@@ -251,6 +254,7 @@ export interface ChronotherapyTimelineItem {
   instructions_bn: string;
   entity_id?: string;
   is_prescription_medication?: boolean;
+  is_timing_unknown?: boolean;
   is_editable: boolean;
   collision_detected?: boolean;
   spacing_warnings?: ChronoSpacingWarning[];
@@ -305,6 +309,9 @@ export interface R4ProtocolStudioData {
   approved_by?: string;
   approved_at?: string;
   approval_notes?: string;
+  previous_approved_version?: number;
+  is_demo_unverified?: boolean;
+  approval_authority?: 'AUTHORITATIVE_CLOUD' | 'LOCAL_SIMULATION_NON_AUTHORITATIVE';
   mode: 'automatic_generated' | 'manual_created' | 'hybrid_edited';
   lifestyle: LifestyleProtocol;
   exercise: ExerciseProtocol;

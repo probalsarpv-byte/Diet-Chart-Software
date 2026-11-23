@@ -18,6 +18,7 @@ import { SleepCircadianProtocol } from '@/types/r4Protocol';
  * Converts HH:mm time string to minutes from midnight (0 - 1439).
  */
 export function timeToMinutes(time: string): number {
+  if (!time || !time.includes(':')) return 9999;
   const parts = time.trim().split(':');
   const h = parseInt(parts[0], 10) || 0;
   const m = parseInt(parts[1], 10) || 0;

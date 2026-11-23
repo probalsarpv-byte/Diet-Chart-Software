@@ -93,8 +93,38 @@ export function evaluateR4ProtocolSafety(
     }
   }
 
+  if (hydration.requires_individualized_fluid_review) {
+    reviews_required.push({
+      code: 'FLUID_INDIVIDUALIZED_PRESCRIPTION_REVIEW',
+      severity: 'high',
+      title_en: 'Missing Individualized Prescriber Fluid Prescription',
+      title_bn: 'ব্যক্তিগত তরল গ্রহণের প্রেসক্রিপশন অনুপস্থিত',
+      rationale_en: hydration.review_reason_en || 'Patient condition indicates fluid sensitivity (renal impairment / heart failure), but no individualized prescriber limit was specified. Generalized ceilings must not replace physician clinical judgment.',
+      rationale_bn: hydration.review_reason_bn || 'রোগীর কিডনি বা হার্ট ফেইলিউরের কারণে তরল নিয়ন্ত্রণ আবশ্যক, তবে চিকিৎসকের নির্ধারিত সুনির্দিষ্ট সীমা নেই। সাধারণ অনুমানের পরিবর্তে বিশেষজ্ঞ চিকিৎসকের প্রেসক্রিপশন নিশ্চিত করুন।',
+      recommended_action_en: 'Obtain individualized daily fluid allowance in mL/day from primary nephrologist or cardiologist before final sign-off.',
+      recommended_action_bn: 'নেফ্রোলজিস্ট বা কার্ডিওলজিস্টের নিকট থেকে সুনির্দিষ্ট দৈনিক তরল গ্রহণের মাত্রা নিশ্চিত করুন।'
+    });
+  }
+
   // ── 3. Supplement Overlaps & Tolerable Upper Limits (UL) ───────────
   const activeSupplements = supplements.filter(s => s.approval_status !== 'rejected' && s.approval_status !== 'discontinued');
+  
+  // Verify individual supplement doses are quantified (never treat unknown doses as safe)
+  activeSupplements.forEach(s => {
+    if (!s.total_compound_dose || s.total_compound_dose.trim() === '' || s.total_compound_dose.toLowerCase().includes('unknown')) {
+      reviews_required.push({
+        code: 'SUPPLEMENT_DOSE_UNKNOWN_REVIEW',
+        severity: 'high',
+        title_en: `Unspecified Supplement Dose: ${s.generic_nutrient}`,
+        title_bn: `সাপ্লিমেন্টের অনির্ধারিত মাত্রা: ${s.generic_nutrient}`,
+        rationale_en: `Supplement "${s.generic_nutrient}" was added without a verified dosage quantity. Unknown supplement doses cannot be treated as safe.`,
+        rationale_bn: `সাপ্লিমেন্ট "${s.generic_nutrient}"-এর জন্য কোনো নির্দিষ্ট মাত্রা উল্লেখ করা হয়নি। মাত্রা অজ্ঞাত রেখে অনুমোদন সম্ভব নয়।`,
+        recommended_action_en: 'Document exact elemental dose and frequency before clinician sign-off.',
+        recommended_action_bn: 'অনুমোদনের পূর্বে নির্দিষ্ট মাত্রা এবং গ্রহণের নিয়ম নথিভুক্ত করুন।'
+      });
+    }
+  });
+
   const overlapWarnings = checkAdvancedSupplementOverlaps(activeSupplements, patient);
 
   overlapWarnings.forEach(w => {

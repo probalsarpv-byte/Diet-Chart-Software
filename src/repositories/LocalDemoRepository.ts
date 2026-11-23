@@ -298,6 +298,8 @@ export class LocalDemoRepository implements IPracticeRepository {
       approved_at: new Date().toISOString(),
       approval_notes: notes || protocol.approval_notes,
       version: (protocol.version || 1) + 1,
+      is_demo_unverified: true,
+      approval_authority: 'LOCAL_SIMULATION_NON_AUTHORITATIVE',
       updated_at: new Date().toISOString()
     };
 

@@ -22,16 +22,19 @@ export const MedicationTimingSection: React.FC<MedicationTimingSectionProps> = (
         name: m.medication_name,
         dose: m.dose,
         frequency: m.frequency,
-        timing: m.timing || '08:00',
+        timing: (m.timing && m.timing.includes(':')) ? m.timing : undefined,
         route: m.route || 'Oral'
       }))
-    : (patient.active_medications || []).map(m => ({
-        name: m,
-        dose: 'Prescribed',
-        frequency: 'Daily',
-        timing: '08:00',
-        route: 'Oral'
-      }));
+    : (patient.active_medications || []).map(m => {
+        const str = typeof m === 'string' ? m : (m as any).medication_name || (m as any).name || '';
+        return {
+          name: str,
+          dose: (m as any).dose || 'Prescribed',
+          frequency: (m as any).frequency || 'Daily',
+          timing: (m as any).timing && (m as any).timing.includes(':') ? (m as any).timing : undefined,
+          route: 'Oral'
+        };
+      });
 
   return (
     <div className="space-y-6">
@@ -66,10 +69,17 @@ export const MedicationTimingSection: React.FC<MedicationTimingSectionProps> = (
               className="p-4 rounded-2xl bg-card border border-border flex items-center justify-between gap-4"
             >
               <div className="flex items-center gap-3">
-                <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-500 font-mono flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  {med.timing}
-                </span>
+                {med.timing ? (
+                  <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-500 font-mono flex items-center gap-1 shrink-0">
+                    <Clock className="h-3 w-3" />
+                    {med.timing}
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-500 flex items-center gap-1.5 shrink-0 border border-amber-500/30">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    <span>{bn ? 'অজ্ঞাত — ওষুধের সময়সূচী পর্যালোচনা প্রয়োজন' : 'UNKNOWN — MEDICATION TIMING REQUIRES REVIEW'}</span>
+                  </span>
+                )}
                 <div>
                   <h4 className="text-sm font-bold text-foreground">
                     {med.name} <span className="text-xs font-normal text-muted-foreground">({med.dose})</span>
@@ -80,9 +90,9 @@ export const MedicationTimingSection: React.FC<MedicationTimingSectionProps> = (
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-secondary">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-semibold px-2.5 py-1 rounded-lg bg-secondary shrink-0">
                 <Lock className="h-3.5 w-3.5" />
-                <span>{bn ? 'লকড শিডিউল' : 'Anchored Time'}</span>
+                <span>{med.timing ? (bn ? 'লকড শিডিউল' : 'Anchored Time') : (bn ? 'পর্যালোচনা আবশ্যক' : 'Review Required')}</span>
               </div>
             </div>
           ))

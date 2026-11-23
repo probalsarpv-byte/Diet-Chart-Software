@@ -39,7 +39,7 @@ let totalAssertions = 0;
 let passedAssertions = 0;
 let failedAssertions = 0;
 
-function assert(condition: boolean, message: string) {
+function assert(condition: any, message: string) {
   totalAssertions++;
   if (!condition) {
     failedAssertions++;
@@ -251,6 +251,29 @@ function createSyntheticTestPatient(overrides: Partial<PatientProfile> = {}): Pa
   assert(hydProtoChf.is_restricted === true, 'Heart failure patient flagged as restricted');
   assert(hydProtoChf.clinician_fluid_limit_ml === 1500, 'Enforces strict 1500 mL/day CHF fluid ceiling');
 
+  // Pediatric fluid requirement test: must NOT impose adult 1800 mL floor
+  const pedPatient = createSyntheticTestPatient({
+    age: 8,
+    weight_kg: 25,
+    population_group: 'pediatric'
+  });
+  const hydProtoPed = generateHydrationProtocol(pedPatient);
+  assert(hydProtoPed.baseline_fluid_target_ml < 1800, `Pediatric baseline (${hydProtoPed.baseline_fluid_target_ml} mL) removes universal adult 1800 mL floor`);
+  assert(hydProtoPed.baseline_fluid_target_ml === 1600, 'Holliday-Segar formula accurate for 25 kg child (1000 + 500 + 100 = 1600 mL)');
+
+  // Prescriber-defined limit preservation: explicit 1100 mL must NOT be overridden by default 1200 or 1500
+  const prescriberLimitedPatient = createSyntheticTestPatient({
+    confirmed_conditions: ['ESRD on Hemodialysis'],
+    clinical_safety: {
+      fluid_restriction: {
+        is_restricted: true,
+        limit_ml: 1100
+      }
+    } as any
+  });
+  const hydProtoPrescriber = generateHydrationProtocol(prescriberLimitedPatient);
+  assert(hydProtoPrescriber.clinician_fluid_limit_ml === 1100, 'Prescriber-defined limit (1100 mL) preserved without arbitrary default override');
+
   // ===================================================================
   // 5. Supplement Engine, Elemental Dosing & Tolerable Upper Limits
   // ===================================================================
@@ -415,6 +438,24 @@ function createSyntheticTestPatient(overrides: Partial<PatientProfile> = {}): Pa
   const probConflict = abxConflicts.find(c => c.severity === 'high');
   assert(Boolean(probConflict), 'Detects HIGH severity spacing conflict between Antibiotic and Probiotic (< 2 hours)');
 
+  // Test Case C: Medication without administration time must NOT invent 08:00
+  const medUnknownTiming = {
+    name: 'Aspirin 75mg'
+    // timing unrecorded
+  };
+  const { timeline: unkTimeline } = buildChronotherapyTimeline(
+    lifestyleProto,
+    exProtoNormal,
+    sleepProto,
+    hydProtoNormal,
+    [],
+    [medUnknownTiming]
+  );
+  const unkMedItem = unkTimeline.find(t => t.title_en.toLowerCase().includes('aspirin'));
+  assert(unkMedItem?.is_timing_unknown === true, 'Medication without timing marked with is_timing_unknown: true');
+  assert(unkMedItem?.time === 'UNKNOWN', 'Medication without timing does not invent 08:00 (has time: UNKNOWN)');
+  assert(unkMedItem?.instructions_en.includes('UNKNOWN — MEDICATION TIMING REQUIRES REVIEW'), 'Displays UNKNOWN — MEDICATION TIMING REQUIRES REVIEW warning');
+
   // ===================================================================
   // 7. Master Safety Evaluation & Approval Gating
   // ===================================================================
@@ -562,6 +603,8 @@ function createSyntheticTestPatient(overrides: Partial<PatientProfile> = {}): Pa
   assert(approvedProto.approved_by === testClinician.id, 'approvedProto stamped with clinician ID');
   assert(Boolean(approvedProto.approved_at), 'approvedProto stamped with ISO timestamp');
   assert(approvedProto.approval_notes?.includes('Phase 1'), 'Approval notes preserved');
+  assert(approvedProto.is_demo_unverified === true, 'approvedProto in demo repository flagged as is_demo_unverified: true');
+  assert(approvedProto.approval_authority === 'LOCAL_SIMULATION_NON_AUTHORITATIVE', 'approvedProto marked as LOCAL_SIMULATION_NON_AUTHORITATIVE');
 
   // Test 8.4: Verify audit log entries
   const auditEvents = await repo.getAuditEvents(basePatient.id);

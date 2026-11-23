@@ -2087,9 +2087,32 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [patient, currentClinician]);
 
   const updateR4Protocol = useCallback((updated: R4ProtocolStudioData) => {
-    setR4Protocol(updated);
+    let draft = { ...updated };
+    // If editing a previously approved protocol: preserve previous version, clear approval metadata, create new draft revision
+    if (r4Protocol?.is_approved) {
+      draft = {
+        ...draft,
+        is_approved: false,
+        status: 'draft',
+        approved_by: undefined,
+        approved_at: undefined,
+        approval_notes: undefined,
+        previous_approved_version: r4Protocol.version,
+        updated_at: new Date().toISOString()
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          const archiveKey = `shuddho_lifestyle_archive_${r4Protocol.patient_id}_v${r4Protocol.version}`;
+          localStorage.setItem(archiveKey, JSON.stringify(r4Protocol));
+        } catch {
+          // Ignore quota error
+        }
+      }
+    }
+    const safeDraft = recalculateProtocolSafety(draft, patient);
+    setR4Protocol(safeDraft);
     setIsR4ProtocolDirty(true);
-  }, []);
+  }, [r4Protocol, patient]);
 
   const saveR4Protocol = useCallback(async (): Promise<R4ProtocolStudioData | null> => {
     if (!r4Protocol) return null;
@@ -2101,16 +2124,23 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const approveR4Protocol = useCallback(async (notes?: string): Promise<R4ProtocolStudioData | null> => {
     if (!r4Protocol) return null;
+    const isConfigured = isSupabaseConfigured();
+
+    if (isConfigured && !currentClinician) {
+      throw new Error('Authentication required: Formal cloud protocol approval requires an active authenticated clinician session.');
+    }
+
     const activeClinician: ClinicianAuthProfile = currentClinician || {
-      id: 'clinician-default-director',
-      auth_user_id: 'auth-default-director',
-      organization_id: 'org-shuddho-default',
-      email: 'director@shuddho.clinic',
-      name: 'Clinical Director',
+      id: 'demo-clinician-simulation',
+      auth_user_id: 'auth-demo-unverified',
+      organization_id: 'org-demo-simulation',
+      email: 'demo@shuddho.local',
+      name: 'Demo Clinician (Local Simulation — Non-Authoritative)',
       role: 'CLINICAL_DIRECTOR',
-      license_number: 'REG-BD-2026-NUTR',
+      license_number: 'DEMO-SIMULATION-UNVERIFIED',
       is_active: true
     };
+
     const approved = await getPracticeRepository().approveLifestylePlan(r4Protocol, activeClinician, notes);
     setR4Protocol(approved);
     setIsR4ProtocolDirty(false);

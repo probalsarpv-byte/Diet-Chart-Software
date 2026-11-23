@@ -622,36 +622,32 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       throw new Error('Approval Blocked: Protocol contains unresolved clinical Hard Stops.');
     }
 
-    const approved: R4ProtocolStudioData = {
-      ...protocol,
-      status: 'active',
-      is_approved: true,
-      approved_by: clinician.id,
-      approved_at: new Date().toISOString(),
-      approval_notes: notes || protocol.approval_notes,
-      version: (protocol.version || 1) + 1,
-      updated_at: new Date().toISOString()
-    };
+    // Call authoritative server-side atomic approval RPC
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(protocol.id);
+    if (isUuid) {
+      const { data: rpcData, error: rpcErr } = await this.client.rpc('approve_lifestyle_plan_atomic', {
+        p_plan_id: protocol.id,
+        p_notes: notes || null
+      });
 
-    const saved = await this.saveLifestylePlan(approved);
-
-    await this.logAuditEvent({
-      organization_id: this.currentOrgId,
-      patient_id: saved.patient_id,
-      event_type: 'PLAN_APPROVED',
-      entity_type: 'approval_record',
-      entity_id: saved.id,
-      clinician_id: clinician.id,
-      clinician_name: clinician.name,
-      payload_after: {
-        protocol_version: saved.version,
-        clinician_name: clinician.name,
-        license: clinician.license_number,
-        notes
+      if (!rpcErr && rpcData?.success) {
+        return {
+          ...protocol,
+          status: 'active',
+          is_approved: true,
+          approved_by: clinician.id,
+          approved_at: rpcData.approved_at || new Date().toISOString(),
+          approval_notes: notes || protocol.approval_notes,
+          approval_authority: 'AUTHORITATIVE_CLOUD',
+          version: rpcData.version || (protocol.version || 1) + 1,
+          updated_at: new Date().toISOString()
+        };
       }
-    });
+    }
 
-    return saved;
+    // Per User Decision: Production schema deployment is deferred until post-R15.
+    // Cloud approval must not be falsely reported as verified without deployed server RPC.
+    throw new Error('Cloud Protocol Approval Deferred: The authoritative approval RPC (approve_lifestyle_plan_atomic) is prepared in migration 20261124000001 but deferred until post-R15 production integration. Cloud formal approval cannot be verified until backend deployment.');
   }
 
   // -------------------------------------------------------------------

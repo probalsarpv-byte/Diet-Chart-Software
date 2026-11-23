@@ -36,17 +36,33 @@ export function generateHydrationProtocol(patient: PatientProfile): HydrationPro
   let isRestricted = false;
   let restrictionReasonEn: string | undefined = undefined;
   let restrictionReasonBn: string | undefined = undefined;
+  let requiresIndividualizedReview = false;
+  let reviewReasonEn: string | undefined = undefined;
+  let reviewReasonBn: string | undefined = undefined;
 
   if (hasStrictFluidRestriction) {
     isRestricted = true;
-    if (hasDialysisOrESRD) {
+    if (prescriberFluidLimit !== undefined && prescriberFluidLimit > 0) {
+      // Respect explicit prescriber-defined fluid restriction above arbitrary defaults
+      clinicianLimitMl = prescriberFluidLimit;
+      restrictionReasonEn = `Prescribed Fluid Restriction (${prescriberFluidLimit} mL/day): Individualized fluid allowance under primary physician prescription.`;
+      restrictionReasonBn = `চিকিৎসকের প্রেসক্রিপশন অনুযায়ী নির্ধারিত তরল সীমাবদ্ধতা (${prescriberFluidLimit} মিলি/দিন)।`;
+    } else if (hasDialysisOrESRD) {
+      // Diagnostic guideline ceiling when prescriber limit is missing
       clinicianLimitMl = 1200; // Standard hemodialysis interdialytic fluid limit (500 mL + urine output)
       restrictionReasonEn = 'Strict Renal Fluid Restriction (1200 mL/day): Advanced renal compromise / anuria necessitates tight fluid ceiling to prevent pulmonary edema, volume overload, and interdialytic weight gain.';
       restrictionReasonBn = 'কিডনি রোগের কারণে কঠোর তরল নিয়ন্ত্রণ (১২০০ মিলি/দিন): অতিরিক্ত পানি ফুসফুসে পানি জমা, শ্বাসকষ্ট এবং উচ্চ রক্তচাপ সৃষ্টি করতে পারে।';
+      requiresIndividualizedReview = true;
+      reviewReasonEn = 'Diagnosis of advanced renal compromise / dialysis detected without individualized prescriber fluid order. 1200 mL reference ceiling applied; verify patient-specific residual urine output and interdialytic allowance with treating nephrologist.';
+      reviewReasonBn = 'কিডনি ডায়ালাইসিস রোগীর সুনির্দিষ্ট তরল প্রেসক্রিপশন অনুপস্থিত। ১২০০ মিলি রেফারেন্স প্রয়োগ করা হয়েছে; নেফ্রোলজিস্টের নিকট থেকে রোগীর সুনির্দিষ্ট সীমা নিশ্চিত করুন।';
     } else if (hasHeartFailure) {
+      // Diagnostic guideline ceiling when prescriber limit is missing
       clinicianLimitMl = 1500; // Standard CHF fluid cap
       restrictionReasonEn = 'Congestive Heart Failure Fluid Cap (1500 mL/day): Left ventricular dysfunction requires volume restriction to prevent myocardial wall stress and acute pulmonary congestion.';
       restrictionReasonBn = 'হার্ট ফেইলিউর তরল নিয়ন্ত্রণ (১৫০০ মিলি/দিন): অতিরিক্ত তরল হৃদপিণ্ডের ওপর চাপ বৃদ্ধি করে এবং শ্বাসকষ্ট বাড়াতে পারে।';
+      requiresIndividualizedReview = true;
+      reviewReasonEn = 'Diagnosis of heart failure detected without individualized fluid order. 1500 mL guideline ceiling applied; verify NYHA functional class and cardiologist volume recommendation.';
+      reviewReasonBn = 'হার্ট ফেইলিউরের কারণে ১৫০০ মিলি রেফারেন্স প্রয়োগ করা হয়েছে; কার্ডিওলজিস্টের পরামর্শ নিশ্চিত করুন।';
     } else {
       clinicianLimitMl = 1500;
       restrictionReasonEn = 'Clinical Fluid Restriction Active: Individualized fluid allowance under physician prescription.';
@@ -55,10 +71,31 @@ export function generateHydrationProtocol(patient: PatientProfile): HydrationPro
   }
 
   // 2. Compute Baseline Physiological Needs
-  // Standard healthy adult: ~30-35 mL/kg, clamped between 1800 - 3000 mL
-  let baselineNeedMl = Math.round((weight * 32) / 50) * 50; // nearest 50 mL
-  if (baselineNeedMl < 1800) baselineNeedMl = 1800;
-  if (baselineNeedMl > 2800) baselineNeedMl = 2800;
+  // Pediatric population uses Holliday-Segar equation; adult uses 30-35 mL/kg without forcing pediatric into 1800 mL floor
+  const isPediatric = (patient.age !== undefined && patient.age < 18) || 
+                      patient.population_group === 'pediatric';
+
+  let baselineNeedMl: number;
+  if (isPediatric) {
+    if (weight <= 10) {
+      baselineNeedMl = Math.round(weight * 100);
+    } else if (weight <= 20) {
+      baselineNeedMl = Math.round(1000 + (weight - 10) * 50);
+    } else {
+      baselineNeedMl = Math.round(1500 + (weight - 20) * 20);
+    }
+    // Pediatric fluid target clamped between 800 - 2200 mL based on age/size
+    if (baselineNeedMl < 800) baselineNeedMl = 800;
+  } else {
+    // Standard healthy adult: ~30-35 mL/kg
+    baselineNeedMl = Math.round((weight * 32) / 50) * 50; // nearest 50 mL
+    if (weight < 50) {
+      if (baselineNeedMl < 1400) baselineNeedMl = 1400;
+    } else {
+      if (baselineNeedMl < 1800) baselineNeedMl = 1800;
+    }
+    if (baselineNeedMl > 2800) baselineNeedMl = 2800;
+  }
 
   if (activityLevel === 'moderately_active') {
     baselineNeedMl += 300;
@@ -206,6 +243,9 @@ export function generateHydrationProtocol(patient: PatientProfile): HydrationPro
     is_restricted: isRestricted,
     restriction_reason_en: restrictionReasonEn,
     restriction_reason_bn: restrictionReasonBn,
+    requires_individualized_fluid_review: requiresIndividualizedReview,
+    review_reason_en: reviewReasonEn,
+    review_reason_bn: reviewReasonBn,
     hydration_events: events,
     total_scheduled_ml: totalScheduledMl,
     timing_guidance_en: isRestricted

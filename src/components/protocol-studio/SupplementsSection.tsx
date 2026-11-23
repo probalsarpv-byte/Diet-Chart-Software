@@ -89,7 +89,7 @@ export const SupplementsSection: React.FC<SupplementsSectionProps> = ({
       monitoring_parameters: ['Serum levels', 'Symptom resolution'],
       contraindications: [],
       known_interactions: [],
-      approval_status: 'clinician_approved',
+      approval_status: 'draft_candidate',
       source: 'clinician_manual_entry'
     };
 
