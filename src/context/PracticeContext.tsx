@@ -86,7 +86,7 @@ import {
 import { generateEntityId } from '@/utils/idGenerator';
 import { ClinicianAuthProfile, isSupabaseConfigured, getSupabaseClient, fetchClinicianProfile } from '@/lib/supabaseClient';
 import { AuthState } from '@/lib/authTypes';
-import { getPracticeRepository, PracticeSyncStatus, AuditEventPayload, IPracticeRepository } from '@/repositories';
+import { getPracticeRepository, resetPracticeRepository, PracticeSyncStatus, AuditEventPayload, IPracticeRepository } from '@/repositories';
 import { ClinicianAuthModal } from '@/components/auth/ClinicianAuthModal';
 import { AuditHistoryModal } from '@/components/audit/AuditHistoryModal';
 import { DataMigrationWizard } from '@/components/migration/DataMigrationWizard';
@@ -362,11 +362,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // R2 Backend & Multi-Tenancy Authentication State
   const [authState, setAuthState] = useState<AuthState>(() => 
-    isSupabaseConfigured() ? 'INITIALIZING' : 'AUTHORIZED'
+    isSupabaseConfigured() ? 'INITIALIZING' : (process.env.NODE_ENV === 'production' ? 'ERROR' : 'AUTHORIZED')
   );
   const [authError, setAuthError] = useState<string | null>(null);
   const [currentClinician, setCurrentClinician] = useState<ClinicianAuthProfile | null>(() => {
-    if (!isSupabaseConfigured()) {
+    if (!isSupabaseConfigured() && process.env.NODE_ENV !== 'production') {
       return {
         id: 'c0000000-0000-0000-0000-000000000002',
         auth_user_id: 'u0000000-0000-0000-0000-000000000002',
@@ -396,7 +396,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const clinicianUser: ClinicianAuthProfile = useMemo(() => {
     if (currentClinician) return currentClinician;
-    if (!isSupabaseConfigured()) {
+    if (!isSupabaseConfigured() && process.env.NODE_ENV !== 'production') {
       return {
         id: 'c0000000-0000-0000-0000-000000000002',
         auth_user_id: 'u0000000-0000-0000-0000-000000000002',
@@ -424,6 +424,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (client) {
       await client.auth.signOut();
     }
+    resetPracticeRepository();
     setCurrentClinician(null);
     setAuthState('SIGNED_OUT');
     setAuthError(null);

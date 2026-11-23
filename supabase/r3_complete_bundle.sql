@@ -1,31 +1,47 @@
 -- =====================================================================
 -- SHUDDHO CLINICAL FUNCTIONAL & PRECISION NUTRITION PLATFORM
--- R3 COMPLETE DATABASE & SECURITY BUNDLE
+-- R3 COMPLETE DATABASE & SECURITY BUNDLE (HARDENED)
 -- File: supabase/r3_complete_bundle.sql
 -- 
 -- IDEMPOTENT & FORWARD-ONLY: Safe to run directly in Supabase SQL Editor.
 -- Preserves all existing tables, existing policies, clinicians and patient data.
 -- 
 -- INCLUDES:
--- 1. pgcrypto extension for SHA-256 token hashing
--- 2. Master assessment templates ('SHUDDHO_STANDARD_INTAKE_V1')
--- 3. assessment_invitations token hashing, expiry and access telemetry
--- 4. assessment_submissions JSON responses & provenance
--- 5. assessment_reviews reconciliation diffs & clinician binding
--- 6. Atomic plan approval with impersonation and HARD_STOP safety protection
--- 7. Public intake token verification (verify_public_intake_token)
--- 8. Public intake submission (submit_public_intake_assessment, 1MB limit)
--- 9. Invitation revocation procedure (revoke_assessment_invitation)
--- 10. Atomic intake reconciliation procedure (reconcile_intake_submission_atomic)
--- 11. Minimal privilege boundaries (REVOKE anon from patient data, GRANT minimal)
--- 12. schema_migrations version registration
+-- 1. Preflight integrity checks
+-- 2. pgcrypto extension for 256-bit entropy and SHA-256 token hashing
+-- 3. Master assessment templates ('SHUDDHO_STANDARD_INTAKE_V1')
+-- 4. assessment_invitations token hashing, access telemetry & plaintext purge
+-- 5. assessment_submissions JSON responses & provenance
+-- 6. assessment_reviews reconciliation diffs & clinician binding
+-- 7. Backend-controlled invitation generation RPC (issue_assessment_invitation)
+-- 8. Hardened invitation revocation & rotation RPCs
+-- 9. Public intake token verification (verify_public_intake_token)
+-- 10. Public intake submission (submit_public_intake_assessment, 1MB limit)
+-- 11. Authoritative atomic clinical reconciliation (reconcile_intake_submission_atomic)
+--     with strict allowlist, chart update, and clinical safety invalidation
+-- 12. Hardened atomic plan approval (approve_nutrition_plan_atomic)
+-- 13. Minimal privilege boundaries (REVOKE anon from patient data, GRANT minimal)
+-- 14. Post-migration verification queries
 -- =====================================================================
 
--- Enable pgcrypto for SHA-256 hashing if not already available
+-- ---------------------------------------------------------------------
+-- PREFLIGHT VERIFICATION
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'clinicians') THEN
+        RAISE EXCEPTION 'Preflight Failed: public.clinicians table does not exist. Ensure R2 migrations have been run first.';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'patients') THEN
+        RAISE EXCEPTION 'Preflight Failed: public.patients table does not exist. Ensure R2 migrations have been run first.';
+    END IF;
+END $$;
+
+-- Enable pgcrypto for 256-bit random entropy and SHA-256 hashing
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ---------------------------------------------------------------------
--- 1. ALIGN ASSESSMENT_TEMPLATES (Default Master Template)
+-- 1. ASSESSMENT TEMPLATES
 -- ---------------------------------------------------------------------
 INSERT INTO public.assessment_templates (code, title_en, title_bn, description, version, domains, schema, is_active)
 VALUES (
@@ -41,7 +57,7 @@ VALUES (
 ON CONFLICT (code) DO NOTHING;
 
 -- ---------------------------------------------------------------------
--- 2. ALIGN ASSESSMENT_INVITATIONS (Token Hashing, Expiry & Telemetry)
+-- 2. ASSESSMENT INVITATIONS (Hash-Only Architecture & Telemetry)
 -- ---------------------------------------------------------------------
 ALTER TABLE public.assessment_invitations
     ADD COLUMN IF NOT EXISTS token_hash TEXT,
@@ -56,49 +72,43 @@ ALTER TABLE public.assessment_invitations
 ALTER TABLE public.assessment_invitations
     ALTER COLUMN template_id DROP NOT NULL;
 
--- Sync token and invitation_token
-UPDATE public.assessment_invitations
-SET invitation_token = token
-WHERE invitation_token IS NULL AND token IS NOT NULL;
-
--- Backfill token_hash for existing records
+-- Backfill token_hash for existing records before dropping plaintext
 UPDATE public.assessment_invitations
 SET token_hash = encode(digest(COALESCE(invitation_token, token), 'sha256'), 'hex')
 WHERE token_hash IS NULL AND (invitation_token IS NOT NULL OR token IS NOT NULL);
 
--- Indexes for performance and uniqueness
-CREATE UNIQUE INDEX IF NOT EXISTS idx_assessment_invitations_inv_token 
-    ON public.assessment_invitations(invitation_token);
+-- Drop NOT NULL constraints on legacy token columns
+ALTER TABLE public.assessment_invitations
+    ALTER COLUMN token DROP NOT NULL;
 
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'assessment_invitations' 
+          AND column_name = 'invitation_token'
+    ) THEN
+        ALTER TABLE public.assessment_invitations ALTER COLUMN invitation_token DROP NOT NULL;
+    END IF;
+END $$;
+
+-- Purge plaintext tokens where token_hash is established
+UPDATE public.assessment_invitations
+SET token = NULL,
+    invitation_token = NULL
+WHERE token_hash IS NOT NULL;
+
+-- Remove legacy triggers that synced plaintext tokens
+DROP TRIGGER IF EXISTS trg_sync_invitation_tokens ON public.assessment_invitations;
+DROP FUNCTION IF EXISTS public.sync_assessment_invitation_tokens();
+
+-- Unique index on token_hash
 CREATE UNIQUE INDEX IF NOT EXISTS idx_assessment_invitations_token_hash 
     ON public.assessment_invitations(token_hash);
 
--- Trigger to keep token, invitation_token and token_hash in sync
-CREATE OR REPLACE FUNCTION public.sync_assessment_invitation_tokens()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.token IS NULL AND NEW.invitation_token IS NOT NULL THEN
-        NEW.token := NEW.invitation_token;
-    ELSIF NEW.invitation_token IS NULL AND NEW.token IS NOT NULL THEN
-        NEW.invitation_token := NEW.token;
-    END IF;
-
-    -- Ensure token_hash is computed
-    IF NEW.token_hash IS NULL AND COALESCE(NEW.invitation_token, NEW.token) IS NOT NULL THEN
-        NEW.token_hash := encode(digest(COALESCE(NEW.invitation_token, NEW.token), 'sha256'), 'hex');
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_sync_invitation_tokens ON public.assessment_invitations;
-CREATE TRIGGER trg_sync_invitation_tokens
-BEFORE INSERT OR UPDATE ON public.assessment_invitations
-FOR EACH ROW EXECUTE FUNCTION public.sync_assessment_invitation_tokens();
-
 -- ---------------------------------------------------------------------
--- 3. ALIGN ASSESSMENT_SUBMISSIONS
+-- 3. ASSESSMENT SUBMISSIONS & REVIEWS ALIGNMENT
 -- ---------------------------------------------------------------------
 ALTER TABLE public.assessment_submissions
     ADD COLUMN IF NOT EXISTS responses_json JSONB,
@@ -106,35 +116,13 @@ ALTER TABLE public.assessment_submissions
     ADD COLUMN IF NOT EXISTS client_ip TEXT,
     ADD COLUMN IF NOT EXISTS provenance TEXT DEFAULT 'PATIENT_SELF_REPORTED';
 
--- Make template_id nullable
 ALTER TABLE public.assessment_submissions
     ALTER COLUMN template_id DROP NOT NULL;
 
--- Sync raw_responses and responses_json
 UPDATE public.assessment_submissions
 SET responses_json = raw_responses
 WHERE responses_json IS NULL AND raw_responses IS NOT NULL;
 
-CREATE OR REPLACE FUNCTION public.sync_assessment_submission_responses()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.raw_responses IS NULL AND NEW.responses_json IS NOT NULL THEN
-        NEW.raw_responses := NEW.responses_json;
-    ELSIF NEW.responses_json IS NULL AND NEW.raw_responses IS NOT NULL THEN
-        NEW.responses_json := NEW.raw_responses;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_sync_submission_responses ON public.assessment_submissions;
-CREATE TRIGGER trg_sync_submission_responses
-BEFORE INSERT OR UPDATE ON public.assessment_submissions
-FOR EACH ROW EXECUTE FUNCTION public.sync_assessment_submission_responses();
-
--- ---------------------------------------------------------------------
--- 4. ALIGN ASSESSMENT_REVIEWS
--- ---------------------------------------------------------------------
 ALTER TABLE public.assessment_reviews
     ADD COLUMN IF NOT EXISTS reviewer_id UUID REFERENCES public.clinicians(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS reviewer_name TEXT,
@@ -143,67 +131,46 @@ ALTER TABLE public.assessment_reviews
     ADD COLUMN IF NOT EXISTS merged_patient_snapshot JSONB,
     ADD COLUMN IF NOT EXISTS review_notes TEXT;
 
--- Drop previous status check to allow extended statuses if present
 ALTER TABLE public.assessment_reviews DROP CONSTRAINT IF EXISTS assessment_reviews_status_check;
 ALTER TABLE public.assessment_reviews 
     ADD CONSTRAINT assessment_reviews_status_check 
     CHECK (status IN ('draft', 'completed', 'approved', 'rejected', 'partially_accepted'));
 
--- Trigger to sync clinician_id and reviewer_id
-CREATE OR REPLACE FUNCTION public.sync_assessment_review_clinician_id()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.clinician_id IS NULL AND NEW.reviewer_id IS NOT NULL THEN
-        NEW.clinician_id := NEW.reviewer_id;
-    ELSIF NEW.reviewer_id IS NULL AND NEW.clinician_id IS NOT NULL THEN
-        NEW.reviewer_id := NEW.clinician_id;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_sync_assessment_review_clinician_id ON public.assessment_reviews;
-CREATE TRIGGER trg_sync_assessment_review_clinician_id
-BEFORE INSERT OR UPDATE ON public.assessment_reviews
-FOR EACH ROW EXECUTE FUNCTION public.sync_assessment_review_clinician_id();
-
 -- ---------------------------------------------------------------------
--- 5. ATOMIC PLAN APPROVAL FUNCTION (Security Hardened)
+-- 4. BACKEND INVITATION GENERATION RPC (256-bit Token, Hash-Only)
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.approve_nutrition_plan_atomic(
-    p_organization_id UUID,
-    p_client_plan_id TEXT,
-    p_client_patient_id TEXT,
-    p_clinician_id UUID,
-    p_license_number TEXT,
-    p_plan_version INTEGER,
-    p_notes TEXT DEFAULT NULL
+CREATE OR REPLACE FUNCTION public.issue_assessment_invitation(
+    p_patient_id UUID,
+    p_expires_days INT DEFAULT 14,
+    p_sent_via TEXT DEFAULT 'link'
 )
 RETURNS JSONB
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    v_plan RECORD;
-    v_patient_id UUID;
     v_clinician RECORD;
-    v_approval_id UUID;
-    v_result JSONB;
+    v_patient RECORD;
+    v_raw_hex TEXT;
+    v_token TEXT;
+    v_token_hash TEXT;
+    v_inv_id UUID;
+    v_expires_at TIMESTAMPTZ;
+    v_template_id UUID;
 BEGIN
-    -- 1. Validate clinician identity and role
-    SELECT id, auth_user_id, name, role, is_active, organization_id, license_number
-    INTO v_clinician
-    FROM public.clinicians
-    WHERE id = p_clinician_id AND organization_id = p_organization_id;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Unauthorized: Clinician not found in specified organization.';
+    -- 1. Require authenticated session
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Unauthorized: Authenticated clinician identity is required.';
     END IF;
 
-    -- Anti-impersonation: when executed in an authenticated Supabase Auth context,
-    -- verify that auth.uid() matches the clinician's auth_user_id
-    IF auth.uid() IS NOT NULL AND v_clinician.auth_user_id IS NOT NULL AND v_clinician.auth_user_id != auth.uid() THEN
-        RAISE EXCEPTION 'Unauthorized: Authenticated session identity does not match clinician account.';
+    -- 2. Derive clinician from session
+    SELECT id, auth_user_id, name, role, is_active, organization_id
+    INTO v_clinician
+    FROM public.clinicians
+    WHERE auth_user_id = auth.uid();
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Unauthorized: No active clinician profile found for caller.';
     END IF;
 
     IF NOT v_clinician.is_active THEN
@@ -211,352 +178,140 @@ BEGIN
     END IF;
 
     IF v_clinician.role NOT IN ('CLINICAL_DIRECTOR', 'TREATING_NUTRITIONIST') THEN
-        RAISE EXCEPTION 'Forbidden: Role % is not authorized to approve clinical nutrition plans.', v_clinician.role;
+        RAISE EXCEPTION 'Forbidden: Role % is not authorized to generate intake invitations.', v_clinician.role;
     END IF;
 
-    IF p_license_number IS NULL OR trim(p_license_number) = '' THEN
-        RAISE EXCEPTION 'Validation Failed: Professional license number is required for formal sign-off.';
-    END IF;
-
-    -- 2. Resolve patient UUID
-    SELECT id INTO v_patient_id
+    -- 3. Verify patient belongs to clinician organization
+    SELECT id, organization_id, name INTO v_patient
     FROM public.patients
-    WHERE organization_id = p_organization_id AND (client_id = p_client_patient_id OR id::text = p_client_patient_id);
+    WHERE id = p_patient_id AND organization_id = v_clinician.organization_id;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Validation Failed: Patient record [%] not found.', p_client_patient_id;
+        RAISE EXCEPTION 'Validation Failed: Patient record [%] not found in clinician organization.', p_patient_id;
     END IF;
 
-    -- 3. Resolve plan record & verify patient binding and safety status
-    SELECT id, patient_id, version, overall_safety_status, is_approved
-    INTO v_plan
-    FROM public.nutrition_plans
-    WHERE organization_id = p_organization_id AND (client_plan_id = p_client_plan_id OR id::text = p_client_plan_id);
+    -- 4. Template resolution
+    SELECT id INTO v_template_id
+    FROM public.assessment_templates
+    WHERE code = 'SHUDDHO_STANDARD_INTAKE_V1'
+    LIMIT 1;
 
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Validation Failed: Nutrition plan [%] not found.', p_client_plan_id;
-    END IF;
+    -- 5. 256-bit cryptographically secure token generation
+    v_raw_hex := encode(gen_random_bytes(32), 'hex');
+    v_token := 'sh_inv_' || v_raw_hex;
+    v_token_hash := encode(digest(v_token, 'sha256'), 'hex');
+    v_expires_at := timezone('utc'::text, now()) + (p_expires_days || ' days')::interval;
 
-    -- Enforce plan-patient binding
-    IF v_plan.patient_id != v_patient_id THEN
-        RAISE EXCEPTION 'Safety Violation: Plan [%] does not belong to patient [%].', p_client_plan_id, p_client_patient_id;
-    END IF;
-
-    -- Enforce exact plan version binding
-    IF v_plan.version != p_plan_version THEN
-        RAISE EXCEPTION 'Version Mismatch: Current plan version is %, requested approval version is %.', v_plan.version, p_plan_version;
-    END IF;
-
-    -- Enforce clinical safety hard-stop protection
-    IF v_plan.overall_safety_status = 'HARD_STOP' THEN
-        RAISE EXCEPTION 'Clinical Hard Stop: Cannot approve a nutrition plan with unresolved HARD_STOP contraindications.';
-    END IF;
-
-    -- 4. Insert approval record FIRST (enforcing legal sign-off atomicity)
-    INSERT INTO public.approval_records (
+    -- 6. Insert with HASH ONLY (plaintext token is NULL in table)
+    INSERT INTO public.assessment_invitations (
         organization_id,
-        plan_id,
-        patient_id,
-        clinician_id,
-        clinician_name,
-        license_number,
-        plan_version,
-        notes,
-        approval_timestamp
-    )
-    VALUES (
-        p_organization_id,
-        v_plan.id,
-        v_patient_id,
-        v_clinician.id,
-        v_clinician.name,
-        p_license_number,
-        p_plan_version,
-        p_notes,
-        timezone('utc'::text, now())
-    )
-    RETURNING id INTO v_approval_id;
-
-    -- 5. Update plan state to approved
-    UPDATE public.nutrition_plans
-    SET 
-        is_approved = true,
-        status = 'approved',
-        version = p_plan_version,
-        updated_at = timezone('utc'::text, now())
-    WHERE id = v_plan.id;
-
-    -- 6. Log audit event
-    INSERT INTO public.audit_events (
-        organization_id,
-        patient_id,
-        clinician_id,
-        clinician_name,
-        event_type,
-        entity_type,
-        entity_id,
-        payload_after
-    )
-    VALUES (
-        p_organization_id,
-        v_patient_id,
-        v_clinician.id,
-        v_clinician.name,
-        'PLAN_APPROVED',
-        'approval_record',
-        v_approval_id::text,
-        jsonb_build_object(
-            'plan_id', v_plan.id,
-            'client_plan_id', p_client_plan_id,
-            'plan_version', p_plan_version,
-            'approval_record_id', v_approval_id,
-            'license_number', p_license_number,
-            'notes', p_notes
-        )
-    );
-
-    v_result := jsonb_build_object(
-        'success', true,
-        'approval_id', v_approval_id,
-        'plan_id', v_plan.id,
-        'version', p_plan_version,
-        'approved_at', now()
-    );
-
-    RETURN v_result;
-END;
-$$ LANGUAGE plpgsql;
-
--- ---------------------------------------------------------------------
--- 6. SECURE PUBLIC PATIENT INTAKE RPC FUNCTIONS (Security Definer)
--- ---------------------------------------------------------------------
-
--- A. Token Verification (Minimal metadata, zero private leak, access telemetry)
-CREATE OR REPLACE FUNCTION public.verify_public_intake_token(p_token TEXT)
-RETURNS JSONB
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_hash TEXT;
-    v_inv RECORD;
-    v_patient RECORD;
-    v_result JSONB;
-BEGIN
-    IF p_token IS NULL OR trim(p_token) = '' THEN
-        RETURN jsonb_build_object('valid', false, 'reason', 'missing');
-    END IF;
-
-    -- Compute SHA-256 hex digest of provided bearer token
-    v_hash := encode(digest(p_token, 'sha256'), 'hex');
-
-    -- Look up invitation by hash OR token for backward compatibility
-    SELECT id, organization_id, patient_id, expires_at, status, revoked_at
-    INTO v_inv
-    FROM public.assessment_invitations
-    WHERE (token_hash = v_hash OR invitation_token = p_token OR token = p_token);
-
-    IF NOT FOUND THEN
-        RETURN jsonb_build_object('valid', false, 'reason', 'invalid');
-    END IF;
-
-    IF v_inv.status = 'revoked' OR v_inv.revoked_at IS NOT NULL THEN
-        RETURN jsonb_build_object('valid', false, 'reason', 'revoked');
-    END IF;
-
-    IF v_inv.status = 'completed' THEN
-        RETURN jsonb_build_object('valid', false, 'reason', 'completed');
-    END IF;
-
-    IF v_inv.expires_at < timezone('utc'::text, now()) THEN
-        RETURN jsonb_build_object('valid', false, 'reason', 'expired');
-    END IF;
-
-    -- Telemetry: increment access count and update timestamps
-    UPDATE public.assessment_invitations
-    SET 
-        access_count = access_count + 1,
-        first_accessed_at = COALESCE(first_accessed_at, timezone('utc'::text, now())),
-        last_accessed_at = timezone('utc'::text, now())
-    WHERE id = v_inv.id;
-
-    -- Retrieve minimal patient display name (first name / title only)
-    SELECT name, age, gender INTO v_patient
-    FROM public.patients
-    WHERE id = v_inv.patient_id;
-
-    v_result := jsonb_build_object(
-        'valid', true,
-        'invitation_id', v_inv.id,
-        'expires_at', v_inv.expires_at,
-        'status', v_inv.status,
-        'patient_display_name', COALESCE(v_patient.name, 'Patient'),
-        'initial_age', COALESCE(v_patient.age, 35),
-        'initial_gender', COALESCE(v_patient.gender, 'female')
-    );
-
-    RETURN v_result;
-END;
-$$ LANGUAGE plpgsql;
-
--- B. Public Assessment Submission (Atomic staging, zero active chart mutation)
-CREATE OR REPLACE FUNCTION public.submit_public_intake_assessment(
-    p_token TEXT,
-    p_responses JSONB,
-    p_client_ip TEXT DEFAULT NULL
-)
-RETURNS JSONB
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_hash TEXT;
-    v_inv RECORD;
-    v_sub_id UUID;
-    v_template_id UUID;
-    v_result JSONB;
-BEGIN
-    IF p_token IS NULL OR trim(p_token) = '' THEN
-        RAISE EXCEPTION 'Invalid Token: Token parameter is required.';
-    END IF;
-
-    -- Payload size verification (1MB limit)
-    IF octet_length(p_responses::text) > 1048576 THEN
-        RAISE EXCEPTION 'Payload too large: Responses exceed 1MB limit.';
-    END IF;
-
-    IF p_responses IS NULL OR p_responses = '{}'::jsonb THEN
-        RAISE EXCEPTION 'Validation Failed: Assessment responses cannot be empty.';
-    END IF;
-
-    -- Compute SHA-256 hash
-    v_hash := encode(digest(p_token, 'sha256'), 'hex');
-
-    -- Lock and verify invitation
-    SELECT id, organization_id, patient_id, template_id, expires_at, status, revoked_at
-    INTO v_inv
-    FROM public.assessment_invitations
-    WHERE (token_hash = v_hash OR invitation_token = p_token OR token = p_token)
-    FOR UPDATE;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Invalid assessment invitation token.';
-    END IF;
-
-    IF v_inv.status = 'revoked' OR v_inv.revoked_at IS NOT NULL THEN
-        RAISE EXCEPTION 'Assessment invitation has been revoked.';
-    END IF;
-
-    IF v_inv.status = 'completed' THEN
-        RAISE EXCEPTION 'Assessment has already been completed for this invitation.';
-    END IF;
-
-    IF v_inv.expires_at < timezone('utc'::text, now()) THEN
-        RAISE EXCEPTION 'Assessment invitation has expired.';
-    END IF;
-
-    -- Fallback template ID if null
-    IF v_inv.template_id IS NULL THEN
-        SELECT id INTO v_template_id
-        FROM public.assessment_templates
-        WHERE code = 'SHUDDHO_STANDARD_INTAKE_V1'
-        LIMIT 1;
-    ELSE
-        v_template_id := v_inv.template_id;
-    END IF;
-
-    -- 1. Insert into staging queue (assessment_submissions)
-    INSERT INTO public.assessment_submissions (
-        organization_id,
-        invitation_id,
         patient_id,
         template_id,
-        raw_responses,
-        responses_json,
-        client_ip,
-        provenance,
-        submitted_at
+        token_hash,
+        token,
+        invitation_token,
+        sent_via,
+        expires_at,
+        status,
+        access_count,
+        created_at
     )
     VALUES (
-        v_inv.organization_id,
-        v_inv.id,
-        v_inv.patient_id,
+        v_clinician.organization_id,
+        v_patient.id,
         v_template_id,
-        p_responses,
-        p_responses,
-        p_client_ip,
-        'PATIENT_SELF_REPORTED',
+        v_token_hash,
+        NULL,
+        NULL,
+        p_sent_via,
+        v_expires_at,
+        'pending',
+        0,
         timezone('utc'::text, now())
     )
-    RETURNING id INTO v_sub_id;
+    RETURNING id INTO v_inv_id;
 
-    -- 2. Mark invitation completed (atomic one-time consumption)
-    UPDATE public.assessment_invitations
-    SET 
-        status = 'completed',
-        updated_at = timezone('utc'::text, now())
-    WHERE id = v_inv.id;
-
-    -- 3. Record audit event WITHOUT raw token
+    -- 7. Audit log with token hash preview only
     INSERT INTO public.audit_events (
         organization_id,
         patient_id,
+        clinician_id,
+        clinician_name,
         event_type,
         entity_type,
         entity_id,
         payload_after
     )
     VALUES (
-        v_inv.organization_id,
-        v_inv.patient_id,
-        'INTAKE_SUBMITTED',
-        'assessment_submission',
-        v_sub_id::text,
+        v_clinician.organization_id,
+        v_patient.id,
+        v_clinician.id,
+        v_clinician.name,
+        'INTAKE_INVITATION_CREATED',
+        'assessment_invitation',
+        v_inv_id::text,
         jsonb_build_object(
-            'submission_id', v_sub_id,
-            'invitation_id', v_inv.id,
-            'client_ip', p_client_ip,
-            'submitted_at', now()
+            'invitation_id', v_inv_id,
+            'token_hash_preview', substring(v_token_hash from 1 for 10),
+            'expires_at', v_expires_at,
+            'sent_via', p_sent_via
         )
     );
 
-    v_result := jsonb_build_object(
+    -- 8. Return plaintext token ONCE to authorized clinician
+    RETURN jsonb_build_object(
         'success', true,
-        'submission_id', v_sub_id,
-        'submitted_at', now()
+        'invitation_id', v_inv_id,
+        'token', v_token,
+        'token_hash', v_token_hash,
+        'expires_at', v_expires_at,
+        'status', 'pending'
     );
-
-    RETURN v_result;
 END;
 $$ LANGUAGE plpgsql;
 
--- C. Invitation Revocation Function
+-- ---------------------------------------------------------------------
+-- 5. INVITATION REVOCATION & ROTATION RPCS
+-- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.revoke_assessment_invitation(
-    p_invitation_id UUID,
-    p_clinician_id UUID
+    p_invitation_id UUID
 )
 RETURNS JSONB
 SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    v_inv RECORD;
     v_clinician RECORD;
+    v_inv RECORD;
 BEGIN
-    SELECT id, organization_id, patient_id, status INTO v_inv
-    FROM public.assessment_invitations
-    WHERE id = p_invitation_id;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Assessment invitation [%] not found.', p_invitation_id;
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Unauthorized: Authenticated clinician identity is required.';
     END IF;
 
-    SELECT id, name, organization_id INTO v_clinician
+    SELECT id, auth_user_id, name, role, is_active, organization_id
+    INTO v_clinician
     FROM public.clinicians
-    WHERE id = p_clinician_id AND organization_id = v_inv.organization_id;
+    WHERE auth_user_id = auth.uid();
+
+    IF NOT FOUND OR NOT v_clinician.is_active THEN
+        RAISE EXCEPTION 'Unauthorized: Active clinician account required.';
+    END IF;
+
+    IF v_clinician.role NOT IN ('CLINICAL_DIRECTOR', 'TREATING_NUTRITIONIST') THEN
+        RAISE EXCEPTION 'Forbidden: Role % is not authorized to revoke invitations.', v_clinician.role;
+    END IF;
+
+    SELECT id, organization_id, patient_id, status, token_hash
+    INTO v_inv
+    FROM public.assessment_invitations
+    WHERE id = p_invitation_id AND organization_id = v_clinician.organization_id;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Clinician not authorized to revoke invitation for this organization.';
+        RAISE EXCEPTION 'Assessment invitation [%] not found in clinician organization.', p_invitation_id;
+    END IF;
+
+    IF v_inv.status = 'revoked' THEN
+        RETURN jsonb_build_object('success', true, 'invitation_id', p_invitation_id, 'status', 'already_revoked');
     END IF;
 
     UPDATE public.assessment_invitations
@@ -577,7 +332,7 @@ BEGIN
         payload_after
     )
     VALUES (
-        v_inv.organization_id,
+        v_clinician.organization_id,
         v_inv.patient_id,
         v_clinician.id,
         v_clinician.name,
@@ -586,6 +341,7 @@ BEGIN
         p_invitation_id::text,
         jsonb_build_object(
             'invitation_id', p_invitation_id,
+            'token_hash_preview', substring(v_inv.token_hash from 1 for 10),
             'revoked_at', now()
         )
     );
@@ -594,13 +350,255 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION public.revoke_assessment_invitation(
+    p_invitation_id UUID,
+    p_clinician_id UUID
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN public.revoke_assessment_invitation(p_invitation_id);
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.rotate_assessment_invitation(
+    p_invitation_id UUID,
+    p_expires_days INT DEFAULT 14
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_clinician RECORD;
+    v_existing RECORD;
+    v_fresh_res JSONB;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Unauthorized: Authenticated clinician identity is required.';
+    END IF;
+
+    SELECT id, organization_id, is_active, role INTO v_clinician
+    FROM public.clinicians
+    WHERE auth_user_id = auth.uid();
+
+    IF NOT FOUND OR NOT v_clinician.is_active THEN
+        RAISE EXCEPTION 'Unauthorized: Active clinician account required.';
+    END IF;
+
+    SELECT id, patient_id, organization_id INTO v_existing
+    FROM public.assessment_invitations
+    WHERE id = p_invitation_id AND organization_id = v_clinician.organization_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Assessment invitation [%] not found in clinician organization.', p_invitation_id;
+    END IF;
+
+    PERFORM public.revoke_assessment_invitation(p_invitation_id);
+    v_fresh_res := public.issue_assessment_invitation(v_existing.patient_id, p_expires_days, 'link');
+
+    RETURN v_fresh_res;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ---------------------------------------------------------------------
--- 7. ATOMIC INTAKE RECONCILIATION STORED PROCEDURE
+-- 6. PUBLIC INTAKE TOKEN VERIFICATION & SUBMISSION (Anonymous)
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.verify_public_intake_token(p_token TEXT)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_hash TEXT;
+    v_inv RECORD;
+    v_patient RECORD;
+    v_result JSONB;
+BEGIN
+    IF p_token IS NULL OR trim(p_token) = '' THEN
+        RETURN jsonb_build_object('valid', false, 'reason', 'missing');
+    END IF;
+
+    v_hash := encode(digest(p_token, 'sha256'), 'hex');
+
+    SELECT id, organization_id, patient_id, expires_at, status, revoked_at
+    INTO v_inv
+    FROM public.assessment_invitations
+    WHERE token_hash = v_hash 
+       OR (invitation_token IS NOT NULL AND invitation_token = p_token)
+       OR (token IS NOT NULL AND token = p_token);
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('valid', false, 'reason', 'invalid');
+    END IF;
+
+    IF v_inv.status = 'revoked' OR v_inv.revoked_at IS NOT NULL THEN
+        RETURN jsonb_build_object('valid', false, 'reason', 'revoked');
+    END IF;
+
+    IF v_inv.status = 'completed' THEN
+        RETURN jsonb_build_object('valid', false, 'reason', 'completed');
+    END IF;
+
+    IF v_inv.expires_at < timezone('utc'::text, now()) THEN
+        RETURN jsonb_build_object('valid', false, 'reason', 'expired');
+    END IF;
+
+    UPDATE public.assessment_invitations
+    SET 
+        access_count = access_count + 1,
+        first_accessed_at = COALESCE(first_accessed_at, timezone('utc'::text, now())),
+        last_accessed_at = timezone('utc'::text, now())
+    WHERE id = v_inv.id;
+
+    SELECT name, age, gender INTO v_patient
+    FROM public.patients
+    WHERE id = v_inv.patient_id;
+
+    v_result := jsonb_build_object(
+        'valid', true,
+        'invitation_id', v_inv.id,
+        'expires_at', v_inv.expires_at,
+        'status', v_inv.status,
+        'patient_display_name', COALESCE(v_patient.name, 'Patient'),
+        'initial_age', COALESCE(v_patient.age, 35),
+        'initial_gender', COALESCE(v_patient.gender, 'female')
+    );
+
+    RETURN v_result;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.submit_public_intake_assessment(
+    p_token TEXT,
+    p_responses JSONB,
+    p_client_ip TEXT DEFAULT NULL
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_hash TEXT;
+    v_inv RECORD;
+    v_sub_id UUID;
+    v_template_id UUID;
+    v_clean_responses JSONB;
+BEGIN
+    IF p_token IS NULL OR trim(p_token) = '' THEN
+        RAISE EXCEPTION 'Invalid Token: Token parameter is required.';
+    END IF;
+
+    IF octet_length(p_responses::text) > 1048576 THEN
+        RAISE EXCEPTION 'Payload too large: Responses exceed 1MB limit.';
+    END IF;
+
+    IF p_responses IS NULL OR p_responses = '{}'::jsonb THEN
+        RAISE EXCEPTION 'Validation Failed: Assessment responses cannot be empty.';
+    END IF;
+
+    v_clean_responses := p_responses - 'invitation_token' - 'token';
+    v_hash := encode(digest(p_token, 'sha256'), 'hex');
+
+    SELECT id, organization_id, patient_id, template_id, expires_at, status, revoked_at
+    INTO v_inv
+    FROM public.assessment_invitations
+    WHERE token_hash = v_hash 
+       OR (invitation_token IS NOT NULL AND invitation_token = p_token)
+       OR (token IS NOT NULL AND token = p_token)
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Invalid assessment invitation token.';
+    END IF;
+
+    IF v_inv.status = 'revoked' OR v_inv.revoked_at IS NOT NULL THEN
+        RAISE EXCEPTION 'Assessment invitation has been revoked.';
+    END IF;
+
+    IF v_inv.status = 'completed' THEN
+        RAISE EXCEPTION 'Assessment has already been completed for this invitation.';
+    END IF;
+
+    IF v_inv.expires_at < timezone('utc'::text, now()) THEN
+        RAISE EXCEPTION 'Assessment invitation has expired.';
+    END IF;
+
+    IF v_inv.template_id IS NULL THEN
+        SELECT id INTO v_template_id
+        FROM public.assessment_templates
+        WHERE code = 'SHUDDHO_STANDARD_INTAKE_V1'
+        LIMIT 1;
+    ELSE
+        v_template_id := v_inv.template_id;
+    END IF;
+
+    INSERT INTO public.assessment_submissions (
+        organization_id,
+        invitation_id,
+        patient_id,
+        template_id,
+        raw_responses,
+        responses_json,
+        client_ip,
+        provenance,
+        submitted_at
+    )
+    VALUES (
+        v_inv.organization_id,
+        v_inv.id,
+        v_inv.patient_id,
+        v_template_id,
+        v_clean_responses,
+        v_clean_responses,
+        p_client_ip,
+        'PATIENT_SELF_REPORTED',
+        timezone('utc'::text, now())
+    )
+    RETURNING id INTO v_sub_id;
+
+    UPDATE public.assessment_invitations
+    SET 
+        status = 'completed',
+        updated_at = timezone('utc'::text, now())
+    WHERE id = v_inv.id;
+
+    INSERT INTO public.audit_events (
+        organization_id,
+        patient_id,
+        event_type,
+        entity_type,
+        entity_id,
+        payload_after
+    )
+    VALUES (
+        v_inv.organization_id,
+        v_inv.patient_id,
+        'INTAKE_SUBMITTED',
+        'assessment_submission',
+        v_sub_id::text,
+        jsonb_build_object(
+            'submission_id', v_sub_id,
+            'invitation_id', v_inv.id,
+            'submitted_at', now()
+        )
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'submission_id', v_sub_id,
+        'submitted_at', now()
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+-- ---------------------------------------------------------------------
+-- 7. AUTHORITATIVE ATOMIC CLINICAL RECONCILIATION & CHART UPDATE
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.reconcile_intake_submission_atomic(
-    p_organization_id UUID,
     p_submission_id UUID,
-    p_reviewer_id UUID,
     p_decisions JSONB,
     p_notes TEXT DEFAULT NULL
 )
@@ -609,71 +607,192 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
+    v_clinician RECORD;
     v_sub RECORD;
     v_patient RECORD;
-    v_reviewer RECORD;
     v_review_id UUID;
-    v_review_status TEXT := 'completed';
+    v_review_status TEXT := 'approved';
+    v_has_accepted BOOLEAN := false;
+    v_has_rejected BOOLEAN := false;
+
+    v_cur_weight NUMERIC;
+    v_new_weight NUMERIC;
+    v_new_height NUMERIC;
+    v_new_waist NUMERIC;
+    v_new_sleep NUMERIC;
+    v_new_activity TEXT;
+    v_cur_gut JSONB;
+    v_new_gut JSONB;
+    v_cur_allergies JSONB;
+    v_new_allergies JSONB;
+
+    v_safety_impact BOOLEAN := false;
+    v_invalidation_reasons TEXT[] := ARRAY[]::TEXT[];
     v_invalidated_count INT := 0;
-    v_has_new_allergies BOOLEAN := false;
-    v_new_allergies JSONB := '[]'::jsonb;
-    v_result JSONB;
+
+    v_field TEXT;
+    v_status TEXT;
+    v_val JSONB;
 BEGIN
-    -- 1. Validate Reviewer
+    -- 1. Authenticate clinician
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Unauthorized: Authenticated clinician identity is required.';
+    END IF;
+
     SELECT id, auth_user_id, name, role, is_active, organization_id
-    INTO v_reviewer
+    INTO v_clinician
     FROM public.clinicians
-    WHERE id = p_reviewer_id AND organization_id = p_organization_id;
+    WHERE auth_user_id = auth.uid();
 
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Unauthorized: Reviewer clinician not found in organization.';
+    IF NOT FOUND OR NOT v_clinician.is_active THEN
+        RAISE EXCEPTION 'Unauthorized: Active clinician profile required.';
     END IF;
 
-    -- Anti-impersonation check
-    IF auth.uid() IS NOT NULL AND v_reviewer.auth_user_id IS NOT NULL AND v_reviewer.auth_user_id != auth.uid() THEN
-        RAISE EXCEPTION 'Unauthorized: Caller identity does not match clinician account.';
+    IF v_clinician.role NOT IN ('CLINICAL_DIRECTOR', 'TREATING_NUTRITIONIST') THEN
+        RAISE EXCEPTION 'Forbidden: Role % is not authorized to reconcile patient intakes.', v_clinician.role;
     END IF;
 
-    IF NOT v_reviewer.is_active THEN
-        RAISE EXCEPTION 'Unauthorized: Reviewer account is inactive.';
-    END IF;
-
-    IF v_reviewer.role NOT IN ('CLINICAL_DIRECTOR', 'TREATING_NUTRITIONIST') THEN
-        RAISE EXCEPTION 'Forbidden: Role % is not authorized to reconcile patient intakes.', v_reviewer.role;
-    END IF;
-
-    -- 2. Resolve Submission
+    -- 2. Lock and Resolve Submission
     SELECT id, organization_id, patient_id, responses_json, raw_responses
     INTO v_sub
     FROM public.assessment_submissions
-    WHERE id = p_submission_id AND organization_id = p_organization_id;
+    WHERE id = p_submission_id AND organization_id = v_clinician.organization_id
+    FOR UPDATE;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Submission [%] not found in organization.', p_submission_id;
+        RAISE EXCEPTION 'Submission [%] not found in clinician organization.', p_submission_id;
     END IF;
 
-    -- Check if submission was already reviewed
     IF EXISTS (SELECT 1 FROM public.assessment_reviews WHERE submission_id = p_submission_id) THEN
         RAISE EXCEPTION 'Submission [%] has already been reconciled.', p_submission_id;
     END IF;
 
-    -- 3. Resolve Patient
+    -- 3. Lock and Resolve Target Patient
     SELECT * INTO v_patient
     FROM public.patients
-    WHERE id = v_sub.patient_id AND organization_id = p_organization_id
+    WHERE id = v_sub.patient_id AND organization_id = v_clinician.organization_id
     FOR UPDATE;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'Target patient [%] not found.', v_sub.patient_id;
+        RAISE EXCEPTION 'Target patient [%] not found in clinician organization.', v_sub.patient_id;
     END IF;
 
-    -- Check if confirmed_allergies decision is present and accepted
-    IF p_decisions ? 'confirmed_allergies' AND (p_decisions->'confirmed_allergies'->>'status') = 'accepted' THEN
-        v_has_new_allergies := true;
-        v_new_allergies := p_decisions->'confirmed_allergies'->'value';
+    v_cur_weight := v_patient.weight_kg;
+    v_cur_gut := COALESCE(to_jsonb(v_patient.gut_profile), '{}'::jsonb);
+    v_new_gut := v_cur_gut;
+    v_cur_allergies := COALESCE(to_jsonb(v_patient.confirmed_allergies), '[]'::jsonb);
+    v_new_allergies := v_cur_allergies;
+
+    -- 4. Process Decisions with Strict Allowlist & Validation
+    FOR v_field, v_val IN SELECT * FROM jsonb_each(p_decisions) LOOP
+        v_status := v_val->>'status';
+
+        IF v_status NOT IN ('accepted', 'rejected', 'edited', 'request_clarification') THEN
+            RAISE EXCEPTION 'Validation Failed: Unknown decision status [%] on field [%].', v_status, v_field;
+        END IF;
+
+        IF v_status = 'rejected' THEN
+            v_has_rejected := true;
+        ELSIF v_status = 'request_clarification' THEN
+            NULL;
+        ELSIF v_status IN ('accepted', 'edited') THEN
+            v_has_accepted := true;
+
+            IF v_field = 'weight_kg' THEN
+                v_new_weight := (v_val->>'value')::numeric;
+                IF v_new_weight < 20 OR v_new_weight > 300 THEN
+                    RAISE EXCEPTION 'Validation Failed: Weight value [%] is outside plausible clinical range (20-300 kg).', v_new_weight;
+                END IF;
+
+                IF v_cur_weight IS NOT NULL AND abs(v_new_weight - v_cur_weight) >= 3.0 THEN
+                    v_safety_impact := true;
+                    v_invalidation_reasons := array_append(v_invalidation_reasons, 'Significant weight delta (' || v_cur_weight || 'kg -> ' || v_new_weight || 'kg) alters baseline energy floor');
+                END IF;
+
+            ELSIF v_field = 'height_cm' THEN
+                v_new_height := (v_val->>'value')::numeric;
+                IF v_new_height < 50 OR v_new_height > 250 THEN
+                    RAISE EXCEPTION 'Validation Failed: Height [%] is outside clinical range (50-250 cm).', v_new_height;
+                END IF;
+
+            ELSIF v_field = 'waist_cm' THEN
+                v_new_waist := (v_val->>'value')::numeric;
+                IF v_new_waist < 30 OR v_new_waist > 200 THEN
+                    RAISE EXCEPTION 'Validation Failed: Waist circumference [%] is outside clinical range (30-200 cm).', v_new_waist;
+                END IF;
+
+            ELSIF v_field = 'sleep_hours' THEN
+                v_new_sleep := (v_val->>'value')::numeric;
+                IF v_new_sleep < 0 OR v_new_sleep > 24 THEN
+                    RAISE EXCEPTION 'Validation Failed: Sleep hours [%] is outside valid range (0-24 hrs).', v_new_sleep;
+                END IF;
+
+            ELSIF v_field = 'activity_level' THEN
+                v_new_activity := v_val->>'value';
+                IF v_new_activity NOT IN ('sedentary', 'light', 'moderate', 'very_active', 'extra_active') THEN
+                    RAISE EXCEPTION 'Validation Failed: Invalid activity level [%].', v_new_activity;
+                END IF;
+
+            ELSIF v_field = 'bloating' THEN
+                v_new_gut := jsonb_set(v_new_gut, '{bloating}', v_val->'value');
+            ELSIF v_field = 'bristol_stool_score' THEN
+                v_new_gut := jsonb_set(v_new_gut, '{bristol_stool_score}', v_val->'value');
+            ELSIF v_field = 'acid_reflux' THEN
+                v_new_gut := jsonb_set(v_new_gut, '{acid_reflux_hypoacidity}', v_val->'value');
+            ELSIF v_field = 'digestive_fire_agni' THEN
+                v_new_gut := jsonb_set(v_new_gut, '{digestive_fire_agni}', v_val->'value');
+
+            ELSIF v_field = 'confirmed_allergies' THEN
+                IF jsonb_typeof(v_val->'value') = 'array' THEN
+                    v_new_allergies := (
+                        SELECT jsonb_agg(DISTINCT elem)
+                        FROM (
+                            SELECT jsonb_array_elements(v_cur_allergies) AS elem
+                            UNION
+                            SELECT jsonb_array_elements(v_val->'value') AS elem
+                        ) combined
+                    );
+                    IF NOT (v_cur_allergies @> v_new_allergies) THEN
+                        v_safety_impact := true;
+                        v_invalidation_reasons := array_append(v_invalidation_reasons, 'Newly confirmed food allergen requires immediate clinical safety recalculation');
+                    END IF;
+                END IF;
+            ELSE
+                RAISE EXCEPTION 'Security Violation: Field [%] is not permitted for direct intake chart reconciliation.', v_field;
+            END IF;
+        END IF;
+    END LOOP;
+
+    IF v_has_accepted AND v_has_rejected THEN
+        v_review_status := 'partially_accepted';
+    ELSIF NOT v_has_accepted AND v_has_rejected THEN
+        v_review_status := 'rejected';
+    ELSE
+        v_review_status := 'approved';
     END IF;
 
-    -- 4. Insert Assessment Review
+    -- 5. ACTUALLY UPDATE PATIENT RECORD IN DATABASE
+    IF v_has_accepted THEN
+        UPDATE public.patients
+        SET
+            weight_kg = COALESCE(v_new_weight, weight_kg),
+            height_cm = COALESCE(v_new_height, height_cm),
+            waist_cm = COALESCE(v_new_waist, waist_cm),
+            sleep_hours = COALESCE(v_new_sleep, sleep_hours),
+            activity_level = COALESCE(v_new_activity, activity_level),
+            gut_profile = v_new_gut,
+            confirmed_allergies = (
+                SELECT ARRAY(SELECT jsonb_array_elements_text(v_new_allergies))
+            ),
+            allergy_reconciliation_status = CASE 
+                WHEN v_safety_impact THEN 'allergies_confirmed' 
+                ELSE allergy_reconciliation_status 
+            END,
+            updated_at = timezone('utc'::text, now())
+        WHERE id = v_patient.id;
+    END IF;
+
+    -- 6. Insert Assessment Review
     INSERT INTO public.assessment_reviews (
         organization_id,
         submission_id,
@@ -688,11 +807,11 @@ BEGIN
         reviewed_at
     )
     VALUES (
-        p_organization_id,
+        v_clinician.organization_id,
         p_submission_id,
-        v_reviewer.id,
-        v_reviewer.id,
-        v_reviewer.name,
+        v_clinician.id,
+        v_clinician.id,
+        v_clinician.name,
         v_review_status,
         'completed',
         p_decisions,
@@ -702,8 +821,8 @@ BEGIN
     )
     RETURNING id INTO v_review_id;
 
-    -- 5. If new allergies are accepted, invalidate existing approved nutrition plans
-    IF v_has_new_allergies THEN
+    -- 7. Clinical Safety Invalidation
+    IF v_safety_impact THEN
         UPDATE public.nutrition_plans
         SET 
             is_approved = false,
@@ -725,15 +844,15 @@ BEGIN
                 payload_after
             )
             VALUES (
-                p_organization_id,
+                v_clinician.organization_id,
                 v_patient.id,
-                v_reviewer.id,
-                v_reviewer.name,
+                v_clinician.id,
+                v_clinician.name,
                 'PLAN_INVALIDATED',
                 'nutrition_plan',
                 v_patient.id::text,
                 jsonb_build_object(
-                    'reason', 'Newly reconciled allergies require clinical safety recalculation',
+                    'reason', array_to_string(v_invalidation_reasons, '; '),
                     'invalidated_plans_count', v_invalidated_count,
                     'review_id', v_review_id
                 )
@@ -741,7 +860,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- 6. Log reconciliation audit event
+    -- 8. Audit event
     INSERT INTO public.audit_events (
         organization_id,
         patient_id,
@@ -753,37 +872,211 @@ BEGIN
         payload_after
     )
     VALUES (
-        p_organization_id,
+        v_clinician.organization_id,
         v_patient.id,
-        v_reviewer.id,
-        v_reviewer.name,
-        'ASSESSMENT_SUBMISSION_ACCEPTED',
+        v_clinician.id,
+        v_clinician.name,
+        CASE WHEN v_review_status = 'rejected' THEN 'ASSESSMENT_SUBMISSION_REJECTED' ELSE 'ASSESSMENT_SUBMISSION_ACCEPTED' END,
         'assessment_review',
         v_review_id::text,
         jsonb_build_object(
             'submission_id', p_submission_id,
             'review_id', v_review_id,
+            'review_status', v_review_status,
             'invalidated_plans', v_invalidated_count,
             'notes', p_notes
         )
     );
 
-    v_result := jsonb_build_object(
+    RETURN jsonb_build_object(
         'success', true,
         'review_id', v_review_id,
+        'patient_id', v_patient.id,
+        'review_status', v_review_status,
         'invalidated_plans_count', v_invalidated_count,
         'reviewed_at', now()
     );
+END;
+$$ LANGUAGE plpgsql;
 
-    RETURN v_result;
+CREATE OR REPLACE FUNCTION public.reconcile_intake_submission_atomic(
+    p_organization_id UUID,
+    p_submission_id UUID,
+    p_reviewer_id UUID,
+    p_decisions JSONB,
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN public.reconcile_intake_submission_atomic(p_submission_id, p_decisions, p_notes);
 END;
 $$ LANGUAGE plpgsql;
 
 -- ---------------------------------------------------------------------
--- 8. EXPLICIT GRANTS & MINIMAL PRIVILEGE BOUNDARIES
+-- 8. HARDENED ATOMIC NUTRITION PLAN APPROVAL RPC
 -- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.approve_nutrition_plan_atomic(
+    p_client_plan_id TEXT,
+    p_client_patient_id TEXT,
+    p_plan_version INTEGER,
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_clinician RECORD;
+    v_patient RECORD;
+    v_plan RECORD;
+    v_approval_id UUID;
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Unauthorized: Authenticated clinician identity is required.';
+    END IF;
 
--- Restrict anon from directly reading clinical patient data
+    SELECT id, auth_user_id, name, role, is_active, organization_id, license_number
+    INTO v_clinician
+    FROM public.clinicians
+    WHERE auth_user_id = auth.uid();
+
+    IF NOT FOUND OR NOT v_clinician.is_active THEN
+        RAISE EXCEPTION 'Unauthorized: Active clinician account required.';
+    END IF;
+
+    IF v_clinician.role NOT IN ('CLINICAL_DIRECTOR', 'TREATING_NUTRITIONIST') THEN
+        RAISE EXCEPTION 'Forbidden: Role % is not authorized to approve clinical nutrition plans.', v_clinician.role;
+    END IF;
+
+    IF v_clinician.license_number IS NULL OR trim(v_clinician.license_number) = '' THEN
+        RAISE EXCEPTION 'Validation Failed: Professional license number is required for formal sign-off.';
+    END IF;
+
+    SELECT id, organization_id, name INTO v_patient
+    FROM public.patients
+    WHERE organization_id = v_clinician.organization_id 
+      AND (client_id = p_client_patient_id OR id::text = p_client_patient_id);
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Validation Failed: Patient record [%] not found in clinician organization.', p_client_patient_id;
+    END IF;
+
+    SELECT id, patient_id, version, overall_safety_status, is_approved, status
+    INTO v_plan
+    FROM public.nutrition_plans
+    WHERE organization_id = v_clinician.organization_id 
+      AND (client_plan_id = p_client_plan_id OR id::text = p_client_plan_id);
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Validation Failed: Nutrition plan [%] not found.', p_client_plan_id;
+    END IF;
+
+    IF v_plan.patient_id != v_patient.id THEN
+        RAISE EXCEPTION 'Safety Violation: Plan [%] does not belong to patient [%].', p_client_plan_id, p_client_patient_id;
+    END IF;
+
+    IF v_plan.version != p_plan_version THEN
+        RAISE EXCEPTION 'Version Mismatch: Current plan version is %, requested approval version is %.', v_plan.version, p_plan_version;
+    END IF;
+
+    IF v_plan.overall_safety_status = 'HARD_STOP' THEN
+        RAISE EXCEPTION 'Clinical Hard Stop: Cannot approve a nutrition plan with unresolved HARD_STOP contraindications.';
+    END IF;
+
+    INSERT INTO public.approval_records (
+        organization_id,
+        plan_id,
+        patient_id,
+        clinician_id,
+        clinician_name,
+        license_number,
+        plan_version,
+        notes,
+        approval_timestamp
+    )
+    VALUES (
+        v_clinician.organization_id,
+        v_plan.id,
+        v_patient.id,
+        v_clinician.id,
+        v_clinician.name,
+        v_clinician.license_number,
+        p_plan_version,
+        p_notes,
+        timezone('utc'::text, now())
+    )
+    RETURNING id INTO v_approval_id;
+
+    UPDATE public.nutrition_plans
+    SET 
+        is_approved = true,
+        status = 'approved',
+        version = p_plan_version,
+        updated_at = timezone('utc'::text, now())
+    WHERE id = v_plan.id;
+
+    INSERT INTO public.audit_events (
+        organization_id,
+        patient_id,
+        clinician_id,
+        clinician_name,
+        event_type,
+        entity_type,
+        entity_id,
+        payload_after
+    )
+    VALUES (
+        v_clinician.organization_id,
+        v_patient.id,
+        v_clinician.id,
+        v_clinician.name,
+        'PLAN_APPROVED',
+        'approval_record',
+        v_approval_id::text,
+        jsonb_build_object(
+            'plan_id', v_plan.id,
+            'client_plan_id', p_client_plan_id,
+            'plan_version', p_plan_version,
+            'approval_record_id', v_approval_id,
+            'license_number', v_clinician.license_number,
+            'notes', p_notes
+        )
+    );
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'approval_id', v_approval_id,
+        'plan_id', v_plan.id,
+        'version', p_plan_version,
+        'approved_at', now()
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.approve_nutrition_plan_atomic(
+    p_organization_id UUID,
+    p_client_plan_id TEXT,
+    p_client_patient_id TEXT,
+    p_clinician_id UUID,
+    p_license_number TEXT,
+    p_plan_version INTEGER,
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN public.approve_nutrition_plan_atomic(p_client_plan_id, p_client_patient_id, p_plan_version, p_notes);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ---------------------------------------------------------------------
+-- 9. STRICT PERMISSION BOUNDARIES (REVOKE from PUBLIC / anon)
+-- ---------------------------------------------------------------------
 REVOKE ALL ON public.assessment_invitations FROM anon;
 REVOKE ALL ON public.assessment_submissions FROM anon;
 REVOKE ALL ON public.assessment_reviews FROM anon;
@@ -793,29 +1086,51 @@ REVOKE ALL ON public.nutrition_plans FROM anon;
 REVOKE ALL ON public.approval_records FROM anon;
 REVOKE ALL ON public.audit_events FROM anon;
 
--- Grant minimal necessary reads
 GRANT SELECT ON public.assessment_templates TO anon, authenticated;
 
--- Grant authenticated clinicians full managed operations
 GRANT SELECT, INSERT, UPDATE ON public.assessment_invitations TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.assessment_submissions TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.assessment_reviews TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.audit_events TO authenticated;
 
--- Grant RPC function execution
+REVOKE EXECUTE ON FUNCTION public.issue_assessment_invitation(UUID, INT, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.revoke_assessment_invitation(UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.revoke_assessment_invitation(UUID, UUID) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.rotate_assessment_invitation(UUID, INT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.reconcile_intake_submission_atomic(UUID, JSONB, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.reconcile_intake_submission_atomic(UUID, UUID, UUID, JSONB, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(TEXT, TEXT, INTEGER, TEXT) FROM PUBLIC, anon;
+REVOKE EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(UUID, TEXT, TEXT, UUID, TEXT, INTEGER, TEXT) FROM PUBLIC, anon;
+
+GRANT EXECUTE ON FUNCTION public.issue_assessment_invitation(UUID, INT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.revoke_assessment_invitation(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.revoke_assessment_invitation(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.rotate_assessment_invitation(UUID, INT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reconcile_intake_submission_atomic(UUID, JSONB, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.reconcile_intake_submission_atomic(UUID, UUID, UUID, JSONB, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(TEXT, TEXT, INTEGER, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(UUID, TEXT, TEXT, UUID, TEXT, INTEGER, TEXT) TO authenticated;
+
 GRANT EXECUTE ON FUNCTION public.verify_public_intake_token(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_public_intake_assessment(TEXT, JSONB, TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.approve_nutrition_plan_atomic(UUID, TEXT, TEXT, UUID, TEXT, INTEGER, TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.revoke_assessment_invitation(UUID, UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.reconcile_intake_submission_atomic(UUID, UUID, UUID, JSONB, TEXT) TO authenticated;
 
 -- ---------------------------------------------------------------------
--- 9. RECORD IN SCHEMA_MIGRATIONS
+-- 10. POST-MIGRATION VERIFICATION
 -- ---------------------------------------------------------------------
+DO $$
+DECLARE
+    v_cnt INT;
+BEGIN
+    SELECT count(*) INTO v_cnt FROM public.assessment_invitations WHERE token IS NOT NULL OR invitation_token IS NOT NULL;
+    IF v_cnt > 0 THEN
+        RAISE WARNING 'Verification Notice: % legacy invitations still contain plaintext tokens. Ensure backfill completes.', v_cnt;
+    END IF;
+END $$;
+
 INSERT INTO public.schema_migrations (version, description, applied_at)
 VALUES (
-    '20261123000001',
-    'R3 schema alignment, SHA-256 token hashing, atomic reconciliation & public intake RPCs',
+    '20261123000002',
+    'R3 security completion: hash-only token architecture, atomic reconciliation with chart update, safety invalidation, strict auth.uid() enforcement',
     timezone('utc'::text, now())
 )
 ON CONFLICT (version) DO UPDATE SET

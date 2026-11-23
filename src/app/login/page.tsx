@@ -52,6 +52,16 @@ function LoginPageContent() {
 
     try {
       if (!isConfigured) {
+        if (process.env.NODE_ENV === 'production') {
+          setErrorMessage(
+            bn 
+              ? 'নিরাপত্তা ত্রুটি: প্রোডাকশন পরিবেশে লাইভ ব্যাকএন্ড কনফিগারেশন ছাড়া ডেমো লগইন নিষিদ্ধ।' 
+              : 'Production Security Error: Live Supabase backend is unconfigured. Simulated login is strictly disabled in production.'
+          );
+          setAuthState('ERROR');
+          return;
+        }
+
         // Mock demo login for local / test environments without Supabase credentials
         const mockProfile = {
           id: 'c0000000-0000-0000-0000-000000000002',

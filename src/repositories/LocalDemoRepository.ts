@@ -18,26 +18,8 @@ import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
-import { computeSha256Sync } from '@/lib/hashUtils';
-
-function generateSecureToken(prefix: string = 'sh_inv_'): string {
-  const bytes = new Uint8Array(16);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    try {
-      const nodeCrypto = require('crypto');
-      const buf = nodeCrypto.randomBytes(16);
-      bytes.set(buf);
-    } catch {
-      for (let i = 0; i < bytes.length; i++) {
-        bytes[i] = Math.floor(Math.random() * 256);
-      }
-    }
-  }
-  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-  return `${prefix}${hex}`;
-}
+import { computeSha256Sync, generateSecureIntakeToken } from '@/lib/hashUtils';
+import { generateEntityId } from '@/utils/idGenerator';
 
 const STORAGE_KEYS = {
   PATIENTS: 'shuddho_saved_patients',
@@ -316,13 +298,16 @@ export class LocalDemoRepository implements IPracticeRepository {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
-    const token = generateSecureToken('sh_inv_');
+    const token = generateSecureIntakeToken('sh_inv_');
     const tokenHash = computeSha256Sync(token);
-    const newInvitation: AssessmentInvitation = {
-      id: generateSecureToken('inv_'),
+    const newInvitationId = generateEntityId('inv_');
+
+    // Storage record: Plaintext token is NEVER persisted in database or storage
+    const storedInvitation: AssessmentInvitation = {
+      id: newInvitationId,
       organization_id: clinician.organization_id || 'org_main',
       patient_id: patientId,
-      invitation_token: token,
+      invitation_token: '', // Plaintext token NOT persisted
       token_hash: tokenHash,
       access_count: 0,
       expires_at: expiresAt.toISOString(),
@@ -331,24 +316,28 @@ export class LocalDemoRepository implements IPracticeRepository {
       created_at: new Date().toISOString()
     };
 
-    invitations.unshift(newInvitation);
+    invitations.unshift(storedInvitation);
     this.setStoredInvitations(invitations);
 
     await this.logAuditEvent({
       organization_id: clinician.organization_id || 'org_main',
       event_type: 'INTAKE_INVITATION_CREATED',
       entity_type: 'assessment_invitation',
-      entity_id: newInvitation.id,
+      entity_id: storedInvitation.id,
       patient_id: patientId,
       clinician_id: clinician.id,
       clinician_name: clinician.name,
       payload_after: {
         token_hash_preview: tokenHash.substring(0, 10),
-        expires_at: newInvitation.expires_at
+        expires_at: storedInvitation.expires_at
       }
     });
 
-    return newInvitation;
+    // Return plaintext token ONCE to the authorized clinician
+    return {
+      ...storedInvitation,
+      invitation_token: token
+    };
   }
 
   async revokeAssessmentInvitation(
@@ -438,8 +427,13 @@ export class LocalDemoRepository implements IPracticeRepository {
   }
 
   async getAssessmentInvitationByToken(token: string): Promise<AssessmentInvitation | null> {
+    if (!token) return null;
+    const tokenHash = computeSha256Sync(token);
     const list = await this.getAssessmentInvitations();
-    const found = list.find(i => i.invitation_token === token);
+    const found = list.find(i => 
+      i.token_hash === tokenHash || 
+      (i.invitation_token && i.invitation_token === token)
+    );
     return found || null;
   }
 
@@ -447,8 +441,15 @@ export class LocalDemoRepository implements IPracticeRepository {
     invitationToken: string,
     responses: Record<string, any>
   ): Promise<AssessmentSubmission> {
+    if (!invitationToken) {
+      throw new Error('Invalid assessment invitation token.');
+    }
+    const tokenHash = computeSha256Sync(invitationToken);
     const invitations = this.getStoredInvitations();
-    const invIndex = invitations.findIndex(i => i.invitation_token === invitationToken);
+    const invIndex = invitations.findIndex(i => 
+      i.token_hash === tokenHash || 
+      (i.invitation_token && i.invitation_token === invitationToken)
+    );
 
     if (invIndex === -1) {
       throw new Error('Invalid assessment invitation token.');
@@ -465,13 +466,18 @@ export class LocalDemoRepository implements IPracticeRepository {
       throw new Error('Assessment has already been completed for this invitation.');
     }
 
+    // Sanitize clinical payload: strip any accidental bearer tokens
+    const cleanResponses = { ...responses };
+    delete cleanResponses.invitation_token;
+    delete cleanResponses.token;
+
     const submissions = this.getStoredSubmissions();
     const newSubmission: AssessmentSubmission = {
-      id: `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: generateEntityId('sub_'),
       organization_id: invitation.organization_id,
       invitation_id: invitation.id,
       patient_id: invitation.patient_id,
-      responses_json: responses,
+      responses_json: cleanResponses,
       submitted_at: new Date().toISOString()
     };
 
@@ -534,6 +540,19 @@ export class LocalDemoRepository implements IPracticeRepository {
     let hasAccepted = false;
     let hasRejected = false;
 
+    // Strict server-side allowlist for intake reconciliation
+    const ALLOWED_RECONCILE_FIELDS = new Set([
+      'weight_kg', 'height_cm', 'waist_cm', 'sleep_hours', 'activity_level',
+      'bloating', 'bristol_stool_score', 'acid_reflux', 'digestive_fire_agni',
+      'confirmed_allergies', 'reported_allergies'
+    ]);
+
+    for (const field of Object.keys(decisions)) {
+      if (!ALLOWED_RECONCILE_FIELDS.has(field)) {
+        throw new Error(`Security Violation: Field [${field}] is not permitted for chart reconciliation.`);
+      }
+    }
+
     // Apply granular accepted/edited decisions
     for (const [field, decision] of Object.entries(decisions)) {
       if (decision.status === 'accepted' || decision.status === 'edited') {
@@ -541,13 +560,29 @@ export class LocalDemoRepository implements IPracticeRepository {
         const val = decision.value;
 
         if (field === 'weight_kg' && val !== undefined) {
-          patient.weight_kg = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 20 || num > 300) {
+            throw new Error(`Validation Failed: Weight value [${val}] is outside plausible clinical range (20-300 kg).`);
+          }
+          patient.weight_kg = num;
         } else if (field === 'height_cm' && val !== undefined) {
-          patient.height_cm = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 50 || num > 250) {
+            throw new Error(`Validation Failed: Height value [${val}] is outside plausible clinical range (50-250 cm).`);
+          }
+          patient.height_cm = num;
         } else if (field === 'waist_cm' && val !== undefined) {
-          patient.waist_cm = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 30 || num > 200) {
+            throw new Error(`Validation Failed: Waist value [${val}] is outside plausible clinical range (30-200 cm).`);
+          }
+          patient.waist_cm = num;
         } else if (field === 'sleep_hours' && val !== undefined) {
-          patient.sleep_hours = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 0 || num > 24) {
+            throw new Error(`Validation Failed: Sleep hours [${val}] is outside plausible range (0-24 hrs).`);
+          }
+          patient.sleep_hours = num;
         } else if (field === 'activity_level' && val !== undefined) {
           patient.activity_level = val;
         } else if (field === 'bloating' && val !== undefined) {
@@ -610,17 +645,24 @@ export class LocalDemoRepository implements IPracticeRepository {
     // Save updated patient to persistence
     await this.savePatient(patient);
 
-    // Invalidate approved nutrition plan if newly confirmed allergies were added
+    // Invalidate approved nutrition plan if newly confirmed allergies were added or major weight shift occurs
     const allergiesBefore = new Set(patientBefore.confirmed_allergies || []);
     const allergiesAfter = new Set(patient.confirmed_allergies || []);
     const hasNewAllergies = [...allergiesAfter].some(a => !allergiesBefore.has(a));
+    const weightBefore = patientBefore.weight_kg;
+    const weightAfter = patient.weight_kg;
+    const hasMajorWeightChange = weightBefore !== undefined && weightAfter !== undefined && Math.abs(weightAfter - weightBefore) >= 3.0;
 
-    if (hasNewAllergies) {
+    if (hasNewAllergies || hasMajorWeightChange) {
       const currentPlan = await this.getNutritionPlan(patient.id);
       if (currentPlan && currentPlan.is_approved) {
         currentPlan.is_approved = false;
         currentPlan.status = 'requires_review';
         await this.saveNutritionPlan(currentPlan);
+
+        const reason = hasNewAllergies
+          ? 'Newly reconciled allergens require clinical safety recalculation'
+          : `Significant weight delta (${weightBefore}kg -> ${weightAfter}kg) alters baseline energy floor`;
 
         await this.logAuditEvent({
           organization_id: reviewer.organization_id || 'org_main',
@@ -631,9 +673,11 @@ export class LocalDemoRepository implements IPracticeRepository {
           clinician_id: reviewer.id,
           clinician_name: reviewer.name,
           payload_after: {
-            reason: 'Newly reconciled allergens require clinical safety recalculation',
+            reason,
             plan_id: currentPlan.plan_id,
-            new_allergies: [...allergiesAfter].filter(a => !allergiesBefore.has(a))
+            new_allergies: [...allergiesAfter].filter(a => !allergiesBefore.has(a)),
+            weight_before: weightBefore,
+            weight_after: weightAfter
           }
         });
       }

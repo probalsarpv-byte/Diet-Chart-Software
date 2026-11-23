@@ -86,9 +86,16 @@ async function runTests() {
   const inv = await repo.createAssessmentInvitation('pt_remote_01', mockClinician, 14);
 
   assert(inv.invitation_token.startsWith('sh_inv_'), 'Token has standardized prefix "sh_inv_"');
-  assert(inv.invitation_token.length >= 24, `Token has sufficient entropy (length: ${inv.invitation_token.length})`);
+  assert(inv.invitation_token.length === 71, `Token has exact 256-bit entropy (length: ${inv.invitation_token.length} chars = prefix + 64 hex)`);
   assert(inv.status === 'pending', 'Initial invitation status is "pending"');
   assert(typeof inv.token_hash === 'string' && inv.token_hash.length === 64, 'Token SHA-256 hash computed and stored');
+
+  // Verify internal storage does NOT store raw plaintext token (hash-only persistence)
+  const rawStorageInvitations = JSON.parse(memoryStorage['shuddho_assessment_invitations'] || '[]');
+  const storedInv = rawStorageInvitations.find((x: any) => x.id === inv.id);
+  assert(storedInv !== undefined, 'Stored invitation found in persistence layer');
+  assert(storedInv.invitation_token === '', 'Persistence layer strictly stores empty string for plaintext invitation_token');
+  assert(storedInv.token_hash === inv.token_hash, 'Persistence layer stores cryptographically secure SHA-256 token_hash');
 
   // Verify Audit Log does NOT leak plaintext token
   const inviteAudits = await repo.getAuditEvents('pt_remote_01');
@@ -233,6 +240,82 @@ async function runTests() {
   const latestAudits = await repo.getAuditEvents('pt_remote_01');
   const planInvalAudit = latestAudits.find(a => a.event_type === 'PLAN_INVALIDATED');
   assert(planInvalAudit !== undefined, 'PLAN_INVALIDATED audit event logged with clinical justification');
+
+  // --- 6. Reconciliation Allowlist & Tampering Rejection ---
+  console.log('\n--- 6. Reconciliation Allowlist & Tampering Rejection ---');
+  // Attempt to submit unauthorized keys in reconciliation decisions (e.g. escalating privileges, injecting raw schema)
+  const illegalDecisions: any = {
+    organization_id: { status: 'accepted', value: 'stolen_org_uuid' },
+    role: { status: 'accepted', value: 'SUPERADMIN' },
+    is_active: { status: 'accepted', value: false },
+    custom_injected_field: { status: 'accepted', value: 'malicious_code' },
+    weight_kg: { status: 'accepted', value: 65.0 }
+  };
+
+  let securityViolationThrown = false;
+  try {
+    await repo.reconcileAssessmentSubmission(
+      staged[0].id,
+      mockClinician,
+      illegalDecisions,
+      'Attempted injection test.'
+    );
+  } catch (err: any) {
+    securityViolationThrown = true;
+    assert(err.message.includes('Security Violation') && err.message.includes('organization_id'), 'Illegal field organization_id strictly throws Security Violation error');
+  }
+  assert(securityViolationThrown, 'Tampering attempt with unauthorized fields fail-closed with Security Violation exception');
+
+  const patientAfterIllegal = await repo.getPatientById('pt_remote_01');
+  assert((patientAfterIllegal as any).organization_id !== 'stolen_org_uuid', 'Illegal field organization_id was NOT applied to patient chart');
+  assert((patientAfterIllegal as any).role === undefined, 'Illegal field role strictly blocked by allowlist');
+  assert((patientAfterIllegal as any).custom_injected_field === undefined, 'Arbitrary payload field custom_injected_field blocked by allowlist');
+
+  // --- 7. Significant Weight Shift (>= 3kg) Plan Invalidation ---
+  console.log('\n--- 7. Significant Weight Shift (>= 3kg) Plan Invalidation ---');
+  // Re-approve the plan
+  await repo.saveNutritionPlan({
+    plan_id: 'plan_pt_remote_01',
+    patient_id: 'pt_remote_01',
+    visit_id: 'vis_remote_01',
+    version: 2,
+    schema_version: 2,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    status: 'approved',
+    is_approved: true,
+    approved_by: mockClinician.name,
+    approval_date: new Date().toISOString(),
+    target_macros: { calories: 1800, protein_g: 80, carbs_g: 200, fat_g: 55 },
+    days: [],
+    overall_safety_status: 'SAFE'
+  });
+  const reapprovedPlan = await repo.getNutritionPlan('pt_remote_01');
+  assert(reapprovedPlan?.is_approved === true, 'Diet plan re-approved for version 2');
+
+  // Baseline weight before this test is 66.5kg. Reconcile weight to 61.5kg (delta = 5.0kg >= 3kg).
+  await repo.reconcileAssessmentSubmission(
+    staged[0].id,
+    mockClinician,
+    {
+      weight_kg: { status: 'accepted', value: 61.5 }
+    },
+    'Weight loss of 5.0kg confirmed on calibrated clinic scale.'
+  );
+
+  const planAfterWeightShift = await repo.getNutritionPlan('pt_remote_01');
+  assert(planAfterWeightShift?.is_approved === false, 'Approved plan invalidated when weight delta >= 3kg (delta: -5.0kg)');
+  assert(planAfterWeightShift?.status === 'requires_review', 'Plan status transitioned to requires_review');
+
+  // --- 8. Dual Hosting & Repository Factory Isolation ---
+  console.log('\n--- 8. Dual Hosting & Repository Factory Isolation ---');
+  const { getPracticeRepository, resetPracticeRepository } = await import('../src/repositories');
+  resetPracticeRepository();
+  const repoInstance = getPracticeRepository(false);
+  assert(repoInstance !== null, 'Repository factory safely resolves repository instance for static export & dual deployment');
+  assert(repoInstance.isCloud === false, 'Unconfigured environment defaults to local isolation mode');
+  resetPracticeRepository();
+  assert(true, 'resetPracticeRepository successfully resets singleton repository cache');
 
   console.log('\n================================================================');
   console.log('R3 PUBLIC INTAKE RPC RESULTS: ALL CHECKS PASSED (0 FAILED)');

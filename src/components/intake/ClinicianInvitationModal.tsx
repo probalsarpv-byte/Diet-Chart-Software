@@ -301,7 +301,7 @@ export const ClinicianInvitationModal: React.FC<ClinicianInvitationModalProps> =
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-bold text-foreground">
-                            {maskToken(inv.invitation_token)}
+                            {inv.invitation_token ? maskToken(inv.invitation_token) : (inv.token_hash ? `hash:${inv.token_hash.slice(0, 10)}...` : '********')}
                           </span>
                           {effectiveStatus === 'completed' && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1">
@@ -350,40 +350,51 @@ export const ClinicianInvitationModal: React.FC<ClinicianInvitationModalProps> =
                       <div className="flex items-center gap-2 self-end sm:self-center">
                         {effectiveStatus === 'pending' ? (
                           <>
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(inv.invitation_token)}
-                              className="px-2.5 py-1.5 rounded-lg border border-border bg-muted/50 hover:bg-muted text-foreground text-[11px] font-semibold flex items-center gap-1 transition"
-                            >
-                              {copiedToken === inv.invitation_token ? (
-                                <>
-                                  <Check className="h-3 w-3 text-emerald-600" />
-                                  {bn ? 'কপি হয়েছে' : 'Copied'}
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="h-3 w-3" />
-                                  {bn ? 'লিংক কপি' : 'Copy'}
-                                </>
-                              )}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => shareViaWhatsApp(inv.invitation_token)}
-                              className="p-1.5 rounded-lg bg-emerald-600/10 text-emerald-600 hover:bg-emerald-600 hover:text-white transition"
-                              title="Share via WhatsApp"
-                            >
-                              <Share2 className="h-3.5 w-3.5" />
-                            </button>
-                            <a
-                              href={getFullUrl(inv.invitation_token)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition"
-                              title="Open Link"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
+                            {inv.invitation_token ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(inv.invitation_token)}
+                                  className="px-2.5 py-1.5 rounded-lg border border-border bg-muted/50 hover:bg-muted text-foreground text-[11px] font-semibold flex items-center gap-1 transition"
+                                >
+                                  {copiedToken === inv.invitation_token ? (
+                                    <>
+                                      <Check className="h-3 w-3 text-emerald-600" />
+                                      {bn ? 'কপি হয়েছে' : 'Copied'}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="h-3 w-3" />
+                                      {bn ? 'লিংক কপি' : 'Copy'}
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => shareViaWhatsApp(inv.invitation_token)}
+                                  className="p-1.5 rounded-lg bg-emerald-600/10 text-emerald-600 hover:bg-emerald-600 hover:text-white transition"
+                                  title="Share via WhatsApp"
+                                >
+                                  <Share2 className="h-3.5 w-3.5" />
+                                </button>
+                                <a
+                                  href={getFullUrl(inv.invitation_token)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-1.5 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition"
+                                  title="Open Link"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </a>
+                              </>
+                            ) : (
+                              <span 
+                                className="text-[10px] text-muted-foreground bg-muted px-2 py-1 rounded-md"
+                                title={bn ? 'টোকেন হ্যাশ ডাটাবেসে সুরক্ষিত। নতুন লিংকের জন্য Rotate চাপুন।' : 'Token hash secured in database. Use Rotate to issue a fresh link.'}
+                              >
+                                {bn ? 'টোকেন সুরক্ষিত' : 'Token hashed'}
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleRotateInvitation(inv.id)}

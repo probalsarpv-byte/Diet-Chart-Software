@@ -197,8 +197,7 @@ export const PatientIntakeForm: React.FC<PatientIntakeFormProps> = ({
         ...(formData.other_allergies ? [formData.other_allergies.trim()] : []),
       ],
 
-      // Metadata
-      invitation_token: invitation.invitation_token,
+      // Metadata (Note: invitation_token is passed ONLY as an authorization parameter to the RPC, never persisted in clinical responses JSON)
       submitted_at_iso: new Date().toISOString(),
       patient_acknowledged_consent: true,
     };

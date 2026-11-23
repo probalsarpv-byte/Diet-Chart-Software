@@ -25,26 +25,8 @@ import { PatientProfile, ClinicalVisit, WeeklyDietPlan } from '@/types';
 import { ClinicianAuthProfile } from '@/lib/supabaseClient';
 import { approveWeeklyDietPlan } from '@/engine/weeklyPlanner';
 import { calculateAnthropometrics } from '@/engine/anthropometrics';
-import { computeSha256 } from '@/lib/hashUtils';
-
-function generateSecureToken(prefix: string = 'sh_inv_'): string {
-  const bytes = new Uint8Array(16);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(bytes);
-  } else {
-    try {
-      const nodeCrypto = require('crypto');
-      const buf = nodeCrypto.randomBytes(16);
-      bytes.set(buf);
-    } catch {
-      for (let i = 0; i < bytes.length; i++) {
-        bytes[i] = Math.floor(Math.random() * 256);
-      }
-    }
-  }
-  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-  return `${prefix}${hex}`;
-}
+import { computeSha256, generateSecureIntakeToken } from '@/lib/hashUtils';
+import { generateEntityId } from '@/utils/idGenerator';
 
 export class SupabasePracticeRepository implements IPracticeRepository {
   public readonly isCloud = true;
@@ -61,9 +43,9 @@ export class SupabasePracticeRepository implements IPracticeRepository {
   private patientClientToUuid = new Map<string, string>();
   private patientUuidToClient = new Map<string, string>();
 
-  constructor(client: SupabaseClient, organizationId: string = 'a0000000-0000-0000-0000-000000000001') {
+  constructor(client: SupabaseClient, organizationId?: string) {
     this.client = client;
-    this.currentOrgId = organizationId;
+    this.currentOrgId = organizationId || '';
   }
 
   public isUuid(val: string): boolean {
@@ -517,18 +499,50 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     clinician: ClinicianAuthProfile,
     expiresDays: number = 14
   ): Promise<AssessmentInvitation> {
+    const orgId = clinician.organization_id || this.currentOrgId;
+    if (!orgId) {
+      throw new Error('Unauthorized: Clinician is not bound to a valid organization.');
+    }
+    const patientUuid = await this.resolvePatientUuid(patientId);
+
+    // 1. Authoritative Backend Generation RPC (Security Definer)
+    try {
+      const { data: rpcData, error: rpcErr } = await this.client.rpc('issue_assessment_invitation', {
+        p_patient_id: patientUuid,
+        p_expires_days: expiresDays,
+        p_sent_via: 'link'
+      });
+
+      if (!rpcErr && rpcData?.success) {
+        return {
+          id: rpcData.invitation_id,
+          organization_id: orgId,
+          patient_id: patientId,
+          invitation_token: rpcData.token, // Plaintext returned ONCE to clinician
+          token_hash: rpcData.token_hash,
+          access_count: 0,
+          expires_at: rpcData.expires_at,
+          status: 'pending',
+          sent_via: 'link',
+          created_at: new Date().toISOString()
+        };
+      }
+    } catch (e) {
+      console.warn('Backend RPC issue_assessment_invitation fallback:', e);
+    }
+
+    // 2. Fallback Generation (256-bit cryptographically secure, HASH ONLY in database)
+    const token = generateSecureIntakeToken('sh_inv_');
+    const tokenHash = await computeSha256(token);
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
-    const token = generateSecureToken('sh_inv_');
-    const tokenHash = await computeSha256(token);
-    const patientUuid = await this.resolvePatientUuid(patientId);
-
     const payload = {
-      organization_id: this.currentOrgId,
+      organization_id: orgId,
       patient_id: patientUuid,
-      invitation_token: token,
       token_hash: tokenHash,
+      token: null,
+      invitation_token: null, // Hash-only architecture
       access_count: 0,
       expires_at: expiresAt.toISOString(),
       status: 'pending',
@@ -543,13 +557,8 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
     if (error) throw error;
 
-    const result: AssessmentInvitation = {
-      ...data,
-      invitation_token: token
-    };
-
     await this.logAuditEvent({
-      organization_id: this.currentOrgId,
+      organization_id: orgId,
       event_type: 'INTAKE_INVITATION_CREATED',
       entity_type: 'assessment_invitation',
       entity_id: data.id,
@@ -562,7 +571,10 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       }
     });
 
-    return result;
+    return {
+      ...data,
+      invitation_token: token
+    };
   }
 
   async revokeAssessmentInvitation(
@@ -571,8 +583,7 @@ export class SupabasePracticeRepository implements IPracticeRepository {
   ): Promise<boolean> {
     try {
       const { error: rpcError } = await this.client.rpc('revoke_assessment_invitation', {
-        p_invitation_id: invitationId,
-        p_clinician_id: clinician.id
+        p_invitation_id: invitationId
       });
 
       if (rpcError) {
@@ -588,7 +599,7 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       }
 
       await this.logAuditEvent({
-        organization_id: this.currentOrgId,
+        organization_id: clinician.organization_id || this.currentOrgId,
         event_type: 'INTAKE_INVITATION_REVOKED',
         entity_type: 'assessment_invitation',
         entity_id: invitationId,
@@ -611,6 +622,30 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     clinician: ClinicianAuthProfile,
     expiresDays: number = 14
   ): Promise<AssessmentInvitation> {
+    try {
+      const { data: rpcData, error: rpcErr } = await this.client.rpc('rotate_assessment_invitation', {
+        p_invitation_id: invitationId,
+        p_expires_days: expiresDays
+      });
+
+      if (!rpcErr && rpcData?.success) {
+        return {
+          id: rpcData.invitation_id,
+          organization_id: clinician.organization_id || this.currentOrgId,
+          patient_id: '',
+          invitation_token: rpcData.token,
+          token_hash: rpcData.token_hash,
+          access_count: 0,
+          expires_at: rpcData.expires_at,
+          status: 'pending',
+          sent_via: 'link',
+          created_at: new Date().toISOString()
+        };
+      }
+    } catch (e) {
+      console.warn('Backend RPC rotate_assessment_invitation fallback:', e);
+    }
+
     const { data: existing, error: fetchErr } = await this.client
       .from('assessment_invitations')
       .select('*')
@@ -623,28 +658,11 @@ export class SupabasePracticeRepository implements IPracticeRepository {
 
     await this.revokeAssessmentInvitation(invitationId, clinician);
 
-    const freshInvitation = await this.createAssessmentInvitation(
+    return this.createAssessmentInvitation(
       existing.patient_id,
       clinician,
       expiresDays
     );
-
-    await this.logAuditEvent({
-      organization_id: this.currentOrgId,
-      event_type: 'INTAKE_INVITATION_ROTATED',
-      entity_type: 'assessment_invitation',
-      entity_id: freshInvitation.id,
-      patient_id: existing.patient_id,
-      clinician_id: clinician.id,
-      clinician_name: clinician.name,
-      payload_after: {
-        previous_invitation_id: invitationId,
-        fresh_invitation_id: freshInvitation.id,
-        expires_at: freshInvitation.expires_at
-      }
-    });
-
-    return freshInvitation;
   }
 
   async getAssessmentInvitations(patientId?: string): Promise<AssessmentInvitation[]> {
@@ -664,10 +682,12 @@ export class SupabasePracticeRepository implements IPracticeRepository {
   }
 
   async getAssessmentInvitationByToken(token: string): Promise<AssessmentInvitation | null> {
+    if (!token) return null;
+    const tokenHash = await computeSha256(token);
     const { data, error } = await this.client
       .from('assessment_invitations')
       .select('*')
-      .eq('invitation_token', token)
+      .or(`token_hash.eq.${tokenHash},invitation_token.eq.${token},token.eq.${token}`)
       .maybeSingle();
 
     if (error) {
@@ -778,6 +798,72 @@ export class SupabasePracticeRepository implements IPracticeRepository {
       throw new Error(`Submission [${submissionId}] not found.`);
     }
 
+    // 1. Authoritative Atomic Database Transaction via RPC
+    try {
+      const { data: rpcData, error: rpcError } = await this.client.rpc(
+        'reconcile_intake_submission_atomic',
+        {
+          p_submission_id: submissionId,
+          p_decisions: decisions,
+          p_notes: notes || null
+        }
+      );
+
+      if (!rpcError && rpcData?.success) {
+        const updatedPatient = await this.getPatientById(submission.patient_id);
+        if (!updatedPatient) {
+          throw new Error('Failed to load updated patient after reconciliation.');
+        }
+
+        const { data: reviewData } = await this.client
+          .from('assessment_reviews')
+          .select('*')
+          .eq('id', rpcData.review_id)
+          .maybeSingle();
+
+        const review: AssessmentReview = reviewData || {
+          id: rpcData.review_id,
+          organization_id: reviewer.organization_id || this.currentOrgId,
+          submission_id: submissionId,
+          reviewer_id: reviewer.id,
+          reviewer_name: reviewer.name,
+          review_status: rpcData.review_status || 'completed',
+          reconciliation_diff_json: decisions,
+          merged_patient_snapshot: updatedPatient,
+          review_notes: notes,
+          reviewed_at: rpcData.reviewed_at || new Date().toISOString()
+        };
+
+        return { review, updatedPatient };
+      }
+
+      if (rpcError) {
+        // If RPC raised a validation or authorization error, bubble it up directly
+        if (rpcError.message && (
+          rpcError.message.includes('Unauthorized') || 
+          rpcError.message.includes('Forbidden') || 
+          rpcError.message.includes('Validation Failed') ||
+          rpcError.message.includes('Security Violation') ||
+          rpcError.message.includes('already been reconciled')
+        )) {
+          throw new Error(rpcError.message);
+        }
+        console.warn('reconcile_intake_submission_atomic RPC unavailable, executing client fallback:', rpcError);
+      }
+    } catch (rpcErr: any) {
+      if (rpcErr.message && (
+        rpcErr.message.includes('Unauthorized') || 
+        rpcErr.message.includes('Forbidden') || 
+        rpcErr.message.includes('Validation Failed') ||
+        rpcErr.message.includes('Security Violation') ||
+        rpcErr.message.includes('already been reconciled')
+      )) {
+        throw rpcErr;
+      }
+      console.warn('RPC execution exception, continuing to client-side fallback:', rpcErr);
+    }
+
+    // 2. Client-Side Fallback for Standalone Test Environments
     const patient = await this.getPatientById(submission.patient_id);
     if (!patient) {
       throw new Error(`Target patient [${submission.patient_id}] not found.`);
@@ -787,6 +873,19 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     let hasAccepted = false;
     let hasRejected = false;
 
+    // Strict allowlist validation
+    const ALLOWED_RECONCILE_FIELDS = new Set([
+      'weight_kg', 'height_cm', 'waist_cm', 'sleep_hours', 'activity_level',
+      'bloating', 'bristol_stool_score', 'acid_reflux', 'digestive_fire_agni',
+      'confirmed_allergies', 'reported_allergies'
+    ]);
+
+    for (const field of Object.keys(decisions)) {
+      if (!ALLOWED_RECONCILE_FIELDS.has(field)) {
+        throw new Error(`Security Violation: Field [${field}] is not permitted for chart reconciliation.`);
+      }
+    }
+
     // Apply granular decisions
     for (const [field, decision] of Object.entries(decisions)) {
       if (decision.status === 'accepted' || decision.status === 'edited') {
@@ -794,13 +893,29 @@ export class SupabasePracticeRepository implements IPracticeRepository {
         const val = decision.value;
 
         if (field === 'weight_kg' && val !== undefined) {
-          patient.weight_kg = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 20 || num > 300) {
+            throw new Error(`Validation Failed: Weight value [${val}] is outside plausible clinical range (20-300 kg).`);
+          }
+          patient.weight_kg = num;
         } else if (field === 'height_cm' && val !== undefined) {
-          patient.height_cm = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 50 || num > 250) {
+            throw new Error(`Validation Failed: Height value [${val}] is outside plausible clinical range (50-250 cm).`);
+          }
+          patient.height_cm = num;
         } else if (field === 'waist_cm' && val !== undefined) {
-          patient.waist_cm = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 30 || num > 200) {
+            throw new Error(`Validation Failed: Waist value [${val}] is outside plausible clinical range (30-200 cm).`);
+          }
+          patient.waist_cm = num;
         } else if (field === 'sleep_hours' && val !== undefined) {
-          patient.sleep_hours = Number(val);
+          const num = Number(val);
+          if (isNaN(num) || num < 0 || num > 24) {
+            throw new Error(`Validation Failed: Sleep hours [${val}] is outside plausible range (0-24 hrs).`);
+          }
+          patient.sleep_hours = num;
         } else if (field === 'activity_level' && val !== undefined) {
           patient.activity_level = val;
         } else if (field === 'bloating' && val !== undefined) {
@@ -866,12 +981,15 @@ export class SupabasePracticeRepository implements IPracticeRepository {
     // Save updated patient to PostgreSQL
     const savedPatient = await this.savePatient(patient);
 
-    // Invalidate approved nutrition plan if newly confirmed allergies were added
+    // Invalidate approved nutrition plan if newly confirmed allergies or major weight shift occurs
     const allergiesBefore = new Set(patientBefore.confirmed_allergies || []);
     const allergiesAfter = new Set(patient.confirmed_allergies || []);
     const hasNewAllergies = [...allergiesAfter].some(a => !allergiesBefore.has(a));
+    const weightBefore = patientBefore.weight_kg;
+    const weightAfter = patient.weight_kg;
+    const hasMajorWeightChange = weightBefore !== undefined && weightAfter !== undefined && Math.abs(weightAfter - weightBefore) >= 3.0;
 
-    if (hasNewAllergies) {
+    if (hasNewAllergies || hasMajorWeightChange) {
       try {
         const patientUuid = await this.resolvePatientUuid(patient.id);
         await this.client
@@ -884,6 +1002,10 @@ export class SupabasePracticeRepository implements IPracticeRepository {
           .eq('patient_id', patientUuid)
           .eq('is_approved', true);
 
+        const reason = hasNewAllergies
+          ? 'Newly reconciled allergens require clinical safety recalculation'
+          : `Significant weight delta (${weightBefore}kg -> ${weightAfter}kg) alters baseline energy floor`;
+
         await this.logAuditEvent({
           organization_id: reviewer.organization_id || this.currentOrgId,
           event_type: 'PLAN_INVALIDATED',
@@ -893,8 +1015,10 @@ export class SupabasePracticeRepository implements IPracticeRepository {
           clinician_id: reviewer.id,
           clinician_name: reviewer.name,
           payload_after: {
-            reason: 'Newly reconciled allergens require clinical safety recalculation',
-            new_allergies: [...allergiesAfter].filter(a => !allergiesBefore.has(a))
+            reason,
+            new_allergies: [...allergiesAfter].filter(a => !allergiesBefore.has(a)),
+            weight_before: weightBefore,
+            weight_after: weightAfter
           }
         });
       } catch (invalErr) {

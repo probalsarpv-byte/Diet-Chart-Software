@@ -80,6 +80,12 @@ serve(async (req: Request) => {
         );
       }
 
+      // Security sanitization: prevent bearer tokens from leaking into clinical responses
+      if (responses && typeof responses === 'object') {
+        delete responses.invitation_token;
+        delete responses.token;
+      }
+
       const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
 
       const { data, error } = await supabase.rpc("submit_public_intake_assessment", {

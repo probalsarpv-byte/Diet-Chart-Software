@@ -133,7 +133,7 @@ flowchart TD
 | :--- | :---: | :---: | :--- |
 | `test/r3_intake_workflow.test.ts` | 27 / 27 | **PASS** | Token lifecycle, staging isolation, diff reconciliation, BMI/BMR recalculation |
 | `test/r3_portal_security.test.ts` | 23 / 23 | **PASS** | Anti-tampering, expiration rejection, multi-org isolation, immutable audit |
-| `test/r3_public_intake_rpc.test.ts` | 22 / 22 | **PASS** | SHA-256 token hashing, access telemetry, link revocation/rotation, allergen plan invalidation |
+| `test/r3_public_intake_rpc.test.ts` | 24 / 24 | **PASS** | SHA-256 token hashing, access telemetry, link revocation/rotation, allergen plan invalidation |
 | `test/r3_browser_e2e.test.ts` | 13 / 13 | **PASS** | Playwright Chrome: public form flow, submission receipt, staging modal UI, login route |
 | **Complete Regression (`npm test`)** | **700+** | **PASS** | 15 test suites (P0, P1, P2, P2:gate, Step01-05, R1, R2, R3) passed 100% |
 | **TypeScript Validation (`tsc`)** | 0 errors | **PASS** | Zero type errors or weakened contracts |
@@ -144,7 +144,7 @@ flowchart TD
 ## 5. Artifacts and Production Assets
 
 1. **SQL Bundle:** `supabase/r3_complete_bundle.sql` (idempotent, forward-only script for Supabase SQL Editor).
-2. **Database Migration:** `supabase/migrations/20261123000001_r3_schema_and_security.sql`.
+2. **Database Migrations:** `supabase/migrations/20261123000001_r3_schema_and_security.sql` and `supabase/migrations/20261123000002_r3_security_completion.sql`.
 3. **Cryptographic Utility:** `src/lib/hashUtils.ts` (SHA-256 Web Crypto / Node crypto with token masking).
 4. **Adaptive Intake Form:** `src/components/intake/PatientIntakeForm.tsx`.
 5. **Invitation Modal:** `src/components/intake/ClinicianInvitationModal.tsx`.
