@@ -117,7 +117,13 @@ import {
   evaluateMedicationReconciliationStatus
 } from '@/engine/r5MedicationSearchEngine';
 import { deriveR5PopulationProfile } from '@/engine/r5PopulationEngine';
-import { evaluateFunctionalMatrix, buildSystemsNetworkGraph, adaptAssessmentEvidenceToMatrixInput } from '@/engine/r5SystemsNetworkEngine';
+import { 
+  evaluateFunctionalMatrix, 
+  buildSystemsNetworkGraph, 
+  adaptAssessmentEvidenceToMatrixInput,
+  extractLabNumericValue,
+  normalizeStructuredLabEntries
+} from '@/engine/r5SystemsNetworkEngine';
 import { resolveMultimorbidityConflicts } from '@/engine/r5MultimorbidityEngine';
 import { analyzeInsulinRegimen } from '@/engine/r5InsulinEngine';
 import { evaluateMedicationNutritionInteractions } from '@/engine/r5MedicationNutritionEngine';
@@ -1178,12 +1184,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let sodiumLimit: number | undefined = undefined;
 
     const labsAny = (patient.labs || {}) as any;
-    const serumK = typeof labsAny.serum_potassium === 'number' 
-      ? labsAny.serum_potassium 
-      : parseFloat(labsAny.serum_potassium || '0');
-    const egfr = typeof labsAny.egfr === 'number' 
-      ? labsAny.egfr 
-      : parseFloat(labsAny.egfr || '100');
+    const serumK = extractLabNumericValue(labsAny.serum_potassium ?? labsAny.potassium) ?? 0;
+    const egfr = extractLabNumericValue(labsAny.egfr) ?? 100;
 
     const clinicalReviewFlags: Array<{
       parameter: string;

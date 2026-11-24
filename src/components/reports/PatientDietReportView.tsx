@@ -240,6 +240,34 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
           </div>
         )}
 
+        {/* Fasting Schedule & Hypoglycemia Safeguards Banner */}
+        {payload.fasting_evaluation?.is_fasting_prescribed && (
+          <div data-testid="fasting-safety-banner" className={`relative z-10 p-3.5 rounded-2xl border text-xs space-y-1.5 avoid-break ${
+            !payload.fasting_evaluation.is_safe_for_medication_regimen 
+              ? 'bg-rose-50/90 dark:bg-rose-950/30 border-rose-300 text-rose-900 dark:text-rose-200' 
+              : 'bg-emerald-50/80 dark:bg-emerald-950/20 border-emerald-300 text-emerald-900 dark:text-emerald-200'
+          }`}>
+            <div className="flex items-center gap-2 font-bold">
+              <Clock className="h-4 w-4" />
+              <span>
+                {bn 
+                  ? `ফাস্টিং ও আহারের সময়সূচি (${payload.fasting_evaluation.fasting_hours} ঘণ্টা ফাস্টিং: ${payload.fasting_evaluation.eating_window_start} – ${payload.fasting_evaluation.eating_window_end})`
+                  : `Fasting Protocol (${payload.fasting_evaluation.fasting_hours}h Fasting: ${payload.fasting_evaluation.eating_window_start} – ${payload.fasting_evaluation.eating_window_end})`}
+              </span>
+            </div>
+            {payload.fasting_evaluation.safety_warnings_bn.length > 0 && (
+              <div className="text-[11px] font-semibold text-rose-800 dark:text-rose-300">
+                {(bn ? payload.fasting_evaluation.safety_warnings_bn : payload.fasting_evaluation.safety_warnings_en).join(' ')}
+              </div>
+            )}
+            {payload.fasting_evaluation.hypoglycemia_precautions_bn && (
+              <div className="text-[10px] bg-white/70 dark:bg-slate-900/60 p-2 rounded-lg border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-medium">
+                {bn ? payload.fasting_evaluation.hypoglycemia_precautions_bn : payload.fasting_evaluation.hypoglycemia_precautions_en}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Personalized 7-Food-Group Traffic Light Dietary Guide */}
         {(payload as any).seven_food_group_guide && (payload as any).seven_food_group_guide.groups?.length > 0 ? (
           <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white print:border-none print:p-0">
@@ -399,6 +427,131 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
                   <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight">
                     {bn ? item.instructions_bn : item.instructions_en}
                   </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Module 5: 6-Column Chronological Medication & Supplementation Protocol */}
+        {payload.medication_supplement_protocol && payload.medication_supplement_protocol.active_rows.length > 0 && (
+          <div data-testid="six-column-medication-protocol" className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-emerald-600" />
+                <span>{bn ? 'ওষুধ ও সাপ্লিমেন্ট সেবনের ৬-কলাম দৈনিক প্রোটোকল' : '6-Column Medication & Supplementation Protocol'}</span>
+              </h3>
+              <span className="text-[10px] text-slate-500 print:text-slate-600">
+                {bn ? 'সময়ক্রম অনুসারে সাজানো' : 'Sorted Chronologically'}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] border-collapse border border-slate-200 dark:border-slate-800 print:border-slate-300 print:text-[10px]">
+                <thead className="print:table-header-group">
+                  <tr className="bg-slate-50 dark:bg-slate-800/60 print:bg-slate-100 text-left border-b border-slate-200 dark:border-slate-800 print:border-slate-300">
+                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[15%]">
+                      {bn ? 'সময় (Time Sequence)' : 'Time Sequence'}
+                    </th>
+                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[18%]">
+                      {bn ? 'ওষুধ/সাপ্লিমেন্ট (ব্র্যান্ড)' : 'Brand Name'}
+                    </th>
+                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[18%]">
+                      {bn ? 'জেনেরিক নাম (Generic)' : 'Generic Name'}
+                    </th>
+                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[15%]">
+                      {bn ? 'ডোজ ও পরিমাণ (Dosage)' : 'Dosage'}
+                    </th>
+                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[12%]">
+                      {bn ? 'Duration' : 'Duration'}
+                    </th>
+                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black w-[22%]">
+                      {bn ? 'ক্লিনিক্যাল নির্দেশনা' : 'Clinical Instructions'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 print:divide-slate-300">
+                  {payload.medication_supplement_protocol.active_rows.map((row, idx) => (
+                    <tr key={row.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 print:break-inside-avoid">
+                      <td className="p-2 font-mono font-bold text-slate-800 dark:text-slate-200 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] inline-block ${
+                          row.sequence_time === 'UNKNOWN' 
+                            ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-300' 
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
+                        }`}>
+                          {bn ? row.sequence_time_bn : row.sequence_time_en}
+                        </span>
+                      </td>
+                      <td className="p-2 font-bold text-slate-900 dark:text-white print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                        {row.brand_name}
+                      </td>
+                      <td className="p-2 italic text-slate-600 dark:text-slate-400 print:text-slate-700 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                        {row.generic_name}
+                      </td>
+                      <td className="p-2 font-semibold text-emerald-800 dark:text-emerald-400 print:text-emerald-900 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                        {bn ? row.dosage_display_bn : row.dosage_display_en}
+                      </td>
+                      <td className="p-2 text-slate-600 dark:text-slate-400 print:text-slate-700 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                        {bn ? row.duration_bn : row.duration_en}
+                      </td>
+                      <td className="p-2 text-slate-700 dark:text-slate-300 print:text-black">
+                        {bn ? row.clinical_instructions_bn : row.clinical_instructions_en}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Candidate / Draft Supplements Notice */}
+            {payload.medication_supplement_protocol.draft_candidates.length > 0 && (
+              <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-1.5">
+                <span className="font-bold text-amber-800 dark:text-amber-400 block text-[11px]">
+                  {bn ? '⚠️ চিকিৎসকের অনুমোদন সাপেক্ষ খসড়া সাপ্লিমেন্ট (Draft Candidates — Review Required):' : '⚠️ Draft Candidates (Pending Clinician Sign-off):'}
+                </span>
+                <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
+                  {payload.medication_supplement_protocol.draft_candidates.map((cand, cIdx) => (
+                    <li key={cIdx}>
+                      <strong>{cand.brand_name} ({cand.generic_name})</strong> — {bn ? cand.dosage_display_bn : cand.dosage_display_en}: {bn ? cand.clinical_instructions_bn : cand.clinical_instructions_en}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Module 4: Bangladeshi Food Exchange & Household Portion Guide */}
+        {payload.food_exchange_guide && payload.food_exchange_guide.length > 0 && (
+          <div data-testid="food-exchange-guide" className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                <Utensils className="h-4 w-4 text-emerald-600" />
+                <span>{bn ? 'খাদ্য বিনিময় তালিকা ও পারিবারিক পাত্রের সঠিক পরিমাপ (Food Exchange Guide)' : 'Food Exchange & Household Portion Guide'}</span>
+              </h3>
+              <span className="text-[10px] text-slate-500 print:text-slate-600">
+                {bn ? 'বাটি, কাপ, গ্লাস, চামচ, টুকরো ও হাতের তালুর মাপ' : 'Bati, Cup, Glass, Spoon, Piece & Palm Measures'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {payload.food_exchange_guide.map((ex, exIdx) => (
+                <div key={exIdx} className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-slate-900 dark:text-white print:text-black font-bold text-[12px]">
+                      {bn ? ex.title_bn : ex.title_en}
+                    </strong>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 font-bold text-[10px]">
+                      {bn ? ex.household_measure_bn : ex.household_measure_en}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                    {bn ? ex.raw_to_cooked_conversion_note_bn : ex.raw_to_cooked_conversion_note_en}
+                  </p>
+                  <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                    <strong>{bn ? 'উদাহরণ: ' : 'Examples: '}</strong>
+                    {(bn ? ex.common_examples_bn : ex.common_examples_en).join(', ')}
+                  </div>
                 </div>
               ))}
             </div>

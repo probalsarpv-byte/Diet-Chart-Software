@@ -47,7 +47,9 @@ import {
   evaluateFunctionalMatrix,
   buildSystemsNetworkGraph,
   FUNCTIONAL_DOMAINS_META,
-  adaptAssessmentEvidenceToMatrixInput
+  adaptAssessmentEvidenceToMatrixInput,
+  extractLabNumericValue,
+  normalizeStructuredLabEntries
 } from '../src/engine/r5SystemsNetworkEngine';
 
 import {
@@ -507,6 +509,64 @@ describe('Phase R5 — Systems Intelligence & Clinical Engines', () => {
       assert.strictEqual(matrix.domains.structural_integrity.length, 0);
     });
 
+    it('Patch A1: never fabricates abnormalities when registry normal/benign options are selected', () => {
+      const matrix = evaluateFunctionalMatrix({
+        pathway_ids: [],
+        assessment_answers: {
+          bloating_frequency: 'never_rare',
+          acid_reflux_frequency: 'never_rare',
+          antibiotic_history_past_year: 'zero_courses',
+          morning_fatigue_level: 'refreshed_energetic',
+          blood_pressure_history: 'optimal_normal',
+          sugar_carbohydrate_cravings: 'rarely_never',
+          perceived_stress_level: 'low_manageable',
+          fatty_liver_diagnosis: 'no_normal_liver',
+          regular_ppi_antacid_use: 'never_none',
+          joint_stiffness_pain: 'none',
+          skin_reactions_eczema_acne: ['none'],
+          unintentional_weight_loss: 'no'
+        }
+      });
+
+      assert.strictEqual(matrix.domains.assimilation.length, 0, 'Assimilation must have 0 observations when answers are normal/negative');
+      assert.strictEqual(matrix.domains.energy.length, 0, 'Energy must have 0 observations when morning fatigue is refreshed_energetic');
+      assert.strictEqual(matrix.domains.transport.length, 0, 'Transport must have 0 observations when BP is optimal_normal');
+      assert.strictEqual(matrix.domains.communication.length, 0, 'Communication must have 0 observations when sugar cravings is rarely_never');
+      assert.strictEqual(matrix.domains.biotransformation.length, 0, 'Biotransformation must have 0 observations when PPI is never_none');
+      assert.strictEqual(matrix.domains.defense_repair.length, 0, 'Defense & Repair must have 0 observations when joint stiffness is none');
+    });
+
+    it('Patch A2: correctly processes structured lab entries (StructuredLabEntry format) into functional matrix', () => {
+      const matrix = evaluateFunctionalMatrix({
+        pathway_ids: [],
+        lab_entries: {
+          hba1c: {
+            marker_id: 'hba1c',
+            numeric_value: 8.2,
+            unit: '%',
+            status: 'abnormal',
+            test_date: '2026-03-01'
+          },
+          alt: {
+            marker_id: 'alt',
+            numeric_value: 62,
+            unit: 'U/L',
+            status: 'abnormal'
+          },
+          hs_crp: {
+            marker_id: 'hs_crp',
+            numeric_value: 3.5,
+            unit: 'mg/L',
+            status: 'abnormal'
+          }
+        }
+      });
+
+      assert.ok(matrix.domains.communication.some(o => o.id === 'OBS_COMM_GLYCEMIC_LAB' && o.confidence_status === 'LAB_SUPPORTED'));
+      assert.ok(matrix.domains.biotransformation.some(o => o.id === 'OBS_BIOTRANS_LIVER_LAB' && o.confidence_status === 'LAB_SUPPORTED'));
+      assert.ok(matrix.domains.defense_repair.some(o => o.id === 'OBS_DEFENSE_CRP_LAB' && o.confidence_status === 'LAB_SUPPORTED'));
+    });
+
     it('maps objective lab biomarkers into corresponding functional domains with LAB_SUPPORTED confidence', () => {
       const matrix = evaluateFunctionalMatrix({
         pathway_ids: [],
@@ -631,6 +691,58 @@ describe('Phase R5 — Systems Intelligence & Clinical Engines', () => {
 
       assert.strictEqual(eligibility.isEligible, false);
       assert.ok(eligibility.blockingReasons.some(r => r.includes('Critical Hyperkalemia Alert') || r.includes('Acute Clinical Safety')));
+    });
+
+    it('Patch A2: normalizeStructuredLabEntries normalizes structured potassium entry and blocks report release on K >= 6.0', () => {
+      const rawLabs = {
+        serum_potassium: {
+          marker_id: 'serum_potassium',
+          numeric_value: 6.3,
+          unit: 'mmol/L',
+          status: 'critical'
+        }
+      };
+      const normalized = normalizeStructuredLabEntries(rawLabs);
+      assert.strictEqual(normalized.serum_potassium.value, 6.3);
+      assert.strictEqual(normalized.potassium.value, 6.3);
+      assert.strictEqual(normalized.serum_potassium.is_abnormal, true);
+
+      const patient = {
+        id: 'p_k_crit',
+        name: 'Hyperkalemia Patient',
+        current_visit_id: 'v_01',
+        labs: rawLabs
+      };
+
+      const serumK = extractLabNumericValue((patient.labs as any).serum_potassium ?? (patient.labs as any).potassium) ?? 0;
+      assert.strictEqual(serumK >= 6.0, true);
+
+      const eligibility = validateReportReleaseEligibility({
+        patient: patient as any,
+        plan: [{ id: 'm_01', items: [] }] as any,
+        weeklyDietPlan: {
+          status: 'approved',
+          is_approved: true,
+          patient_id: 'p_k_crit',
+          visit_id: 'v_01',
+          version: 1,
+          approval_metadata: { plan_version: 1, clinician_name: 'Dr. Expert' }
+        } as any,
+        visit: { visit_id: 'v_01' } as any,
+        r5NutritionContract: {
+          patient_id: 'p_k_crit',
+          clinical_pathway_ids: ['renal_electrolyte'],
+          nutrient_constraints: { carbohydrate_consistency_required: false },
+          acute_escalation: {
+            required: true,
+            priority: 'CRITICAL_URGENT',
+            block_release: true,
+            message_en: 'Critical Hyperkalemia Alert: Serum Potassium >= 6.0 mEq/L',
+            message_bn: 'মারাত্মক হাইপারক্যালেমিয়া'
+          }
+        }
+      });
+      assert.strictEqual(eligibility.isEligible, false);
     });
   });
 

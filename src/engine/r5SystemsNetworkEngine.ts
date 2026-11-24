@@ -175,6 +175,136 @@ export const FUNCTIONAL_DOMAINS_META: Record<
 };
 
 /**
+ * Normal/negative answer tokens that indicate absence of symptoms or normal physiological status.
+ * Selecting these options represents a negative screening and MUST NOT trigger abnormal observations.
+ */
+export const BENIGN_OR_NEGATIVE_ANSWER_TOKENS = new Set([
+  'none',
+  'no',
+  'false',
+  '0',
+  'zero',
+  'zero_courses',
+  'never',
+  'never_rare',
+  'never_rarely',
+  'rarely_never',
+  'never_none',
+  'never_user',
+  'never_tested_negative',
+  'no_normal_liver',
+  'no_normal_glucose',
+  'normal_no_craving',
+  'normal_regular',
+  'optimal_normal',
+  'refreshed_energetic',
+  'low_manageable',
+  'tolerates_well',
+  'tolerates_wheat_fine',
+  'no_burning',
+  'minimal_no_belching',
+  'no_cramping',
+  'never_use_laxatives',
+  'medium_brown_normal',
+  'rarely_catch_colds',
+  'no_thyroid_issue',
+  'normal_tolerance',
+  'clean_healing',
+  'not_on_dialysis',
+  'not_prescribed',
+  'none_mild',
+  'adequate_well_nourished',
+  'none_apparent',
+  'none_autoimmune'
+]);
+
+/**
+ * Checks whether an assessment response represents an affirmative clinical finding/abnormality.
+ * Returns false if value is null/undefined, empty, boolean false, 0, array of only negative tokens,
+ * or any registered normal/benign response.
+ */
+export function isAffirmativeAbnormalResponse(val: any): boolean {
+  if (val === undefined || val === null) return false;
+  if (typeof val === 'boolean') return val === true;
+  if (typeof val === 'number') return val > 0;
+  if (Array.isArray(val)) {
+    if (val.length === 0) return false;
+    return val.some(item => isAffirmativeAbnormalResponse(item));
+  }
+  const s = String(val).trim().toLowerCase();
+  if (s === '' || BENIGN_OR_NEGATIVE_ANSWER_TOKENS.has(s)) return false;
+  return true;
+}
+
+/**
+ * Extracts a numeric value from either a plain number, a string,
+ * or a StructuredLabEntry object ({ numeric_value, value, result, ... }).
+ */
+export function extractLabNumericValue(val: any): number | null {
+  if (val === undefined || val === null) return null;
+  if (typeof val === 'number') return isNaN(val) ? null : val;
+  if (typeof val === 'string') {
+    const parsed = parseFloat(val);
+    return isNaN(parsed) ? null : parsed;
+  }
+  if (typeof val === 'object') {
+    if (typeof val.numeric_value === 'number') return isNaN(val.numeric_value) ? null : val.numeric_value;
+    if (typeof val.numeric_value === 'string') {
+      const p = parseFloat(val.numeric_value);
+      return isNaN(p) ? null : p;
+    }
+    if (typeof val.value === 'number') return isNaN(val.value) ? null : val.value;
+    if (typeof val.value === 'string') {
+      const p = parseFloat(val.value);
+      return isNaN(p) ? null : p;
+    }
+  }
+  return null;
+}
+
+export interface NormalizedLabRecord {
+  value: number;
+  unit?: string;
+  status?: string;
+  test_date?: string;
+  is_abnormal?: boolean;
+}
+
+/**
+ * Normalizes mixed raw laboratory entries (plain numbers, strings, or StructuredLabEntry objects)
+ * into a typed, consistent lookup structure.
+ */
+export function normalizeStructuredLabEntries(
+  rawLabs: Record<string, any>
+): Record<string, NormalizedLabRecord> {
+  const normalized: Record<string, NormalizedLabRecord> = {};
+  if (!rawLabs || typeof rawLabs !== 'object') return normalized;
+
+  for (const [key, rawEntry] of Object.entries(rawLabs)) {
+    if (rawEntry === undefined || rawEntry === null) continue;
+    const num = extractLabNumericValue(rawEntry);
+    if (num !== null) {
+      const unit = typeof rawEntry === 'object' ? rawEntry.unit : undefined;
+      const status = typeof rawEntry === 'object' ? rawEntry.status : undefined;
+      const date = typeof rawEntry === 'object' ? rawEntry.test_date : undefined;
+      const isAbnormal = status === 'abnormal' || status === 'critical' || Boolean(typeof rawEntry === 'object' && rawEntry.is_abnormal);
+      normalized[key] = {
+        value: num,
+        unit,
+        status,
+        test_date: date,
+        is_abnormal: isAbnormal
+      };
+      if (key === 'serum_potassium' && !normalized.potassium) normalized.potassium = normalized[key];
+      if (key === 'potassium' && !normalized.serum_potassium) normalized.serum_potassium = normalized[key];
+      if (key === 'hs_crp' && !normalized.crp) normalized.crp = normalized[key];
+      if (key === 'fasting_blood_glucose' && !normalized.fasting_glucose) normalized.fasting_glucose = normalized[key];
+    }
+  }
+  return normalized;
+}
+
+/**
  * Derives the 7-domain Functional Medicine Matrix and ATM from clinical inputs
  */
 export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): FunctionalMatrixState {
@@ -201,25 +331,11 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
   const labs = input.lab_entries || {};
   const now = new Date().toISOString();
 
-  // Helper to check valid positive/reported symptom value (not 'none', 'never', 'no', '', undefined)
-  const isAffirmative = (val: any): boolean => {
-    if (val === undefined || val === null) return false;
-    if (typeof val === 'boolean') return val === true;
-    if (typeof val === 'number') return val > 0;
-    if (Array.isArray(val)) return val.length > 0;
-    const s = String(val).trim().toLowerCase();
-    return s !== '' && s !== 'none' && s !== 'never' && s !== 'no' && s !== '0' && s !== 'false';
-  };
+  // Helper to check valid positive/reported symptom value
+  const isAffirmative = (val: any): boolean => isAffirmativeAbnormalResponse(val);
 
   // Helper to parse numeric lab values safely
-  const parseLabNum = (val: any): number | null => {
-    if (typeof val === 'number') return isNaN(val) ? null : val;
-    if (typeof val === 'string') {
-      const parsed = parseFloat(val);
-      return isNaN(parsed) ? null : parsed;
-    }
-    return null;
-  };
+  const parseLabNum = (val: any): number | null => extractLabNumericValue(val);
 
   // 1. Assimilation Domain Observations
   if (pathways.includes('gastrointestinal_hepatobiliary') || symptoms.some(s => s.includes('bloat') || s.includes('reflux') || s.includes('constip') || s.includes('diarrhea'))) {
@@ -729,7 +845,7 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
 
   // 6d. Lab Evidence — Communication Domain
   const hba1cVal = parseLabNum(labs.hba1c);
-  const fbgVal = parseLabNum(labs.fasting_blood_glucose);
+  const fbgVal = parseLabNum(labs.fasting_blood_glucose || labs.fasting_glucose);
   if ((hba1cVal !== null && hba1cVal >= 5.7) || (fbgVal !== null && fbgVal > 100)) {
     const obsGlycemicLab: FunctionalObservation = {
       id: 'OBS_COMM_GLYCEMIC_LAB',

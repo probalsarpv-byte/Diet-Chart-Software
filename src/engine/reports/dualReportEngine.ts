@@ -26,8 +26,19 @@ import {
   SevenFoodGroupCategory,
   FoodGuideEntry,
   SevenFoodGroupSection,
-  StructuredTrafficLightGuide
+  StructuredTrafficLightGuide,
+  R5MedicationRecord
 } from '@/types/r5Systems';
+import { 
+  MedicationProtocolRow, 
+  FoodExchangeRule, 
+  FastingSafetyEvaluation 
+} from '@/types/r6Prescription';
+import { 
+  compose6ColumnMedicationProtocol, 
+  evaluateFastingSafety, 
+  STANDARD_BANGLADESHI_EXCHANGES 
+} from '@/engine/r6PrescriptionComposer';
 
 // ── 1. CLINICIAN REPORT TYPES (U20) ────────────────────────────────
 
@@ -304,6 +315,20 @@ export interface PatientReportPayload {
     instructions_en: string;
   }>;
   days: PatientDayPlan[];
+  medication_supplement_protocol?: {
+    columns: [
+      'সময় (Time Sequence)',
+      'ওষুধ/সাপ্লিমেন্ট (ব্র্যান্ড)',
+      'জেনেরিক নাম (Generic)',
+      'ডোজ ও পরিমাণ (Dosage)',
+      'Duration',
+      'ক্লিনিক্যাল নির্দেশনা'
+    ];
+    active_rows: MedicationProtocolRow[];
+    draft_candidates: MedicationProtocolRow[];
+  };
+  food_exchange_guide?: FoodExchangeRule[];
+  fasting_evaluation?: FastingSafetyEvaluation;
   disclaimers: {
     en: string;
     bn: string;
@@ -958,6 +983,9 @@ export function buildPatientReportProjection(options: {
   isDietPlanDirty?: boolean;
   releaseEligibility?: ReleaseEligibilityResult;
   r5NutritionContract?: any;
+  medications?: R5MedicationRecord[];
+  supplements?: any[];
+  candidateSupplements?: any[];
 }): PatientReportPayload {
   const { 
     patient, 
@@ -971,7 +999,10 @@ export function buildPatientReportProjection(options: {
     safetyEvaluation,
     isDietPlanDirty,
     releaseEligibility: explicitEligibility,
-    r5NutritionContract
+    r5NutritionContract,
+    medications = [],
+    supplements = [],
+    candidateSupplements = []
   } = options;
 
   const phaseInfo = CLINICAL_PHASES[patient.current_phase || 1];
@@ -1114,6 +1145,20 @@ export function buildPatientReportProjection(options: {
   const isApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
   const clinicianName = weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Unassigned Clinician';
 
+  // Module 5: 6-Column Chronological Medication Protocol
+  const medRecords = (medications && medications.length > 0)
+    ? medications
+    : ((patient.medication_records as any) || []);
+  const medicationProtocol = compose6ColumnMedicationProtocol(medRecords, supplements, candidateSupplements);
+
+  // Module 3 & 4: Fasting Evaluation & Local Exchanges
+  const fastingSched = weeklyDietPlan?.fasting_schedule || (dietChart[0] as any)?.fasting_schedule;
+  const insulinActive = Boolean(
+    r5NutritionContract?.nutrient_constraints?.carbohydrate_consistency_required ||
+    medRecords.some((m: any) => (m.generic_name || '').toLowerCase().includes('insulin'))
+  );
+  const fastingEvaluation = evaluateFastingSafety(fastingSched, medRecords, insulinActive);
+
   return {
     report_type: 'PATIENT_LIFESTYLE_PRESCRIPTION',
     schema_version: 1,
@@ -1178,6 +1223,9 @@ export function buildPatientReportProjection(options: {
     seven_food_group_guide: sevenFoodGroupGuide,
     chronological_schedule: patientSchedule,
     days: patientDays,
+    medication_supplement_protocol: medicationProtocol,
+    food_exchange_guide: STANDARD_BANGLADESHI_EXCHANGES,
+    fasting_evaluation: fastingEvaluation,
     disclaimers: {
       en: 'PERSONALIZED PATIENT DIET PRESCRIPTION. This plan details specific foods, meal hours, and household portions tailored to your clinical consultation. Follow meal timings and household measures as prescribed.',
       bn: 'রোগীর ব্যক্তিগতকৃত ডায়েট প্রেসক্রিপশন। এতে আপনার চিকিৎসার জন্য উপযোগী খাবার, সময়সূচি এবং পারিবারিক পাত্রের পরিমাপ উল্লেখ করা হয়েছে। নির্দেশিত পরিমাপে খাবার গ্রহণ করুন।'
