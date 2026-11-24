@@ -67,7 +67,8 @@ export const ReportTab: React.FC = () => {
     generateWeeklyPlan,
     isDietPlanDirty,
     r5NutritionContract,
-    r5Medications
+    r5Medications,
+    r4Protocol
   } = usePractice();
 
   // Primary studio mode: Clinician (U20) or Patient (U21)
@@ -185,9 +186,11 @@ export const ReportTab: React.FC = () => {
       releaseEligibility,
       r5NutritionContract: isCurrentActiveVisit ? r5NutritionContract : undefined,
       medications: isCurrentActiveVisit ? r5Medications : undefined,
+      r4Protocol: isCurrentActiveVisit ? r4Protocol : undefined,
+      supplements: isCurrentActiveVisit ? (r4Protocol?.supplements?.filter(s => s.approval_status === 'clinician_approved') || []) : undefined,
       candidateSupplements: isCurrentActiveVisit ? candidateSupplements : undefined
     });
-  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, releaseEligibility, r5NutritionContract, r5Medications, candidateSupplements]);
+  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, releaseEligibility, r5NutritionContract, r5Medications, r4Protocol, candidateSupplements]);
 
   const handlePrint = () => {
     if (reportMode === 'patient') {

@@ -32,12 +32,16 @@ import {
 import { 
   MedicationProtocolRow, 
   FoodExchangeRule, 
-  FastingSafetyEvaluation 
+  FastingSafetyEvaluation,
+  PatientFoodExchangeItem,
+  R6PrescriptionMasterPayload
 } from '@/types/r6Prescription';
+import { R4ProtocolStudioData, SupplementProtocolItem } from '@/types/r4Protocol';
 import { 
   compose6ColumnMedicationProtocol, 
   evaluateFastingSafety, 
-  STANDARD_BANGLADESHI_EXCHANGES 
+  STANDARD_BANGLADESHI_EXCHANGES,
+  composeR6Prescription
 } from '@/engine/r6PrescriptionComposer';
 
 // ── 1. CLINICIAN REPORT TYPES (U20) ────────────────────────────────
@@ -328,7 +332,9 @@ export interface PatientReportPayload {
     draft_candidates: MedicationProtocolRow[];
   };
   food_exchange_guide?: FoodExchangeRule[];
+  patient_specific_exchanges?: PatientFoodExchangeItem[];
   fasting_evaluation?: FastingSafetyEvaluation;
+  lifestyle_support?: R6PrescriptionMasterPayload['lifestyle_support'];
   disclaimers: {
     en: string;
     bn: string;
@@ -984,6 +990,7 @@ export function buildPatientReportProjection(options: {
   releaseEligibility?: ReleaseEligibilityResult;
   r5NutritionContract?: any;
   medications?: R5MedicationRecord[];
+  r4Protocol?: R4ProtocolStudioData | null;
   supplements?: any[];
   candidateSupplements?: any[];
 }): PatientReportPayload {
@@ -1001,6 +1008,7 @@ export function buildPatientReportProjection(options: {
     releaseEligibility: explicitEligibility,
     r5NutritionContract,
     medications = [],
+    r4Protocol,
     supplements = [],
     candidateSupplements = []
   } = options;
@@ -1145,19 +1153,25 @@ export function buildPatientReportProjection(options: {
   const isApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
   const clinicianName = weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Unassigned Clinician';
 
-  // Module 5: 6-Column Chronological Medication Protocol
+  // Module 5 & R6 Master Prescription Composition (Authoritative Pipeline)
   const medRecords = (medications && medications.length > 0)
     ? medications
     : ((patient.medication_records as any) || []);
-  const medicationProtocol = compose6ColumnMedicationProtocol(medRecords, supplements, candidateSupplements);
 
-  // Module 3 & 4: Fasting Evaluation & Local Exchanges
-  const fastingSched = weeklyDietPlan?.fasting_schedule || (dietChart[0] as any)?.fasting_schedule;
-  const insulinActive = Boolean(
-    r5NutritionContract?.nutrient_constraints?.carbohydrate_consistency_required ||
-    medRecords.some((m: any) => (m.generic_name || '').toLowerCase().includes('insulin'))
-  );
-  const fastingEvaluation = evaluateFastingSafety(fastingSched, medRecords, insulinActive);
+  const masterPrescription = composeR6Prescription({
+    patient,
+    weeklyDietPlan,
+    dietChart,
+    medications: medRecords,
+    r4Protocol,
+    supplements,
+    candidateSupplements,
+    trafficLight,
+    visit,
+    safetyEvaluation,
+    r5NutritionContract,
+    isDietPlanDirty
+  });
 
   return {
     report_type: 'PATIENT_LIFESTYLE_PRESCRIPTION',
@@ -1220,12 +1234,14 @@ export function buildPatientReportProjection(options: {
       red_foods_bn: redBn,
       red_foods_en: redEn
     },
-    seven_food_group_guide: sevenFoodGroupGuide,
+    seven_food_group_guide: masterPrescription.seven_food_group_guide,
     chronological_schedule: patientSchedule,
     days: patientDays,
-    medication_supplement_protocol: medicationProtocol,
-    food_exchange_guide: STANDARD_BANGLADESHI_EXCHANGES,
-    fasting_evaluation: fastingEvaluation,
+    medication_supplement_protocol: masterPrescription.medication_supplement_protocol,
+    food_exchange_guide: masterPrescription.food_exchange_guide,
+    patient_specific_exchanges: masterPrescription.patient_specific_exchanges,
+    fasting_evaluation: masterPrescription.fasting_evaluation,
+    lifestyle_support: masterPrescription.lifestyle_support,
     disclaimers: {
       en: 'PERSONALIZED PATIENT DIET PRESCRIPTION. This plan details specific foods, meal hours, and household portions tailored to your clinical consultation. Follow meal timings and household measures as prescribed.',
       bn: 'রোগীর ব্যক্তিগতকৃত ডায়েট প্রেসক্রিপশন। এতে আপনার চিকিৎসার জন্য উপযোগী খাবার, সময়সূচি এবং পারিবারিক পাত্রের পরিমাপ উল্লেখ করা হয়েছে। নির্দেশিত পরিমাপে খাবার গ্রহণ করুন।'

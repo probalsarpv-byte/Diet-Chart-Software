@@ -372,6 +372,77 @@ function createInitialSeedPatient(): PatientProfile {
     clinician_disallowed_tags: [],
     selected_conditions: ['t2d_ir', 'hypothyroid', 'fatty_liver', 'uric_acid_gout'],
     active_medications: ['med_metformin', 'med_ppi', 'med_levothyroxine'],
+    medication_records: [
+      {
+        id: 'med_seed_metformin',
+        medication_name: 'Metformin Hydrochloride (Comet 500)',
+        generic_name: 'Metformin Hydrochloride',
+        brand_name: 'Comet 500',
+        prescribed_dose: '500 mg',
+        dose: '500 mg',
+        dose_unit: 'mg',
+        frequency: 'Twice daily',
+        timing: 'with_meal',
+        route: 'Oral',
+        administration_times: ['08:00', '20:00'],
+        is_timing_unknown: false,
+        relationship_to_meals: 'with_meal',
+        is_prn: false,
+        status: 'active',
+        verification_status: 'clinician_verified',
+        rule_coverage: 'interaction_monitored',
+        source: 'clinician_entry',
+        duration: '3 months',
+        duration_bn: '৩ মাস',
+        notes: 'Take with morning and evening meals'
+      },
+      {
+        id: 'med_seed_thyrox',
+        medication_name: 'Levothyroxine Sodium (Thyrox 50)',
+        generic_name: 'Levothyroxine Sodium',
+        brand_name: 'Thyrox 50',
+        prescribed_dose: '50 mcg',
+        dose: '50 mcg',
+        dose_unit: 'mcg',
+        frequency: 'Once daily morning',
+        timing: 'before_meal_empty_stomach',
+        route: 'Oral',
+        administration_times: ['06:30'],
+        is_timing_unknown: false,
+        relationship_to_meals: 'before_meal_empty_stomach',
+        is_prn: false,
+        status: 'active',
+        verification_status: 'clinician_verified',
+        rule_coverage: 'interaction_monitored',
+        source: 'clinician_entry',
+        duration: 'Ongoing',
+        duration_bn: 'চলমান',
+        notes: 'Take 30 minutes before breakfast with plain water'
+      },
+      {
+        id: 'med_seed_seclo',
+        medication_name: 'Omeprazole (Seclo 20)',
+        generic_name: 'Omeprazole',
+        brand_name: 'Seclo 20',
+        prescribed_dose: '20 mg',
+        dose: '20 mg',
+        dose_unit: 'mg',
+        frequency: 'Once daily morning',
+        timing: 'before_meal_empty_stomach',
+        route: 'Oral',
+        administration_times: ['07:30'],
+        is_timing_unknown: false,
+        relationship_to_meals: 'before_meal_empty_stomach',
+        is_prn: false,
+        status: 'active',
+        verification_status: 'clinician_verified',
+        rule_coverage: 'interaction_monitored',
+        source: 'clinician_entry',
+        duration: '4 weeks',
+        duration_bn: '৪ সপ্তাহ',
+        notes: 'Take 15-30 minutes before breakfast'
+      }
+    ],
     gut_profile: {
       bloating: 'severe',
       acid_reflux_hypoacidity: true,
@@ -4390,6 +4461,19 @@ function createTypedPlanningContextFallback(
     safeStorage.setItem('shuddho_active_patient_id', seed.id);
     safeStorage.setItem(`shuddho_weekly_plan_${seed.id}_${followUpVisitId}`, demoWeeklyPlan);
 
+    const autoProtocol = generateAutomaticProtocolDraft(seedPatient);
+    const demoR4Protocol: R4ProtocolStudioData = {
+      ...autoProtocol,
+      is_approved: true,
+      approved_by: 'Dr. Shahriar Ahmed, Lead Nutritionist',
+      approved_at: new Date().toISOString(),
+      status: 'active',
+      supplements: autoProtocol.supplements.map((s, idx) => ({
+        ...s,
+        approval_status: idx === 0 ? 'clinician_approved' : s.approval_status
+      }))
+    };
+
     setPatient(seedPatient);
     setVisits(demoVisits);
     setClinicalVisits([visit2, visit1]);
@@ -4401,6 +4485,8 @@ function createTypedPlanningContextFallback(
     setDietChart(demoDietChart);
     setWeeklyDietPlan(demoWeeklyPlan);
     setActiveDayNumber(1);
+    setR5Medications((seedPatient.medication_records || []).map(normalizeMedicationRecord));
+    setR4Protocol(demoR4Protocol);
 
     setP2AnalysisResult(p2);
     setCurrentClinicalAssessment(null);

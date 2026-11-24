@@ -26,14 +26,42 @@ export interface MedicationProtocolRow {
   generic_name: string; // "Metformin Hydrochloride"
   dosage_display_en: string; // "500 mg (1 tablet)"
   dosage_display_bn: string; // "৫০০ মিগ্রা (১টি ট্যাবলেট)"
-  duration_en: string; // "Ongoing (Continuous)" or "14 days"
-  duration_bn: string; // "চলমান (দীর্ঘমেয়াদী)" or "১৪ দিন"
+  duration_en: string; // "Ongoing (Continuous)" or "14 days" or "Not documented"
+  duration_bn: string; // "চলমান (দীর্ঘমেয়াদী)" or "১৪ দিন" or "অনির্দিষ্ট"
   clinical_instructions_en: string;
   clinical_instructions_bn: string;
   item_type: 'medication' | 'supplement' | 'candidate_supplement';
-  approval_status: 'prescribed_approved' | 'draft_candidate' | 'discontinued';
+  approval_status: 'prescribed_approved' | 'draft_candidate' | 'discontinued' | 'requires_verification' | 'unverified';
   relationship_to_meals?: 'before_meal' | 'with_meal' | 'after_meal' | 'empty_stomach' | 'bedtime' | 'anytime' | 'before_meal_empty_stomach' | 'independent_of_meals' | 'unknown';
   requires_clinician_verification?: boolean;
+  is_prn?: boolean;
+  source_record_id?: string;
+}
+
+export interface PatientFoodExchangeItem {
+  original_food_id: string;
+  original_food_name_bn: string;
+  original_food_name_en: string;
+  prescribed_meal_slot: string;
+  prescribed_raw_g: number;
+  prescribed_household_portion_bn: string;
+  prescribed_household_portion_en: string;
+  exchange_group: 'grains' | 'proteins' | 'vegetables' | 'fruits' | 'dairy' | 'fats_oils' | 'spices_beverages';
+  exchange_group_bn: string;
+  exchange_group_en: string;
+  alternative_food_id: string;
+  alternative_food_name_bn: string;
+  alternative_food_name_en: string;
+  alternative_raw_g: number;
+  alternative_household_portion_bn: string;
+  alternative_household_portion_en: string;
+  nutritional_comparability_bn: string;
+  nutritional_comparability_en: string;
+  clinical_caution_bn?: string;
+  clinical_caution_en?: string;
+  prep_guidance_bn?: string;
+  prep_guidance_en?: string;
+  is_contraindicated?: boolean;
 }
 
 export interface FoodExchangeRule {
@@ -149,6 +177,7 @@ export interface R6PrescriptionMasterPayload {
     }>;
   };
   food_exchange_guide: FoodExchangeRule[];
+  patient_specific_exchanges?: PatientFoodExchangeItem[];
   medication_supplement_protocol: {
     columns: [
       'সময় (Time Sequence)',
@@ -163,18 +192,21 @@ export interface R6PrescriptionMasterPayload {
   };
   lifestyle_support: {
     hydration: {
-      target_daily_ml: number;
+      target_daily_ml?: number;
+      is_prescribed: boolean;
       instructions_bn: string;
       instructions_en: string;
     };
     exercise: {
       target_bn: string;
       target_en: string;
+      is_prescribed: boolean;
       safety_instructions_bn: string;
       safety_instructions_en: string;
     };
     sleep_circadian: {
-      sleep_target_hours: number;
+      sleep_target_hours?: number;
+      is_prescribed: boolean;
       caffeine_curfew?: string;
       dinner_curfew?: string;
       instructions_bn: string;

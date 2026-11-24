@@ -23,17 +23,20 @@ import {
   StructuredTrafficLightGuide
 } from '../types';
 import { R5MedicationRecord } from '../types/r5Systems';
+import { R4ProtocolStudioData, SupplementProtocolItem } from '../types/r4Protocol';
 import { 
   R6PrescriptionMasterPayload, 
   MedicationProtocolRow, 
   FoodExchangeRule, 
-  FastingSafetyEvaluation 
+  FastingSafetyEvaluation,
+  PatientFoodExchangeItem
 } from '../types/r6Prescription';
 import { 
   buildStructuredTrafficLightGuide, 
   validateReportReleaseEligibility 
 } from './reports/dualReportEngine';
 import { CLINICAL_PHASES } from './phaseProgression';
+import foodsData from '../data/foods.json';
 
 /**
  * Standard Bangladeshi Food Exchange Definitions with Local Household Measures
@@ -247,7 +250,8 @@ function formatEnglishDosage(dose?: string, unit?: string): string {
 export function compose6ColumnMedicationProtocol(
   medications: R5MedicationRecord[] = [],
   supplements: any[] = [],
-  candidateSupplements: any[] = []
+  candidateSupplements: any[] = [],
+  r4Protocol?: R4ProtocolStudioData | null
 ): {
   columns: [
     'সময় (Time Sequence)',
@@ -263,21 +267,44 @@ export function compose6ColumnMedicationProtocol(
   const activeRows: MedicationProtocolRow[] = [];
   const draftCandidates: MedicationProtocolRow[] = [];
 
-  // 1. Process Prescribed Medications
+  // 1. Process Prescribed Medications (Domain 13)
   for (const med of medications) {
-    const adminTimes = (med.administration_times && med.administration_times.length > 0)
-      ? med.administration_times
-      : ['UNKNOWN'];
+    // Stage B: Discontinued medication MUST NOT be included as an active prescription
+    if (med.status === 'discontinued') {
+      continue;
+    }
 
+    const isVerified = med.verification_status === 'clinician_verified';
+    const isTimingUnknown = Boolean(med.is_timing_unknown) || !med.administration_times || med.administration_times.length === 0;
+    const isDosePending = !med.prescribed_dose || med.prescribed_dose.trim() === '';
+
+    const adminTimes = isTimingUnknown ? ['UNKNOWN'] : med.administration_times;
     const mealNote = getMealInstruction(med.relationship_to_meals);
     const brandDisplay = med.brand_name || med.generic_name;
-    const doseEn = formatEnglishDosage(med.prescribed_dose, med.dose_unit);
-    const doseBn = formatBanglaDosage(med.prescribed_dose, med.dose_unit);
+
+    // Dose formatting - never convert missing dose to strength
+    const doseEn = isDosePending ? 'Dose Pending (Review required)' : formatEnglishDosage(med.prescribed_dose, med.dose_unit);
+    const doseBn = isDosePending ? 'ডোজ নির্ধারণ বাকি (পর্যালোচনা প্রয়োজন)' : formatBanglaDosage(med.prescribed_dose, med.dose_unit);
+
+    // Duration formatting - never fabricate "Ongoing / Long-term" when not documented
+    let durationEn = 'Not documented';
+    let durationBn = 'অনির্দিষ্ট';
+    if (med.duration && med.duration.trim() !== '') {
+      durationEn = med.duration.trim();
+      durationBn = med.duration_bn || med.duration.trim();
+    } else if (med.duration_weeks) {
+      durationEn = `${med.duration_weeks} weeks`;
+      durationBn = `${med.duration_weeks} সপ্তাহ`;
+    }
+
+    const isPRN = Boolean(med.is_prn);
 
     for (let i = 0; i < adminTimes.length; i++) {
-      const time = adminTimes[i];
-      const timeDisplays = formatTimeDisplays(time);
-      const isUnknown = time === 'UNKNOWN' || Boolean(med.is_timing_unknown);
+      const time = isPRN ? 'PRN' : adminTimes[i];
+      const timeDisplays = isPRN 
+        ? { time_bn: 'প্রয়োজনে (PRN)', time_en: 'PRN (As Needed)' }
+        : formatTimeDisplays(time);
+      const isRowUnknown = !isPRN && (time === 'UNKNOWN' || isTimingUnknown);
 
       const row: MedicationProtocolRow = {
         id: `${med.id}_dose_${i + 1}`,
@@ -288,59 +315,149 @@ export function compose6ColumnMedicationProtocol(
         generic_name: med.generic_name,
         dosage_display_en: doseEn,
         dosage_display_bn: doseBn,
-        duration_en: 'Ongoing / Long-term',
-        duration_bn: 'চলমান (দীর্ঘমেয়াদী)',
-        clinical_instructions_en: isUnknown 
+        duration_en: durationEn,
+        duration_bn: durationBn,
+        clinical_instructions_en: isRowUnknown 
           ? `TIMING REQUIRES REVIEW: Prescribed administration time not recorded. ${mealNote.en}`
-          : mealNote.en,
-        clinical_instructions_bn: isUnknown 
+          : (isPRN ? `PRN / AS NEEDED: ${mealNote.en}` : mealNote.en),
+        clinical_instructions_bn: isRowUnknown 
           ? `সময় নির্ধারণ প্রয়োজন: গ্রহণের সুনির্দিষ্ট সময় নথিভুক্ত হয়নি। ${mealNote.bn}`
-          : mealNote.bn,
+          : (isPRN ? `প্রয়োজনে সেব্য: ${mealNote.bn}` : mealNote.bn),
         item_type: 'medication',
-        approval_status: 'prescribed_approved',
+        approval_status: isVerified ? 'prescribed_approved' : 'requires_verification',
         relationship_to_meals: med.relationship_to_meals,
-        requires_clinician_verification: isUnknown
+        requires_clinician_verification: !isVerified || isRowUnknown || isDosePending,
+        is_prn: isPRN,
+        source_record_id: med.id
       };
       activeRows.push(row);
     }
   }
 
-  // 2. Process Approved Supplements
-  for (const supp of supplements) {
-    if (supp.approval_status === 'approved' || supp.is_approved === true) {
-      const time = supp.administration_time || supp.timing || '09:00';
+  // 2. Process Approved R4 Supplements (Stage B: Canonical R4 Integration)
+  const combinedSupplements: any[] = [];
+  if (r4Protocol?.supplements && Array.isArray(r4Protocol.supplements)) {
+    combinedSupplements.push(...r4Protocol.supplements);
+  }
+  for (const s of supplements) {
+    if (!combinedSupplements.some(x => (x.id && x.id === s.id) || (x.generic_nutrient && x.generic_nutrient === s.generic_nutrient))) {
+      combinedSupplements.push(s);
+    }
+  }
+
+  for (const supp of combinedSupplements) {
+    const isClinicianApproved = supp.approval_status === 'clinician_approved' || (supp.approval_status === 'approved' && supp.is_approved === true);
+    const isProtocolApproved = !r4Protocol || r4Protocol.is_approved === true || r4Protocol.status === 'active';
+    const isFullyApproved = isClinicianApproved && isProtocolApproved;
+
+    if (isFullyApproved) {
+      // Approved Supplement -> enters active_rows
+      const time = (supp.administration_time && supp.administration_time.trim() !== '' && supp.administration_time !== 'UNKNOWN')
+        ? supp.administration_time.trim()
+        : 'UNKNOWN'; // Never default to 09:00!
       const timeDisplays = formatTimeDisplays(time);
+
+      let doseEn = 'As directed';
+      let doseBn = 'নির্দেশিত মাত্রায়';
+      if (supp.elemental_dose_numeric && supp.elemental_dose_unit) {
+        doseEn = formatEnglishDosage(`${supp.elemental_dose_numeric}`, supp.elemental_dose_unit);
+        doseBn = formatBanglaDosage(`${supp.elemental_dose_numeric}`, supp.elemental_dose_unit);
+      } else if (supp.total_compound_dose) {
+        doseEn = supp.total_compound_dose;
+        doseBn = formatBanglaDosage(supp.total_compound_dose);
+      } else if (supp.dosage || supp.dose) {
+        doseEn = formatEnglishDosage(supp.dosage || supp.dose);
+        doseBn = formatBanglaDosage(supp.dosage || supp.dose);
+      }
+
+      // Duration - never default to "Continuous"
+      let durationEn = 'Not documented';
+      let durationBn = 'অনির্দিষ্ট';
+      if (supp.duration_weeks) {
+        durationEn = `${supp.duration_weeks} weeks`;
+        durationBn = `${supp.duration_weeks} সপ্তাহ`;
+      } else if (supp.duration && supp.duration.trim() !== '') {
+        durationEn = supp.duration;
+        durationBn = supp.duration_bn || supp.duration;
+      }
+
+      // Meal / food relationship instructions
+      let instrEn = supp.instructions_en || '';
+      let instrBn = supp.instructions_bn || '';
+      if (!instrEn) {
+        switch (supp.relationship_to_food) {
+          case 'empty_stomach_waking':
+            instrBn = 'সকালে ঘুম থেকে উঠে খালি পেটে ১ গ্লাস পানির সাথে সেব্য।';
+            instrEn = 'Take on empty stomach upon waking with a full glass of water.';
+            break;
+          case 'with_breakfast':
+            instrBn = 'সকালের নাশতার সাথে সেব্য।';
+            instrEn = 'Take with breakfast.';
+            break;
+          case 'with_lunch':
+            instrBn = 'দুপুরের খাবারের সাথে সেব্য।';
+            instrEn = 'Take with lunch.';
+            break;
+          case 'with_dinner':
+            instrBn = 'রাতের খাবারের সাথে সেব্য।';
+            instrEn = 'Take with dinner.';
+            break;
+          case 'with_fatty_meal':
+            instrBn = 'চর্বিযুক্ত খাবারের সাথে সেব্য (শোষণ বৃদ্ধির জন্য)।';
+            instrEn = 'Take with a meal containing healthy fat for optimal absorption.';
+            break;
+          case 'between_meals':
+            instrBn = 'খাবারের মধ্যবর্তী সময়ে সেব্য।';
+            instrEn = 'Take between meals.';
+            break;
+          case 'before_bed':
+            instrBn = 'রাতে ঘুমানোর পূর্বে সেব্য।';
+            instrEn = 'Take at bedtime.';
+            break;
+          case 'independent_of_meals':
+            instrBn = 'খাবারের আগে বা পরে যেকোনো সময় সেব্য।';
+            instrEn = 'Take with or without food as convenient.';
+            break;
+          default:
+            instrBn = 'চিকিৎসকের পরামর্শ অনুযায়ী সেব্য।';
+            instrEn = 'Take as directed by prescribing clinician.';
+        }
+      }
+
       const row: MedicationProtocolRow = {
         id: supp.id || `supp_${Math.random()}`,
         sequence_time: time,
         sequence_time_bn: timeDisplays.time_bn,
         sequence_time_en: timeDisplays.time_en,
-        brand_name: supp.brand_name || supp.name || supp.title_bn,
-        generic_name: supp.generic_name || supp.name_en || supp.elemental_form || supp.name,
-        dosage_display_en: supp.dosage || supp.dose || 'As directed',
-        dosage_display_bn: supp.dosage_bn || supp.dosage || 'নির্দেশিত মাত্রায়',
-        duration_en: supp.duration_weeks ? `${supp.duration_weeks} weeks` : 'Continuous',
-        duration_bn: supp.duration_weeks ? `${supp.duration_weeks} সপ্তাহ` : 'চলমান',
-        clinical_instructions_en: supp.instructions_en || 'Take as advised with meals.',
-        clinical_instructions_bn: supp.instructions_bn || 'খাবারের সাথে নির্দেশিত মাত্রায় সেব্য।',
+        brand_name: supp.brand_name || supp.name || supp.title_bn || supp.generic_nutrient || 'সাপ্লিমেন্ট',
+        generic_name: supp.generic_nutrient 
+          ? (supp.chemical_form ? `${supp.generic_nutrient} (${supp.chemical_form})` : supp.generic_nutrient)
+          : (supp.generic_name || supp.name_en || supp.elemental_form || supp.name || 'Supplement'),
+        dosage_display_en: doseEn,
+        dosage_display_bn: doseBn,
+        duration_en: durationEn,
+        duration_bn: durationBn,
+        clinical_instructions_en: time === 'UNKNOWN' ? `TIMING REQUIRES REVIEW. ${instrEn}` : instrEn,
+        clinical_instructions_bn: time === 'UNKNOWN' ? `সময় নির্ধারণ প্রয়োজন। ${instrBn}` : instrBn,
         item_type: 'supplement',
-        approval_status: 'prescribed_approved'
+        approval_status: 'prescribed_approved',
+        requires_clinician_verification: time === 'UNKNOWN'
       };
       activeRows.push(row);
     } else {
-      // Draft / Candidate Supplements
+      // Stage B: Unapproved Supplement remains strictly in draft_candidates for clinician review
       const row: MedicationProtocolRow = {
         id: supp.id || `cand_supp_${Math.random()}`,
         sequence_time: 'UNKNOWN',
         sequence_time_bn: 'খসড়া প্রস্তাবনা (অনুমোদন সাপেক্ষ)',
         sequence_time_en: 'Draft Candidate (Pending Approval)',
-        brand_name: supp.brand_name || supp.name || supp.title_bn,
-        generic_name: supp.generic_name || supp.name_en || supp.elemental_form || supp.name,
-        dosage_display_en: supp.dosage || 'Candidate dose',
+        brand_name: supp.brand_name || supp.name || supp.title_bn || supp.generic_nutrient || 'প্রস্তাবিত সাপ্লিমেন্ট',
+        generic_name: supp.generic_nutrient || supp.generic_name || supp.name_en || 'Candidate Supplement',
+        dosage_display_en: supp.dosage || supp.total_compound_dose || 'Candidate dose',
         dosage_display_bn: supp.dosage_bn || supp.dosage || 'প্রস্তাবিত মাত্রা',
-        duration_en: 'Review required',
+        duration_en: 'Clinician confirmation required',
         duration_bn: 'ক্লিনিক্যাল অনুমোদন প্রয়োজন',
-        clinical_instructions_en: supp.clinical_rationale || 'Candidate micronutrient intervention pending clinician sign-off.',
+        clinical_instructions_en: supp.clinician_rationale || supp.clinical_rationale || 'Candidate micronutrient intervention pending clinician sign-off.',
         clinical_instructions_bn: supp.clinical_rationale_bn || 'চিকিৎসক কর্তৃক অনুমোদনের অপেক্ষায় খসড়া পুষ্টি উপাদান।',
         item_type: 'candidate_supplement',
         approval_status: 'draft_candidate',
@@ -372,10 +489,21 @@ export function compose6ColumnMedicationProtocol(
     draftCandidates.push(row);
   }
 
-  // 4. Sort Chronologically
+  // 4. Sort Chronologically (Stage C: strict sequence)
   activeRows.sort((a, b) => {
+    if (a.sequence_time === b.sequence_time) return 0;
+    const isATime = /^\d{1,2}:\d{2}$/.test(a.sequence_time);
+    const isBTime = /^\d{1,2}:\d{2}$/.test(b.sequence_time);
+    if (isATime && isBTime) return a.sequence_time.localeCompare(b.sequence_time);
+    if (isATime && !isBTime) return -1;
+    if (!isATime && isBTime) return 1;
+
+    if (a.sequence_time === 'PRN') return -1;
+    if (b.sequence_time === 'PRN') return 1;
+
     if (a.sequence_time === 'UNKNOWN') return 1;
     if (b.sequence_time === 'UNKNOWN') return -1;
+
     return a.sequence_time.localeCompare(b.sequence_time);
   });
 
@@ -391,6 +519,187 @@ export function compose6ColumnMedicationProtocol(
     active_rows: activeRows,
     draft_candidates: draftCandidates
   };
+}
+
+/**
+ * Stage D: Complete Patient-Specific Food Exchange Generator
+ * Analyzes foods in the prescribed diet chart and generates safe, equivalent
+ * household alternatives based on the Food Database and Traffic Light restrictions.
+ */
+export function buildPatientSpecificFoodExchanges(
+  dietChartOrPlan: WeeklyDietPlan | DietChartMeal[] | undefined,
+  trafficLight: any,
+  patient: PatientProfile
+): PatientFoodExchangeItem[] {
+  const result: PatientFoodExchangeItem[] = [];
+  const processedOriginalIds = new Set<string>();
+
+  const confirmedAllergies = new Set((patient.confirmed_allergies || []).map(a => a.toLowerCase()));
+  const disallowed = new Set((patient.clinician_disallowed_foods || []).map(d => d.toLowerCase()));
+  const redFoodIds = new Set((trafficLight?.red || []).map((f: any) => f.id));
+
+  // Collect meal items from plan
+  const mealItems: Array<{ meal_type: string; item: any }> = [];
+  if (dietChartOrPlan) {
+    if ('days' in dietChartOrPlan && Array.isArray((dietChartOrPlan as WeeklyDietPlan).days)) {
+      for (const day of (dietChartOrPlan as WeeklyDietPlan).days) {
+        for (const meal of day.meals || []) {
+          for (const item of meal.items || []) {
+            mealItems.push({ meal_type: meal.title_bn || meal.meal_type, item });
+          }
+        }
+      }
+    } else if (Array.isArray(dietChartOrPlan)) {
+      for (const meal of dietChartOrPlan as DietChartMeal[]) {
+        for (const item of meal.items || []) {
+          mealItems.push({ meal_type: meal.title_bn || meal.meal_type, item });
+        }
+      }
+    }
+  }
+
+  function getHouseholdPortion(group: string, rawWeightG: number, cookedRatio: number = 1): { bn: string; en: string } {
+    const cookedG = Math.round(rawWeightG * cookedRatio);
+    switch (group) {
+      case 'grain':
+      case 'grains':
+        if (cookedG >= 120) {
+          return { bn: `১ বাটি (প্রায় ${cookedG} গ্রাম রান্না)`, en: `1 bati (~${cookedG}g cooked)` };
+        }
+        return { bn: `১/২ বাটি বা ১ কাপ (প্রায় ${cookedG} গ্রাম রান্না)`, en: `1/2 bati or 1 cup (~${cookedG}g cooked)` };
+      case 'protein':
+      case 'proteins':
+      case 'fish_meat_egg':
+      case 'legume':
+        if (rawWeightG <= 35) {
+          return { bn: `১টি ডিম অথবা ১ মাঝারি টুকরো (রান্না ~${cookedG} গ্রাম)`, en: `1 egg or 1 medium piece (~${cookedG}g cooked)` };
+        }
+        return { bn: `১ মাঝারি বাটি ঘন ডাল বা ১ টুকরো মাছ/মুরগি (রান্না ~${cookedG} গ্রাম)`, en: `1 medium bati thick dal or 1 piece fish/meat (~${cookedG}g cooked)` };
+      case 'vegetable':
+      case 'vegetables':
+        return { bn: `১ মাঝারি বাটি (রান্না ~${cookedG} গ্রাম)`, en: `1 medium bati (~${cookedG}g cooked)` };
+      case 'fruit':
+      case 'fruits':
+        return { bn: `১টি মাঝারি গোটা ফল অথবা ১/২ কাপ কাটা`, en: `1 medium whole fruit or 1/2 cup sliced` };
+      case 'dairy':
+        return { bn: `১ গ্লাস বা ১ ছোট বাটি (~${cookedG} মিলি/গ্রাম)`, en: `1 glass or 1 small bati (~${cookedG} ml/g)` };
+      case 'fats_oils':
+      case 'oil':
+        return { bn: `১ চা চামচ (৫ গ্রাম/মিলি)`, en: `1 tsp (5 g/ml)` };
+      default:
+        return { bn: `${rawWeightG} গ্রাম কাঁচা পরিমাপ`, en: `${rawWeightG}g raw portion` };
+    }
+  }
+
+  const allFoodsList = foodsData as FoodItem[];
+
+  for (const { meal_type, item } of mealItems) {
+    const origId = item.food_id || item.id;
+    if (!origId || processedOriginalIds.has(origId)) continue;
+    processedOriginalIds.add(origId);
+
+    const origFood = allFoodsList.find(f => f.id === origId) ||
+      allFoodsList.find(f => (item.food_name_en && f.name_en.toLowerCase().includes(item.food_name_en.toLowerCase())) || (item.food_name_bn && f.name_bn.includes(item.food_name_bn)));
+    if (!origFood) continue;
+
+    const group = (origFood.exchange_group || origFood.category || 'other').toLowerCase();
+    const ratio = origFood.raw_to_cooked_ratio || 1;
+    const rawG = item.raw_weight_g || 100;
+    const origHousehold = getHouseholdPortion(group, rawG, ratio);
+
+    let candidateAlternatives: FoodItem[] = [];
+    if (item.alternatives && item.alternatives.length > 0) {
+      for (const alt of item.alternatives) {
+        const f = allFoodsList.find(x => x.id === (alt.food_id || alt.id));
+        if (f) candidateAlternatives.push(f);
+      }
+    }
+
+    if (candidateAlternatives.length === 0) {
+      candidateAlternatives = allFoodsList.filter(f => {
+        if (f.id === origId) return false;
+        const fGroup = (f.exchange_group || f.category || '').toLowerCase();
+        if (fGroup !== group) return false;
+        if (redFoodIds.has(f.id)) return false;
+        const nameLower = (f.name_en || '').toLowerCase();
+        if ([...confirmedAllergies].some(a => nameLower.includes(a))) return false;
+        if ([...disallowed].some(d => nameLower.includes(d) || f.id.toLowerCase() === d)) return false;
+        return true;
+      }).slice(0, 2);
+    }
+
+    for (const altFood of candidateAlternatives) {
+      if (redFoodIds.has(altFood.id)) continue;
+      const altNameLower = (altFood.name_en || '').toLowerCase();
+      const altNameBn = (altFood.name_bn || '').toLowerCase();
+      if ([...confirmedAllergies].some(a => altNameLower.includes(a) || altNameBn.includes(a) || altFood.id.toLowerCase() === a)) continue;
+      if ([...disallowed].some(d => altNameLower.includes(d) || altFood.id.toLowerCase() === d || altNameBn.includes(d))) continue;
+      const altRatio = altFood.raw_to_cooked_ratio || 1;
+      const altRawG = rawG;
+      const altHousehold = getHouseholdPortion(group, altRawG, altRatio);
+
+      let groupLabelBn = 'সাধারণ খাদ্য';
+      let groupLabelEn = 'General Food';
+      let groupKey: PatientFoodExchangeItem['exchange_group'] = 'grains';
+
+      if (group.includes('grain')) {
+        groupKey = 'grains';
+        groupLabelBn = 'শস্য ও কার্বোহাইড্রেট';
+        groupLabelEn = 'Grains & Carbohydrates';
+      } else if (group.includes('protein') || group.includes('legume') || group.includes('fish') || group.includes('meat') || group.includes('egg')) {
+        groupKey = 'proteins';
+        groupLabelBn = 'প্রোটিন (মাছ, মাংস, ডিম ও ডাল)';
+        groupLabelEn = 'Proteins & Legumes';
+      } else if (group.includes('vegetable')) {
+        groupKey = 'vegetables';
+        groupLabelBn = 'শাকসবজি';
+        groupLabelEn = 'Vegetables';
+      } else if (group.includes('fruit')) {
+        groupKey = 'fruits';
+        groupLabelBn = 'ফলমূল';
+        groupLabelEn = 'Fruits';
+      } else if (group.includes('dairy')) {
+        groupKey = 'dairy';
+        groupLabelBn = 'দুগ্ধজাত ও প্রোবায়োটিক';
+        groupLabelEn = 'Dairy & Probiotics';
+      } else if (group.includes('fat') || group.includes('oil')) {
+        groupKey = 'fats_oils';
+        groupLabelBn = 'স্বাস্থ্যকর ফ্যাট ও তেল';
+        groupLabelEn = 'Healthy Fats & Oils';
+      }
+
+      result.push({
+        original_food_id: origFood.id,
+        original_food_name_bn: origFood.name_bn,
+        original_food_name_en: origFood.name_en,
+        prescribed_meal_slot: meal_type,
+        prescribed_raw_g: rawG,
+        prescribed_household_portion_bn: origHousehold.bn,
+        prescribed_household_portion_en: origHousehold.en,
+        exchange_group: groupKey,
+        exchange_group_bn: groupLabelBn,
+        exchange_group_en: groupLabelEn,
+        alternative_food_id: altFood.id,
+        alternative_food_name_bn: altFood.name_bn,
+        alternative_food_name_en: altFood.name_en,
+        alternative_raw_g: altRawG,
+        alternative_household_portion_bn: altHousehold.bn,
+        alternative_household_portion_en: altHousehold.en,
+        nutritional_comparability_bn: 'অনুরূপ পুষ্টিমান ও খাদ্যশ্রেণি ভিত্তিক সমতুল্য বিকল্প।',
+        nutritional_comparability_en: 'Nutritionally comparable substitute providing matched food group density.',
+        clinical_caution_bn: altFood.tags?.includes('contains_gluten') 
+          ? 'গ্লুটেন সংবেদনশীল রোগীদের জন্য বর্জনীয়।'
+          : undefined,
+        clinical_caution_en: altFood.tags?.includes('contains_gluten')
+          ? 'Contains gluten; avoid in celiac or gluten sensitivity.'
+          : undefined,
+        prep_guidance_bn: altFood.prep_note_bn || 'স্বাভাবিক স্বাস্থ্যকর পদ্ধতিতে রান্না করুন।',
+        prep_guidance_en: altFood.prep_note_en || 'Prepare using standard wholesome culinary method.'
+      });
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -474,12 +783,14 @@ export function evaluateFastingSafety(
 
 /**
  * Module 1 & 8: Master Prescription Composition Engine
+ * Stage A: Single Authoritative Composition Flow
  */
 export function composeR6Prescription(options: {
   patient: PatientProfile;
   weeklyDietPlan?: WeeklyDietPlan | null;
   dietChart?: DietChartMeal[];
   medications?: R5MedicationRecord[];
+  r4Protocol?: R4ProtocolStudioData | null;
   supplements?: any[];
   candidateSupplements?: any[];
   trafficLight?: any;
@@ -493,6 +804,7 @@ export function composeR6Prescription(options: {
     weeklyDietPlan,
     dietChart = [],
     medications = [],
+    r4Protocol,
     supplements = [],
     candidateSupplements = [],
     trafficLight,
@@ -527,11 +839,12 @@ export function composeR6Prescription(options: {
   // 2. Structured 7-Food-Group Guide
   const sevenFoodGroupGuide = buildStructuredTrafficLightGuide(trafficLight);
 
-  // 3. 6-Column Chronological Medication Protocol
+  // 3. 6-Column Chronological Medication Protocol (Stage B & C)
   const medicationProtocol = compose6ColumnMedicationProtocol(
     medications,
     supplements,
-    candidateSupplements
+    candidateSupplements,
+    r4Protocol
   );
 
   // 4. Fasting Safety
@@ -592,15 +905,81 @@ export function composeR6Prescription(options: {
     };
   });
 
-  // 6. Safety Directives
-  const fluidLimit = patient.fluid_prescription?.total_fluid_limit_ml || patient.clinical_safety?.fluid_restriction?.limit_ml;
+  // 6. Safety Directives & Fluid Calculation
+  const fluidLimit = patient.fluid_prescription?.total_fluid_limit_ml || patient.clinical_safety?.fluid_restriction?.limit_ml || r4Protocol?.hydration?.clinician_fluid_limit_ml;
   const selectedConditions = (patient.selected_conditions || []) as unknown as string[];
   const isFluidRestricted = Boolean(
     (patient.clinical_safety?.fluid_restriction?.is_restricted) ||
+    r4Protocol?.hydration?.is_restricted ||
     selectedConditions.includes('ckd_dialysis') ||
     selectedConditions.includes('heart_failure') ||
     (fluidLimit && fluidLimit > 0)
   );
+
+  // 7. Stage D: Patient-Specific Food Exchanges
+  const patientSpecificExchanges = buildPatientSpecificFoodExchanges(
+    weeklyDietPlan || dietChart,
+    trafficLight,
+    patient
+  );
+
+  // 8. Stage E: Connect R4 Lifestyle Protocols (Zero Fabricated Blanket Advice)
+  // Hydration
+  let hydrationTargetMl: number | undefined = undefined;
+  let hydrationBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
+  let hydrationEn = 'Not individually prescribed';
+  let isHydrationPrescribed = false;
+
+  if (isFluidRestricted) {
+    isHydrationPrescribed = true;
+    hydrationTargetMl = fluidLimit || 1500;
+    hydrationBn = `ক্লিনিক্যাল তরল সীমাবদ্ধতা সক্রিয়: চিকিৎসকের নির্দেশ মোতাবেক দৈনিক মোট তরল গ্রহণ কঠোরভাবে সর্বাধিক ${hydrationTargetMl} মিলিলিটারে সীমাবদ্ধ রাখুন (পানি, চা, ঝোল সহ)। মেপে পানি পান করুন।`;
+    hydrationEn = `Clinical Fluid Restriction Active: Strictly limit total daily fluid intake to maximum ${hydrationTargetMl} mL/day as ordered by physician (including water, tea, soups). Measure accurately.`;
+  } else if (r4Protocol?.hydration && (r4Protocol.hydration.baseline_fluid_target_ml > 0 || r4Protocol.hydration.timing_guidance_en)) {
+    isHydrationPrescribed = true;
+    hydrationTargetMl = r4Protocol.hydration.baseline_fluid_target_ml;
+    hydrationBn = r4Protocol.hydration.timing_guidance_bn || `দৈনিক তরল লক্ষ্যমাত্রা: প্রায় ${hydrationTargetMl} মিলি। খাবার গ্রহণের ৩০ মিনিট পূর্বে বা পরে পানি পান করুন।`;
+    hydrationEn = r4Protocol.hydration.timing_guidance_en || `Daily fluid target: approximately ${hydrationTargetMl} mL. Space hydration 30 min away from meals.`;
+  }
+
+  // Exercise
+  let exerciseTargetBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
+  let exerciseTargetEn = 'Not individually prescribed';
+  let exerciseSafetyBn = 'ব্যায়াম শুরুর পূর্বে চিকিৎসকের পরামর্শ গ্রহণ করুন।';
+  let exerciseSafetyEn = 'Consult physician before initiating structured exercise.';
+  let isExercisePrescribed = false;
+
+  if (r4Protocol?.exercise && r4Protocol.exercise.items && r4Protocol.exercise.items.length > 0) {
+    const approvedExercises = r4Protocol.exercise.items.filter(i => i.approval_status === 'approved');
+    if (approvedExercises.length > 0) {
+      isExercisePrescribed = true;
+      exerciseTargetBn = approvedExercises.map(e => `${e.title_bn}: সপ্তাহে ${e.frequency_per_week} দিন, ${e.duration_minutes} মিনিট (${e.intensity})`).join('; ');
+      exerciseTargetEn = approvedExercises.map(e => `${e.title_en}: ${e.frequency_per_week}x/week, ${e.duration_minutes} min (${e.intensity})`).join('; ');
+      exerciseSafetyBn = approvedExercises.map(e => (e.stop_conditions_bn || []).join(', ')).filter(Boolean).join('; ') || 'বুকে ব্যথা বা মাথা ঘোরা দেখা দিলে তাৎক্ষণিক ব্যায়াম বন্ধ করুন।';
+      exerciseSafetyEn = approvedExercises.map(e => (e.stop_conditions_en || []).join(', ')).filter(Boolean).join('; ') || 'Stop immediately if chest pain, severe dyspnea, or dizziness occurs.';
+    }
+  } else if (r4Protocol?.exercise?.weekly_aerobic_minutes_target) {
+    isExercisePrescribed = true;
+    exerciseTargetBn = `সাপ্তাহিক অ্যারোবিক লক্ষ্যমাত্রা: ${r4Protocol.exercise.weekly_aerobic_minutes_target} মিনিট পরিমিত শারীরিক সক্রিয়তা।`;
+    exerciseTargetEn = `Weekly aerobic target: ${r4Protocol.exercise.weekly_aerobic_minutes_target} minutes moderate physical activity.`;
+  }
+
+  // Sleep & Circadian Chronobiology
+  let sleepHours: number | undefined = undefined;
+  let caffeineCurfew: string | undefined = undefined;
+  let dinnerCurfew: string | undefined = undefined;
+  let sleepBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
+  let sleepEn = 'Not individually prescribed';
+  let isSleepPrescribed = false;
+
+  if (r4Protocol?.sleep) {
+    isSleepPrescribed = true;
+    sleepHours = r4Protocol.sleep.target_sleep_hours;
+    caffeineCurfew = r4Protocol.sleep.caffeine_curfew_time;
+    dinnerCurfew = r4Protocol.sleep.last_meal_curfew_time;
+    sleepBn = `ঘুমের সময়সূচি: রাত ${r4Protocol.sleep.bed_time} থেকে সকাল ${r4Protocol.sleep.wake_time} (লক্ষ্যমাত্রা: ${sleepHours} ঘণ্টা)। ক্যাফেইন বর্জনীয়: ${caffeineCurfew || 'দুপুর ২:০০ টার পর'}। রাতের খাবার সম্পন্ন: ঘুমানোর অন্তত ৩ ঘণ্টা পূর্বে।`;
+    sleepEn = `Sleep schedule: ${r4Protocol.sleep.bed_time} to ${r4Protocol.sleep.wake_time} (target: ${sleepHours}h). Caffeine cutoff: ${caffeineCurfew || '14:00'}. Last meal: at least 3h before bed.`;
+  }
 
   return {
     prescription_id: `RX_${patient.id}_V${weeklyDietPlan?.version || 1}`,
@@ -619,14 +998,14 @@ export function composeR6Prescription(options: {
       name_en: 'SHUDDHO CLINICAL FUNCTIONAL NUTRITION',
       tagline_bn: 'সেন্টার ফর মেটাবলিক রিবুট ও প্রিসিশন লাইফস্টাইল মেডিসিন',
       tagline_en: 'Center for Metabolic Reboot & Precision Lifestyle Medicine',
-      contact: '+880 1700-000000',
-      address: 'Dhaka, Bangladesh'
+      contact: undefined, // Zero fake clinic contact
+      address: undefined  // Zero fake address
     },
     clinician: {
       name: clinicianName,
       designation_bn: 'ক্লিনিক্যাল ফাংশনাল নিউট্রিশনিস্ট',
       designation_en: 'Clinical Functional Nutritionist',
-      license: weeklyDietPlan?.approval_metadata?.license_number || 'REG-CFN-BD',
+      license: weeklyDietPlan?.approval_metadata?.license_number || undefined,
       signoff_date: weeklyDietPlan?.approved_at?.split('T')[0] || visitDate
     },
     patient: {
@@ -647,10 +1026,14 @@ export function composeR6Prescription(options: {
       clinical_food_exclusions_en: patient.clinician_disallowed_foods || [],
       fluid_limit_ml: fluidLimit,
       fluid_restriction_active: isFluidRestricted,
-      cooking_oil_rules_bn: 'দৈনিক সর্বোচ্চ ৩-৪ চা চামচ (১৫-২০ মিলি) খাঁটি সরিষার তেল বা ঘি। পোড়া তেল বর্জনীয়।',
-      cooking_oil_rules_en: 'Maximum 3-4 tsp (15-20 ml) cold-pressed mustard oil or ghee daily. Reheated oil strictly prohibited.',
-      salt_rules_bn: 'রান্নায় পরিমিত আয়োডিনযুক্ত লবণ (দৈনিক অনধিক ১ চা চামচ বা ৫ গ্রাম লবণ)। পাতে বাড়তি লবণ সম্পূর্ণ নিষিদ্ধ।',
-      salt_rules_en: 'Cook with moderate iodized salt (< 1 tsp / 5g salt per day). Zero added raw table salt.'
+      cooking_oil_rules_bn: isFluidRestricted ? 'পরিমিত রান্নার তেল ব্যবহার করুন।' : 'ব্যক্তিগতভাবে নির্ধারিত নয়',
+      cooking_oil_rules_en: isFluidRestricted ? 'Use measured cooking oil.' : 'Not individually prescribed',
+      salt_rules_bn: selectedConditions.some(c => c.includes('hypertension') || c.includes('ckd')) 
+        ? 'রান্নায় পরিমিত আয়োডিনযুক্ত লবণ; পাতে বাড়তি লবণ সম্পূর্ণ নিষিদ্ধ।' 
+        : 'ব্যক্তিগতভাবে নির্ধারিত নয়',
+      salt_rules_en: selectedConditions.some(c => c.includes('hypertension') || c.includes('ckd')) 
+        ? 'Strict moderate cooking salt; zero raw table salt.' 
+        : 'Not individually prescribed'
     },
     seven_food_group_guide: sevenFoodGroupGuide,
     fasting_evaluation: fastingEvaluation,
@@ -660,29 +1043,29 @@ export function composeR6Prescription(options: {
       days: formattedDays
     },
     food_exchange_guide: STANDARD_BANGLADESHI_EXCHANGES,
+    patient_specific_exchanges: patientSpecificExchanges,
     medication_supplement_protocol: medicationProtocol,
     lifestyle_support: {
       hydration: {
-        target_daily_ml: isFluidRestricted ? (fluidLimit || 1500) : 2500,
-        instructions_bn: isFluidRestricted 
-          ? `তরল গ্রহণের সর্বোচ্চ দৈনিক সীমা ${fluidLimit || 1500} মিলি (চা, পানি ও ঝোল সহ)। মেপে পানি পান করুন।`
-          : 'প্রতিদিন ৮-১০ গ্লাস (২.৫ লিটার) বিশুদ্ধ পানি পান করুন। খাবারের ৩০ মিনিট আগে ও পরে পানি পান শ্রেয়।',
-        instructions_en: isFluidRestricted 
-          ? `Strict total fluid ceiling of ${fluidLimit || 1500} ml/day (including tea, water, soups). Measure intake accurately.`
-          : 'Drink 8-10 glasses (2.5L) of filtered water daily. Space hydration 30 min before and after meals.'
+        target_daily_ml: hydrationTargetMl,
+        is_prescribed: isHydrationPrescribed,
+        instructions_bn: hydrationBn,
+        instructions_en: hydrationEn
       },
       exercise: {
-        target_bn: 'প্রতিদিন প্রধান খাবারের পর ১৫-২০ মিনিট ধীরগতির হাঁটা (Postprandial Walk)। সপ্তাহে ১৫০ মিনিট পরিমিত ব্যায়াম।',
-        target_en: '15-20 min light post-meal walk after main meals. Target 150 min moderate activity per week.',
-        safety_instructions_bn: 'বুকে অস্বস্তি, শ্বাসকষ্ট বা মাথা ঘোরা দেখা দিলে তাৎক্ষণিক ব্যায়াম বন্ধ করুন।',
-        safety_instructions_en: 'Stop exercise immediately if chest discomfort, shortness of breath, or dizziness occurs.'
+        target_bn: exerciseTargetBn,
+        target_en: exerciseTargetEn,
+        is_prescribed: isExercisePrescribed,
+        safety_instructions_bn: exerciseSafetyBn,
+        safety_instructions_en: exerciseSafetyEn
       },
       sleep_circadian: {
-        sleep_target_hours: 7.5,
-        caffeine_curfew: '14:00',
-        dinner_curfew: '20:30',
-        instructions_bn: 'রাত ১১:০০ টার মধ্যে ঘুমানো এবং সকাল ০৬:৩০ টায় ওঠা। দুপুর ২:০০ টার পর চা/কফি বর্জনীয় এবং ঘুমানোর ৩ ঘণ্টা পূর্বে রাতের খাবার সম্পন্ন করুন।',
-        instructions_en: 'Aim for 7.5h sleep (bedtime 23:00, wake 06:30). Caffeine curfew 14:00; finish dinner 3h before bed.'
+        sleep_target_hours: sleepHours,
+        is_prescribed: isSleepPrescribed,
+        caffeine_curfew: caffeineCurfew,
+        dinner_curfew: dinnerCurfew,
+        instructions_bn: sleepBn,
+        instructions_en: sleepEn
       }
     },
     disclaimers: {

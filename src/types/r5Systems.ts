@@ -250,6 +250,9 @@ export interface R5MedicationRecord {
   start_date?: string;
   stop_date?: string;
   is_prn: boolean;                   // Pro re nata / As-needed
+  duration?: string;                 // e.g. "14 days", "1 month"
+  duration_bn?: string;              // e.g. "১৪ দিন"
+  duration_weeks?: number;
   prescriber_instructions?: string;
   dose_titration_history?: string;
   adherence_status?: 'adherent' | 'intermittent_misses' | 'severe_nonadherence' | 'unknown';

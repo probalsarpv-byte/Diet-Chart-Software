@@ -484,6 +484,11 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
                       </td>
                       <td className="p-2 font-bold text-slate-900 dark:text-white print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
                         {row.brand_name}
+                        {row.requires_clinician_verification && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-900 border border-amber-300 font-normal no-print">
+                            {bn ? 'যাচাই সাপেক্ষ' : 'Review Required'}
+                          </span>
+                        )}
                       </td>
                       <td className="p-2 italic text-slate-600 dark:text-slate-400 print:text-slate-700 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
                         {row.generic_name}
@@ -503,11 +508,11 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
               </table>
             </div>
 
-            {/* Candidate / Draft Supplements Notice */}
+            {/* Candidate / Draft Supplements Notice - Hidden in print as draft candidates are clinician review items only */}
             {payload.medication_supplement_protocol.draft_candidates.length > 0 && (
-              <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-1.5">
+              <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-1.5 no-print">
                 <span className="font-bold text-amber-800 dark:text-amber-400 block text-[11px]">
-                  {bn ? '⚠️ চিকিৎসকের অনুমোদন সাপেক্ষ খসড়া সাপ্লিমেন্ট (Draft Candidates — Review Required):' : '⚠️ Draft Candidates (Pending Clinician Sign-off):'}
+                  {bn ? '⚠️ চিকিৎসকের অনুমোদন সাপেক্ষ খসড়া প্রস্তাবনা (Draft Candidates — Review Required):' : '⚠️ Draft Candidates (Pending Clinician Sign-off):'}
                 </span>
                 <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
                   {payload.medication_supplement_protocol.draft_candidates.map((cand, cIdx) => (
@@ -552,6 +557,44 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
                     <strong>{bn ? 'উদাহরণ: ' : 'Examples: '}</strong>
                     {(bn ? ex.common_examples_bn : ex.common_examples_en).join(', ')}
                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Patient-Specific Prescribed Food Exchange Options */}
+        {payload.patient_specific_exchanges && payload.patient_specific_exchanges.length > 0 && (
+          <div data-testid="patient-specific-food-exchanges" className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                <Utensils className="h-4 w-4 text-emerald-600" />
+                <span>{bn ? 'রোগীর জন্য অনুমোদিত সুনির্দিষ্ট বিকল্প খাদ্য বিনিময়' : 'Prescribed Food-Specific Exchange Options'}</span>
+              </h3>
+              <span className="text-[10px] text-slate-500 print:text-slate-600">
+                {bn ? 'সমমানের পুষ্টিমান বজায় রেখে বিকল্প' : 'Matched Food Density Exchanges'}
+              </span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              {payload.patient_specific_exchanges.slice(0, 6).map((px, pIdx) => (
+                <div key={pIdx} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="font-bold text-slate-900 dark:text-white print:text-black">
+                      {bn ? px.original_food_name_bn : px.original_food_name_en} ({bn ? px.prescribed_household_portion_bn : px.prescribed_household_portion_en})
+                    </span>
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold mx-2">⇄</span>
+                    <span className="font-bold text-emerald-800 dark:text-emerald-300">
+                      {bn ? px.alternative_food_name_bn : px.alternative_food_name_en} ({bn ? px.alternative_household_portion_bn : px.alternative_household_portion_en})
+                    </span>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                      {bn ? px.nutritional_comparability_bn : px.nutritional_comparability_en}
+                      {px.clinical_caution_bn ? ` • ${bn ? px.clinical_caution_bn : px.clinical_caution_en}` : ''}
+                    </p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium self-start sm:self-auto shrink-0">
+                    {bn ? px.exchange_group_bn : px.exchange_group_en}
+                  </span>
                 </div>
               ))}
             </div>
@@ -696,6 +739,38 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
             </div>
           );
         })()}
+
+        {/* Connected R4 Exercise & Circadian Support */}
+        {payload.lifestyle_support && (payload.lifestyle_support.exercise?.is_prescribed || payload.lifestyle_support.sleep_circadian?.is_prescribed) && (
+          <div data-testid="lifestyle-support-section" className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs avoid-break">
+            {payload.lifestyle_support.exercise.is_prescribed && (
+              <div className="space-y-1">
+                <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-emerald-600" />
+                  <span>{bn ? 'শারীরিক সক্রিয়তা ও ব্যায়াম নির্দেশনা:' : 'Physical Activity & Exercise:'}</span>
+                </span>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                  {bn ? payload.lifestyle_support.exercise.target_bn : payload.lifestyle_support.exercise.target_en}
+                </p>
+                <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                  {bn ? payload.lifestyle_support.exercise.safety_instructions_bn : payload.lifestyle_support.exercise.safety_instructions_en}
+                </p>
+              </div>
+            )}
+
+            {payload.lifestyle_support.sleep_circadian.is_prescribed && (
+              <div className="space-y-1">
+                <span className="font-bold text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-purple-600" />
+                  <span>{bn ? 'ঘুম ও সার্কেডিয়ান সময়সূচি:' : 'Sleep & Circadian Timing:'}</span>
+                </span>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                  {bn ? payload.lifestyle_support.sleep_circadian.instructions_bn : payload.lifestyle_support.sleep_circadian.instructions_en}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Nutritionist Sign-Off & Patient Disclaimer Block */}
         <div className="relative z-10 pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 text-xs avoid-break">

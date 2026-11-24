@@ -137,25 +137,24 @@ async function runR6BrowserE2E() {
 
     console.log('--- 4. 6-Column Medication Protocol Verification ---');
     const medProtocolSection = patientView.locator('[data-testid="six-column-medication-protocol"]');
-    if (await medProtocolSection.count() > 0) {
-      assert(true, '6-Column Medication & Supplementation Protocol container rendered');
-      const timeSeqCol = medProtocolSection.locator('th:has-text("সময়"), th:has-text("Time Sequence")');
-      const brandCol = medProtocolSection.locator('th:has-text("ওষুধ/সাপ্লিমেন্ট"), th:has-text("Brand Name")');
-      const genericCol = medProtocolSection.locator('th:has-text("জেনেরিক নাম"), th:has-text("Generic Name")');
-      const doseCol = medProtocolSection.locator('th:has-text("ডোজ ও পরিমাণ"), th:has-text("Dosage")');
-      const durationCol = medProtocolSection.locator('th:has-text("Duration")');
-      const instrCol = medProtocolSection.locator('th:has-text("ক্লিনিক্যাল নির্দেশনা"), th:has-text("Clinical Instructions")');
+    assert((await medProtocolSection.count()) > 0, '6-Column Medication & Supplementation Protocol container rendered');
+    const timeSeqCol = medProtocolSection.locator('th:has-text("সময়"), th:has-text("Time Sequence")');
+    const brandCol = medProtocolSection.locator('th:has-text("ওষুধ/সাপ্লিমেন্ট"), th:has-text("Brand Name")');
+    const genericCol = medProtocolSection.locator('th:has-text("জেনেরিক নাম"), th:has-text("Generic Name")');
+    const doseCol = medProtocolSection.locator('th:has-text("ডোজ ও পরিমাণ"), th:has-text("Dosage")');
+    const durationCol = medProtocolSection.locator('th:has-text("Duration")');
+    const instrCol = medProtocolSection.locator('th:has-text("ক্লিনিক্যাল নির্দেশনা"), th:has-text("Clinical Instructions")');
 
-      assert((await timeSeqCol.count()) > 0, 'Column 1: সময় (Time Sequence) exists');
-      assert((await brandCol.count()) > 0, 'Column 2: ওষুধ/সাপ্লিমেন্ট (ব্র্যান্ড) exists');
-      assert((await genericCol.count()) > 0, 'Column 3: জেনেরিক নাম (Generic) exists');
-      assert((await doseCol.count()) > 0, 'Column 4: ডোজ ও পরিমাণ (Dosage) exists');
-      assert((await durationCol.count()) > 0, 'Column 5: Duration exists');
-      assert((await instrCol.count()) > 0, 'Column 6: ক্লিনিক্যাল নির্দেশনা exists');
-    } else {
-      console.log('  ℹ Notice: Medication protocol container conditionally rendered based on patient active medications');
-      assert(true, 'Medication protocol evaluation handled cleanly');
-    }
+    assert((await timeSeqCol.count()) > 0, 'Column 1: সময় (Time Sequence) exists');
+    assert((await brandCol.count()) > 0, 'Column 2: ওষুধ/সাপ্লিমেন্ট (ব্র্যান্ড) exists');
+    assert((await genericCol.count()) > 0, 'Column 3: জেনেরিক নাম (Generic) exists');
+    assert((await doseCol.count()) > 0, 'Column 4: ডোজ ও পরিমাণ (Dosage) exists');
+    assert((await durationCol.count()) > 0, 'Column 5: Duration exists');
+    assert((await instrCol.count()) > 0, 'Column 6: ক্লিনিক্যাল নির্দেশনা exists');
+
+    const medRows = medProtocolSection.locator('tbody tr');
+    const rowCount = await medRows.count();
+    assert(rowCount >= 3, `At least 3 active rows rendered in 6-column protocol (found: ${rowCount})`);
 
     console.log('--- 5. Food Exchange & Household Portion Guide Verification ---');
     const exchangeGuide = patientView.locator('[data-testid="food-exchange-guide"]');
@@ -163,6 +162,9 @@ async function runR6BrowserE2E() {
 
     const exchangeItems = exchangeGuide.locator('strong');
     assert((await exchangeItems.count()) >= 5, 'Contains multiple standard exchange groups (Grains, Proteins, Veggies, Fruits, Dairy, Fats)');
+
+    const patientExchanges = patientView.locator('[data-testid="patient-specific-food-exchanges"]');
+    assert((await patientExchanges.count()) > 0, 'Patient-Specific Food Exchanges section rendered');
 
     console.log('--- 6. Release Safety Gating & Draft Watermark Verification ---');
     const watermark = patientView.locator('[data-testid="draft-watermark"]');

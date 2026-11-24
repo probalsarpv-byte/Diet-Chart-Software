@@ -352,6 +352,9 @@ export interface ReconciledMedicationRecord {
   source?: 'intake_staged' | 'clinician_entry' | 'legacy_record';
   verified_by?: string;
   verified_at?: string;
+  duration?: string;
+  duration_bn?: string;
+  duration_weeks?: number;
   notes?: string;
   relevant_safety_notes?: string[];
   depletions?: string[];
