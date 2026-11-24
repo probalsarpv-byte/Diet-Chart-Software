@@ -796,24 +796,44 @@ export function buildClinicianReportProjection(options: {
 // ── 4b. 7-FOOD-GROUP TRAFFIC LIGHT CLASSIFICATION ENGINE ─────────
 
 export function mapFoodToSevenFoodGroup(food: FoodItem): SevenFoodGroupCategory {
-  const cat = (food.category || '').toLowerCase();
+  const cat = (food.category || '').toLowerCase().trim();
+  const exchange = ((food as any).exchange_group || '').toLowerCase().trim();
   const nameEn = (food.name_en || '').toLowerCase();
   const nameBn = food.name_bn || '';
-  const text = `${cat} ${nameEn} ${nameBn} ${(food.tags || []).join(' ')}`.toLowerCase();
+  const tags = (food.tags || []).map(t => t.toLowerCase());
+  const text = `${cat} ${exchange} ${nameEn} ${nameBn} ${tags.join(' ')}`.toLowerCase();
 
+  // 1. Direct Category & Exchange Matching from Authoritative Food Database (P1-004)
+  if (cat === 'grain') return 'grains_carbs';
+  if (cat === 'protein') return 'proteins';
+  if (cat === 'fruit') return 'fruits';
+  if (cat === 'dairy') return 'dairy_probiotics';
+  if (cat === 'seed_nut' || cat === 'fat_oil') return 'fats_oils';
+  if (cat === 'spice_herb' || cat === 'beverage') return 'spices_beverages';
+  if (cat === 'vegetable') return 'vegetables';
+
+  // Check structured exchange group next
+  if (exchange === 'grain') return 'grains_carbs';
+  if (exchange === 'lean_protein' || exchange === 'fatty_protein' || exchange === 'protein' || exchange === 'pulse') return 'proteins';
+  if (exchange === 'fruit') return 'fruits';
+  if (exchange === 'seed_nut' || exchange === 'fat') return 'fats_oils';
+  if (exchange === 'dairy') return 'dairy_probiotics';
+  if (exchange === 'vegetable') return 'vegetables';
+
+  // 2. Secondary Semantic / Taxonomic Fallbacks (for external or dynamic food items)
   if (
     cat.includes('cereal') || cat.includes('grain') || 
     text.includes('rice') || text.includes('wheat') || text.includes('roti') || text.includes('ruti') || 
-    text.includes('oats') || text.includes('ভাত') || text.includes('রুটি') || text.includes('আটা') || 
-    text.includes('গম') || text.includes('সুজি') || text.includes('কার্বোহাইড্রেট') || text.includes('bread')
+    text.includes('oats') || text.includes('barley') || text.includes('ভাত') || text.includes('রুটি') || 
+    text.includes('আটা') || text.includes('গম') || text.includes('সুজি') || text.includes('চিঁড়া') || text.includes('মুড়ি')
   ) {
     return 'grains_carbs';
   }
   if (
     cat.includes('fish') || cat.includes('meat') || cat.includes('egg') || cat.includes('poultry') || 
     cat.includes('legume') || cat.includes('pulse') || text.includes('fish') || text.includes('egg') || 
-    text.includes('chicken') || text.includes('dal') || text.includes('lentil') || text.includes('মাছ') || 
-    text.includes('ডিম') || text.includes('মাংস') || text.includes('ডাল') || text.includes('মুরগি') || text.includes('beef')
+    text.includes('chicken') || text.includes('beef') || text.includes('dal') || text.includes('lentil') || 
+    text.includes('মাছ') || text.includes('ডিম') || text.includes('মাংস') || text.includes('ডাল') || text.includes('মুরগি')
   ) {
     return 'proteins';
   }
@@ -843,7 +863,15 @@ export function mapFoodToSevenFoodGroup(food: FoodItem): SevenFoodGroupCategory 
   ) {
     return 'spices_beverages';
   }
-  return 'vegetables'; // Default plant whole foods
+  if (
+    cat.includes('veg') || text.includes('spinach') || text.includes('leaf') || text.includes('shak') || 
+    text.includes('শাক') || text.includes('সবজি') || text.includes('পটল') || text.includes('লাউ')
+  ) {
+    return 'vegetables';
+  }
+
+  // 3. If genuinely unclassifiable, assign to spices_beverages / other context rather than silently dumping into vegetables
+  return 'spices_beverages';
 }
 
 export function buildStructuredTrafficLightGuide(trafficLight: any): StructuredTrafficLightGuide {

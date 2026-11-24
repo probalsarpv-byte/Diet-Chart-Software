@@ -338,38 +338,64 @@ export const determinePathwaySelectionState = (
 ): PathwaySelectionState => evaluatePathwaySelectionState(selectedIds, explicitNoKnownPathway).status;
 
 /**
- * Maps expanded clinical pathways to disease rule condition IDs for reactive Traffic Light synchronization.
+ * Clinical Distinction Architecture (P0-001):
+ * - FUNCTIONAL PATHWAY: Broad biological or clinical assessment domain (e.g. Mental Health, Metabolic).
+ * - CONFIRMED CLINICAL CONDITION: Documented, clinician-verified diagnosis (e.g. Type 2 Diabetes, Stage 3 CKD).
+ * - FUNCTIONAL HYPOTHESIS: Possible physiological mechanism requiring objective evidence.
+ * 
+ * CLINICAL SAFETY MANDATE:
+ * Broad pathways MUST NEVER be automatically converted into confirmed diagnoses.
+ * Only clinician-confirmed conditions or verified laboratory findings may activate diagnosis-specific dietary restrictions.
  */
-export const EXPANDED_PATHWAY_TO_CONDITION_MAP: Record<ExpandedClinicalPathwayId, ClinicalConditionId[]> = {
+
+/**
+ * Reference map of clinical pathways to related candidate conditions for clinician search/suggestion.
+ * NOTE: These are NOT automatically assigned as confirmed patient diagnoses!
+ */
+export const EXPANDED_PATHWAY_TO_CANDIDATE_CONDITIONS_MAP: Record<ExpandedClinicalPathwayId, ClinicalConditionId[]> = {
   metabolic_endocrine: ['t2d_ir', 'fatty_liver', 'metabolic_syndrome'],
   cardiovascular: ['dyslipidemia_atherosclerosis', 'hypertension_ckd'],
-  renal_electrolyte: ['hypertension_ckd', 'uric_acid_gout'],
+  renal_electrolyte: ['hypertension_ckd'],
   gastrointestinal_hepatobiliary: ['gut_dysbiosis', 'fatty_liver'],
-  autoimmune_inflammatory: ['hypothyroid', 'gut_dysbiosis'],
+  autoimmune_inflammatory: ['hypothyroid'],
   musculoskeletal_bone: ['uric_acid_gout'],
-  underweight_malnutrition: ['gut_dysbiosis'],
-  oncology: ['gut_dysbiosis'],
-  surgical_postoperative: ['gut_dysbiosis'],
-  critical_care_specialized_feeding: ['gut_dysbiosis'],
-  mental_health_neuropsychiatric: ['gut_dysbiosis'],
-  neurological_neurodevelopmental: ['gut_dysbiosis'],
-  reproductive_hormonal: ['t2d_ir'],
-  dermatological_skin: ['gut_dysbiosis'],
-  feeding_swallowing_rehabilitation: ['gut_dysbiosis'],
-  other_multimorbidity: ['t2d_ir', 'hypertension_ckd']
+  underweight_malnutrition: [],
+  oncology: [],
+  surgical_postoperative: [],
+  critical_care_specialized_feeding: [],
+  mental_health_neuropsychiatric: [],
+  neurological_neurodevelopmental: [],
+  reproductive_hormonal: [],
+  dermatological_skin: [],
+  feeding_swallowing_rehabilitation: [],
+  other_multimorbidity: []
 };
 
-export function mapPathwaysToConditionIds(pathwayIds: string[]): ClinicalConditionId[] {
+export const EXPANDED_PATHWAY_TO_CONDITION_MAP = EXPANDED_PATHWAY_TO_CANDIDATE_CONDITIONS_MAP;
+
+/**
+ * Returns candidate conditions related to the given pathways for clinician consideration.
+ * IMPORTANT: Does NOT represent confirmed patient diagnoses!
+ */
+export function getCandidateConditionsForPathways(pathwayIds: string[]): ClinicalConditionId[] {
   const result = new Set<ClinicalConditionId>();
   if (!pathwayIds || pathwayIds.length === 0) return [];
   
   pathwayIds.forEach(id => {
-    const conditions = EXPANDED_PATHWAY_TO_CONDITION_MAP[id as ExpandedClinicalPathwayId];
+    const conditions = EXPANDED_PATHWAY_TO_CANDIDATE_CONDITIONS_MAP[id as ExpandedClinicalPathwayId];
     if (conditions) {
       conditions.forEach(c => result.add(c));
     }
   });
   return Array.from(result);
+}
+
+/**
+ * @deprecated Use getCandidateConditionsForPathways for clinical suggestions.
+ * Kept for backward compatibility. Does NOT auto-diagnose diseases.
+ */
+export function mapPathwaysToConditionIds(pathwayIds: string[]): ClinicalConditionId[] {
+  return getCandidateConditionsForPathways(pathwayIds);
 }
 
 

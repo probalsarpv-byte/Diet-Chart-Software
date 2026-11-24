@@ -242,7 +242,7 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
 
         {/* Personalized 7-Food-Group Traffic Light Dietary Guide */}
         {(payload as any).seven_food_group_guide && (payload as any).seven_food_group_guide.groups?.length > 0 ? (
-          <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
+          <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white print:border-none print:p-0">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
               <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
                 <Sparkles className="h-4 w-4 text-emerald-600" />
@@ -254,37 +254,37 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-[11px] border-collapse border border-slate-200 dark:border-slate-800">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/60 print:bg-slate-100 text-left border-b border-slate-200 dark:border-slate-800">
-                    <th className="p-2.5 font-bold text-slate-700 dark:text-slate-300 w-[22%] border-r border-slate-200 dark:border-slate-800">
+              <table className="w-full text-[11px] border-collapse border border-slate-200 dark:border-slate-800 print:border-slate-300 print:text-[10px]">
+                <thead className="print:table-header-group">
+                  <tr className="bg-slate-50 dark:bg-slate-800/60 print:bg-slate-100 text-left border-b border-slate-200 dark:border-slate-800 print:border-slate-300">
+                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black w-[20%] border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
                       {bn ? 'ফুড গ্রুপ (Food Group)' : 'Food Group'}
                     </th>
-                    <th className="p-2.5 font-bold text-emerald-800 dark:text-emerald-400 w-[26%] border-r border-slate-200 dark:border-slate-800 bg-emerald-50/30">
+                    <th className="p-2 font-bold text-emerald-800 dark:text-emerald-400 print:text-emerald-900 w-[27%] border-r border-slate-200 dark:border-slate-800 print:border-slate-300 bg-emerald-50/30 print:bg-emerald-50/20">
                       {bn ? '🟢 গ্রিন জোন (নির্দ্বিধায় খান)' : '🟢 Green Zone (Eat Freely)'}
                     </th>
-                    <th className="p-2.5 font-bold text-amber-800 dark:text-amber-400 w-[26%] border-r border-slate-200 dark:border-slate-800 bg-amber-50/30">
+                    <th className="p-2 font-bold text-amber-800 dark:text-amber-400 print:text-amber-900 w-[27%] border-r border-slate-200 dark:border-slate-800 print:border-slate-300 bg-amber-50/30 print:bg-amber-50/20">
                       {bn ? '🟡 ইয়েলো জোন (মেপে/বুঝে খান)' : '🟡 Yellow Zone (Moderation)'}
                     </th>
-                    <th className="p-2.5 font-bold text-rose-800 dark:text-rose-400 w-[26%] bg-rose-50/30">
+                    <th className="p-2 font-bold text-rose-800 dark:text-rose-400 print:text-rose-900 w-[26%] bg-rose-50/30 print:bg-rose-50/20">
                       {bn ? '🔴 রেড জোন (পুরোপুরি বাদ)' : '🔴 Red Zone (Avoid Completely)'}
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 print:divide-slate-300">
                   {((payload as any).seven_food_group_guide.groups as any[]).map(group => (
-                    <tr key={group.group_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                      <td className="p-2.5 font-semibold text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-800 align-top">
+                    <tr key={group.group_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 print:break-inside-avoid">
+                      <td className="p-2 font-semibold text-slate-800 dark:text-slate-200 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 align-top">
                         {bn ? group.title_bn : group.title_en}
                       </td>
-                      <td className="p-2.5 text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-800 align-top bg-emerald-50/10">
+                      <td className="p-2 text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 align-top bg-emerald-50/10 print:bg-transparent">
                         {group.green.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {group.green.map((item: any, idx: number) => (
-                              <span key={idx} className="inline-block bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded text-[10px]">
+                              <span key={idx} className="inline-block bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 print:bg-emerald-50 print:text-emerald-900 px-1.5 py-0.5 rounded text-[10px] break-words">
                                 {bn ? item.name_bn : item.name_en}
                                 {item.household_measure_bn && (
-                                  <span className="text-[9px] text-emerald-700 dark:text-emerald-400 ml-0.5">({bn ? item.household_measure_bn : item.household_measure_en})</span>
+                                  <span className="text-[9px] text-emerald-700 dark:text-emerald-400 print:text-emerald-800 ml-0.5">({bn ? item.household_measure_bn : item.household_measure_en})</span>
                                 )}
                               </span>
                             ))}
@@ -293,14 +293,14 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
                           <span className="text-slate-400 italic text-[10px]">—</span>
                         )}
                       </td>
-                      <td className="p-2.5 text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-800 align-top bg-amber-50/10">
+                      <td className="p-2 text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 align-top bg-amber-50/10 print:bg-transparent">
                         {group.yellow.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {group.yellow.map((item: any, idx: number) => (
-                              <span key={idx} className="inline-block bg-amber-100/60 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 px-1.5 py-0.5 rounded text-[10px]">
+                              <span key={idx} className="inline-block bg-amber-100/60 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 print:bg-amber-50 print:text-amber-900 px-1.5 py-0.5 rounded text-[10px] break-words">
                                 {bn ? item.name_bn : item.name_en}
                                 {item.household_measure_bn && (
-                                  <span className="text-[9px] text-amber-700 dark:text-amber-400 ml-0.5">({bn ? item.household_measure_bn : item.household_measure_en})</span>
+                                  <span className="text-[9px] text-amber-700 dark:text-amber-400 print:text-amber-800 ml-0.5">({bn ? item.household_measure_bn : item.household_measure_en})</span>
                                 )}
                               </span>
                             ))}
@@ -309,11 +309,11 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
                           <span className="text-slate-400 italic text-[10px]">—</span>
                         )}
                       </td>
-                      <td className="p-2.5 text-slate-700 dark:text-slate-300 align-top bg-rose-50/10">
+                      <td className="p-2 text-slate-700 dark:text-slate-300 print:text-black align-top bg-rose-50/10 print:bg-transparent">
                         {group.red.length > 0 ? (
                           <div className="flex flex-wrap gap-1">
                             {group.red.map((item: any, idx: number) => (
-                              <span key={idx} className="inline-block bg-rose-100/60 dark:bg-rose-950/40 text-rose-900 dark:text-rose-300 px-1.5 py-0.5 rounded text-[10px]">
+                              <span key={idx} className="inline-block bg-rose-100/60 dark:bg-rose-950/40 text-rose-900 dark:text-rose-300 print:bg-rose-50 print:text-rose-900 px-1.5 py-0.5 rounded text-[10px] break-words">
                                 {bn ? item.name_bn : item.name_en}
                               </span>
                             ))}
@@ -409,7 +409,7 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
         <div className="page-break" />
 
         {/* Meals & Portions Specification (The Core Patient Diet) */}
-        <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 sm:p-5 space-y-5 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
+        <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 sm:p-5 space-y-5 bg-white dark:bg-slate-900/40 print:bg-white print:border-none print:p-0">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2.5">
             <h2 className="font-bold text-xs uppercase tracking-wider text-slate-900 dark:text-white print:text-black flex items-center gap-1.5">
               <Utensils className="h-4 w-4 text-emerald-600" />
@@ -422,7 +422,7 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
 
           <div className="space-y-6">
             {(showAllDays ? days : [currentDay]).map(day => (
-              <div key={day.day_number} className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-2xs">
+              <div key={day.day_number} className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-2xs print:break-inside-avoid print:mb-4">
                 {/* Day Header */}
                 <div className="p-3 bg-slate-100 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2">

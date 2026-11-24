@@ -398,10 +398,13 @@ export function generateMealsForDay(
   const yellowIds = new Set(yellowFoods.map(f => f.id));
   const redIds = new Set(redFoods.map(f => f.id));
 
-  // 1. Evaluate Fasting Eligibility with proposed duration
-  const existingIsFasting = Boolean(existingDayMeals && existingDayMeals.length > 0 && !existingDayMeals.some(m => m.meal_type === 'breakfast') && existingDayMeals.some(m => m.meal_type === 'lunch'));
+  // 1. Evaluate Fasting Eligibility with proposed duration (P1-006: No hardcoded 16:8 assumption)
+  // Intermittent fasting is ONLY evaluated if explicitly chosen in dietary preferences or prescribed.
+  // A missed breakfast in existing meals is NOT proof of fasting!
+  const isExplicitFastingPrescribed = patient.dietary_preferences?.meal_structure === 'intermittent_fasting_16_8' ||
+                                      (patient as any).fasting_regimen?.is_prescribed_fasting === true;
   const pref = patient.dietary_preferences?.meal_structure;
-  const proposedFastingHours = (pref === 'intermittent_fasting_16_8' || existingIsFasting) ? 16 : 0;
+  const proposedFastingHours = isExplicitFastingPrescribed ? 16 : 0;
   const fastingCheck = evaluateFastingEligibility(patient, proposedFastingHours > 0 ? proposedFastingHours : 16);
   const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || 
     fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
@@ -414,10 +417,10 @@ export function generateMealsForDay(
     const hasBreakfast = existingDayMeals.some(m => m.meal_type === 'breakfast');
     const hasSnack = existingDayMeals.some(m => m.meal_type === 'evening_snack' || m.meal_type === 'mid_morning');
     if (!hasBreakfast && existingDayMeals.some(m => m.meal_type === 'lunch')) {
-      if (isFastingContraindicated) {
-        structure = (pref === '3_meals') ? '3_meals' : '3_meals_1_snack';
-      } else {
+      if (isExplicitFastingPrescribed && !isFastingContraindicated) {
         structure = 'intermittent_fasting_16_8';
+      } else {
+        structure = (pref === '3_meals') ? '3_meals' : '3_meals_1_snack';
       }
     } else if (hasMorning) {
       structure = '5_meals_traditional';
@@ -427,7 +430,7 @@ export function generateMealsForDay(
       structure = '3_meals';
     }
   } else {
-    if (pref === 'intermittent_fasting_16_8') {
+    if (isExplicitFastingPrescribed) {
       if (isFastingContraindicated) {
         structure = '3_meals_1_snack'; // Override to safe regular schedule
       } else {

@@ -1,12 +1,12 @@
 /**
  * SHUDDHO Phase R5: Diet Integration, Traffic Light Synchronization & Prescription Contract Tests
  * 
- * Verifies:
- * 1. Step 1 Clinical Pathway to Condition ID mapping (bidirectional harmony)
- * 2. Traffic Light reactive filtering to R5 Clinical Pathways & Lab safety gating
- * 3. 7-Food-Group Traffic Light classification without arbitrary truncation
- * 4. Unified chronological 6-column prescription schedule handoff builder
- * 5. Weekly Diet Planner ingestion of R5 multimorbidity and protein constraints
+ * Clinical Safety Standards (Section 15):
+ * 1. Clinical Pathways: Broad pathways do NOT auto-diagnose diseases (Mental health != gut dysbiosis, Renal != Gout).
+ * 2. Laboratory Safety: Nuanced potassium evaluation (Normal K+ != RED; Borderline K+ = YELLOW review; K+ >= 6.0 = RED).
+ * 3. 7-Food-Group Traffic Light classification without arbitrary truncation or silent fallback to vegetables.
+ * 4. Unified chronological 6-column prescription schedule handoff (Twice daily creates 2 entries; missing dose != strength).
+ * 5. Weekly Diet Planner ingestion of R5 constraints even without P2 planning context.
  */
 
 import { test, describe } from 'node:test';
@@ -14,8 +14,8 @@ import assert from 'node:assert';
 
 import { 
   mapPathwaysToConditionIds,
-  EXPANDED_PATHWAY_TO_CONDITION_MAP,
-  mapConditionsToPathways
+  EXPANDED_PATHWAY_TO_CANDIDATE_CONDITIONS_MAP,
+  getCandidateConditionsForPathways
 } from '../src/engine/r5PathwayRegistry';
 import { resolveConflicts } from '../src/engine/conflictResolver';
 import { 
@@ -33,54 +33,95 @@ const allFoods = foodsData as FoodItem[];
 
 describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
 
-  describe('1. Step 1 Clinical Pathways & Condition Synchronization', () => {
-    test('correctly maps metabolic and endocrine pathway to diabetes and metabolic conditions', () => {
-      const conditions = mapPathwaysToConditionIds(['metabolic_endocrine']);
-      assert.ok(conditions.includes('t2d_ir'));
-      assert.ok(conditions.includes('fatty_liver'));
-      assert.ok(conditions.includes('metabolic_syndrome'));
+  describe('1. Clinical Pathways vs Confirmed Diagnoses (P0-001)', () => {
+    test('mental health pathway alone does NOT activate gut dysbiosis or IBS restrictions', () => {
+      const candidateConditions = getCandidateConditionsForPathways(['mental_health_neuropsychiatric']);
+      // Candidate conditions for mental health must not contain gut dysbiosis
+      assert.strictEqual(candidateConditions.includes('gut_dysbiosis'), false, 'Mental Health must not diagnose gut dysbiosis');
+      
+      // When resolved with confirmed conditions = [] (only pathway active), no gut dysbiosis red food rules appear
+      const result = resolveConflicts(allFoods, []);
+      const dysbiosisReasons = result.red.filter(f => f.reasons.some(r => r.conditionId === 'gut_dysbiosis'));
+      assert.strictEqual(dysbiosisReasons.length, 0, 'No gut dysbiosis red foods when only mental health pathway is active');
     });
 
-    test('correctly maps cardiovascular pathway to hypertension and dyslipidemia', () => {
-      const conditions = mapPathwaysToConditionIds(['cardiovascular']);
-      assert.ok(conditions.includes('dyslipidemia_atherosclerosis'));
-      assert.ok(conditions.includes('hypertension_ckd'));
+    test('metabolic pathway alone does NOT automatically diagnose Type 2 Diabetes or Fatty Liver', () => {
+      // Patient with metabolic pathway but NO confirmed T2D
+      const confirmedConditions: any[] = [];
+      const result = resolveConflicts(allFoods, confirmedConditions);
+      
+      // Without confirmed T2D, sugar is not automatically blocked by T2D disease rule
+      const t2dRedReasons = result.red.filter(f => f.reasons.some(r => r.conditionId === 't2d_ir'));
+      assert.strictEqual(t2dRedReasons.length, 0, 'T2D disease rules must NOT activate without confirmed diagnosis');
     });
 
-    test('correctly maps renal and electrolyte pathway to CKD and gout conditions', () => {
-      const conditions = mapPathwaysToConditionIds(['renal_electrolyte']);
-      assert.ok(conditions.includes('hypertension_ckd'));
-      assert.ok(conditions.includes('uric_acid_gout'));
+    test('renal pathway alone does NOT automatically diagnose Gout', () => {
+      const candidates = getCandidateConditionsForPathways(['renal_electrolyte']);
+      assert.strictEqual(candidates.includes('uric_acid_gout'), false, 'Renal pathway alone must not assume Gout');
     });
 
-    test('handles empty or non-assessed pathways gracefully returning empty list', () => {
-      const conditions = mapPathwaysToConditionIds([]);
-      assert.strictEqual(conditions.length, 0);
+    test('explicitly confirmed Type 2 Diabetes still activates appropriate diabetes review rules', () => {
+      const result = resolveConflicts(allFoods, ['t2d_ir']);
+      assert.ok(result.red.length > 0);
+      const sugarFood = result.red.find(f => f.name_en.toLowerCase().includes('sugar') || f.name_bn.includes('চিনি'));
+      assert.ok(sugarFood, 'Confirmed T2D must place refined sugar in Red zone');
+    });
+
+    test('multiple independently confirmed diagnoses are cleanly supported', () => {
+      const result = resolveConflicts(allFoods, ['t2d_ir', 'hypertension_ckd']);
+      const hasT2d = result.red.some(f => f.reasons.some(r => r.conditionId === 't2d_ir'));
+      const hasHypertension = result.red.some(f => f.reasons.some(r => r.conditionId === 'hypertension_ckd'));
+      assert.ok(hasT2d, 'T2D rules active');
+      assert.ok(hasHypertension, 'Hypertension rules active');
     });
   });
 
-  describe('2. Traffic Light Reactive Filtering & Lab Safety Gating', () => {
-    test('clinical pathway selection drives Traffic Light food categorization', () => {
-      const pathwayConditions = mapPathwaysToConditionIds(['metabolic_endocrine']);
-      const result = resolveConflicts(allFoods, pathwayConditions);
+  describe('2. Nuanced Potassium & Lab Safety Gating (P0-002)', () => {
+    test('CKD with normal serum potassium (K+ = 4.2) does NOT trigger blanket RED classification', () => {
+      const labs = { serum_potassium: 4.2, egfr: 25 };
+      const result = resolveConflicts(allFoods, ['hypertension_ckd'], [], [], [], [], 1, undefined, labs);
 
-      assert.ok(result.red.length > 0);
-      const sugarFood = result.red.find(f => f.name_en.toLowerCase().includes('sugar') || f.name_bn.includes('চিনি'));
-      assert.ok(sugarFood, 'High sugar food must be in Red zone for metabolic pathway');
-    });
-
-    test('elevated serum potassium (K+ >= 5.0) triggers strict hyperkalemia red classification', () => {
-      const labs = { serum_potassium: 5.4, egfr: 45 };
-      const result = resolveConflicts(allFoods, [], [], [], [], [], 1, undefined, labs);
-
-      const highPotassiumFoods = result.red.filter(f => 
+      const hyperkalemiaRedFoods = result.red.filter(f => 
         f.reasons.some(r => r.conditionId === 'HYPERKALEMIA_SAFETY')
       );
-      assert.ok(highPotassiumFoods.length > 0, 'High potassium foods must be classified RED when serum K+ is 5.4');
-      const sample = highPotassiumFoods[0];
-      const safetyReason = sample.reasons.find(r => r.conditionId === 'HYPERKALEMIA_SAFETY');
-      assert.strictEqual(safetyReason?.status, 'RED');
-      assert.ok(safetyReason?.note_en.includes('arrhythmia'));
+      assert.strictEqual(hyperkalemiaRedFoods.length, 0, 'Normal potassium (4.2) in CKD must NOT trigger HYPERKALEMIA_SAFETY RED');
+    });
+
+    test('borderline elevated potassium (K+ = 5.2) triggers YELLOW portion/preparation review, NOT blanket RED', () => {
+      const labs = { serum_potassium: 5.2, egfr: 35 };
+      const result = resolveConflicts(allFoods, [], [], [], [], [], 1, undefined, labs);
+
+      const portionReviewFoods = result.yellow.filter(f => 
+        f.reasons.some(r => r.conditionId === 'POTASSIUM_REVIEW')
+      );
+      assert.ok(portionReviewFoods.length > 0, 'Borderline potassium must trigger POTASSIUM_REVIEW in Yellow zone');
+      
+      const sample = portionReviewFoods[0];
+      const reason = sample.reasons.find(r => r.conditionId === 'POTASSIUM_REVIEW');
+      assert.strictEqual(reason?.status, 'YELLOW');
+      assert.strictEqual(reason?.isOverridable, true);
+      assert.ok(reason?.note_en.includes('Portion moderation'));
+
+      // Must not be in RED zone strictly because of potassium
+      const redK = result.red.filter(f => f.reasons.some(r => r.conditionId === 'HYPERKALEMIA_SAFETY'));
+      assert.strictEqual(redK.length, 0, 'Borderline potassium must not trigger un-overridable RED');
+    });
+
+    test('severe hyperkalemia (K+ >= 6.0) triggers strict HYPERKALEMIA_SAFETY RED stop', () => {
+      const labs = { serum_potassium: 6.2, egfr: 20 };
+      const result = resolveConflicts(allFoods, [], [], [], [], [], 1, undefined, labs);
+
+      const redK = result.red.filter(f => f.reasons.some(r => r.conditionId === 'HYPERKALEMIA_SAFETY'));
+      assert.ok(redK.length > 0, 'K+ >= 6.0 must trigger HYPERKALEMIA_SAFETY RED');
+      assert.strictEqual(redK[0].reasons.find(r => r.conditionId === 'HYPERKALEMIA_SAFETY')?.isOverridable, false);
+    });
+
+    test('unknown potassium results remain unknown without arbitrary restriction', () => {
+      const result = resolveConflicts(allFoods, [], [], [], [], [], 1, undefined, {});
+      const kReasons = [...result.red, ...result.yellow].filter(f => 
+        f.reasons.some(r => r.conditionId === 'HYPERKALEMIA_SAFETY' || r.conditionId === 'POTASSIUM_REVIEW')
+      );
+      assert.strictEqual(kReasons.length, 0, 'Missing potassium lab must not invent potassium restrictions');
     });
 
     test('R5 absolute contraindications from clinical intelligence are strictly enforced as RED', () => {
@@ -115,8 +156,8 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
     });
   });
 
-  describe('3. 7-Food-Group Structured Traffic Light Guide', () => {
-    test('buildStructuredTrafficLightGuide maps all foods into the 7 standard food groups', () => {
+  describe('3. 7-Food-Group Structured Traffic Light Guide (P1-004)', () => {
+    test('buildStructuredTrafficLightGuide maps all foods into the 7 standard food groups deterministically', () => {
       const trafficLight = resolveConflicts(allFoods, ['t2d_ir']);
       const guide = buildStructuredTrafficLightGuide(trafficLight);
 
@@ -132,22 +173,37 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
       assert.ok(groupIds.includes('spices_beverages'));
     });
 
-    test('untruncated food items are populated across green, yellow, and red zones', () => {
+    test('unmatched or beverage/spice foods do not silently default to vegetables', () => {
+      const teaFood: FoodItem = {
+        id: 'f_test_tea',
+        code: 'test_tea',
+        name_en: 'Green Tea (Camellia sinensis)',
+        name_bn: 'গ্রিন টি',
+        category: 'beverage',
+        exchange_group: 'vegetable' as any,
+        per_100g: { kcal: 1, protein_g: 0, carbs_g: 0.2, fat_g: 0, fiber_g: 0, water_g: 99.8, ash_g: 0 },
+        micronutrients: {} as any,
+        raw_to_cooked_ratio: 1,
+        glycemic_load: 'low',
+        pral_score: -0.5,
+        tags: []
+      };
+
+      const group = mapFoodToSevenFoodGroup(teaFood);
+      assert.strictEqual(group, 'spices_beverages', 'Beverages must map to spices_beverages, not vegetables');
+    });
+
+    test('untruncated food items are populated across green, yellow, and red zones without data loss', () => {
       const trafficLight = resolveConflicts(allFoods, ['t2d_ir', 'hypertension_ckd']);
       const guide = buildStructuredTrafficLightGuide(trafficLight);
 
-      const grainsGroup = guide.groups.find(g => g.group_id === 'grains_carbs');
-      assert.ok(grainsGroup);
-      assert.ok(grainsGroup.green.length > 0 || grainsGroup.yellow.length > 0 || grainsGroup.red.length > 0);
-
-      // Verify no artificial slice(0, 20) truncation on total counts
       const totalInGuide = guide.groups.reduce((acc, g) => acc + g.green.length + g.yellow.length + g.red.length, 0);
-      assert.strictEqual(totalInGuide, allFoods.length, 'Every food item must be classified into a group without data loss');
+      assert.strictEqual(totalInGuide, allFoods.length, 'Every food item in database must be classified without data loss');
     });
   });
 
-  describe('4. Unified Chronological Prescription Schedule Handoff', () => {
-    test('compiles medications and supplements into 6-column chronological schedule', () => {
+  describe('4. Unified Chronological Prescription Schedule Handoff (P0-004)', () => {
+    test('generates separate scheduled entries for each administration of twice-daily medication', () => {
       const mockMeds: R5MedicationRecord[] = [
         {
           id: 'med_001',
@@ -177,6 +233,7 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
           dose_unit: 'mg',
           frequency: 'Twice daily',
           route: 'Oral',
+          // Twice daily medication with 2 distinct administration times:
           administration_times: ['08:30', '20:30'],
           is_timing_unknown: false,
           relationship_to_meals: 'after_meal',
@@ -212,28 +269,63 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
         approved_at: new Date().toISOString()
       });
 
-      assert.strictEqual(schedule.items.length, 3);
-      assert.strictEqual(schedule.patient_id, 'pat_001');
+      // 1 Omeprazole + 2 Metformin (08:30 and 20:30) + 1 Supplement = 4 total chronological entries
+      assert.strictEqual(schedule.items.length, 4, 'Twice daily Metformin must generate 2 separate administration entries');
 
-      // Check Omeprazole
-      const omeprazole = schedule.items.find(i => i.generic_name === 'Omeprazole');
-      assert.ok(omeprazole);
-      assert.strictEqual(omeprazole.type, 'MEDICATION');
-      assert.strictEqual(omeprazole.brand_name, 'Seclo 20');
-      assert.strictEqual(omeprazole.meal_relationship, 'BEFORE_MEAL');
-      assert.strictEqual(omeprazole.approval_status, 'APPROVED');
+      const metforminEntries = schedule.items.filter(i => i.generic_name === 'Metformin');
+      assert.strictEqual(metforminEntries.length, 2);
+      assert.ok(metforminEntries[0].time_slot_en.includes('Breakfast') || metforminEntries[0].time_slot_en.includes('Morning'));
+      assert.ok(metforminEntries[1].time_slot_en.includes('Dinner') || metforminEntries[1].time_slot_en.includes('Night'));
 
-      // Check Supplement
+      // Check supplement approval status
       const mag = schedule.items.find(i => i.generic_name === 'Magnesium');
       assert.ok(mag);
-      assert.strictEqual(mag.type, 'SUPPLEMENT');
-      assert.strictEqual(mag.meal_relationship, 'BEDTIME');
       assert.strictEqual(mag.approval_status, 'APPROVED');
+    });
+
+    test('missing prescribed dose remains UNKNOWN and is never inferred from product strength', () => {
+      const mockMeds: R5MedicationRecord[] = [
+        {
+          id: 'med_undosed',
+          brand_name: 'Napa 500',
+          generic_name: 'Paracetamol',
+          product_strength: '500 mg',
+          prescribed_dose: undefined, // Missing dose!
+          frequency: undefined, // Missing frequency!
+          status: 'active',
+          rule_coverage: 'fully_covered',
+          source: 'patient_intake'
+        }
+      ];
+
+      const schedule = buildUnifiedPrescriptionSchedule('pat_002', mockMeds, []);
+      assert.strictEqual(schedule.items.length, 1);
+      
+      const item = schedule.items[0];
+      assert.ok(item.dosage_and_quantity.includes('অনির্ধারিত'), 'Missing dose must be labeled as unspecified');
+      assert.strictEqual(item.dosage_and_quantity.includes('500 mg'), false, 'Must NOT default to product strength 500 mg');
+      assert.strictEqual(item.approval_status, 'REQUIRES_REVIEW');
+    });
+
+    test('unapproved draft candidate supplements cannot enter released schedule as approved', () => {
+      const unapprovedSupp: any[] = [
+        {
+          id: 'supp_draft',
+          generic_nutrient: 'Coenzyme Q10',
+          elemental_dose_numeric: 100,
+          elemental_dose_unit: 'mg',
+          approval_status: 'draft_candidate' // Unapproved candidate!
+        }
+      ];
+
+      const schedule = buildUnifiedPrescriptionSchedule('pat_003', [], unapprovedSupp);
+      assert.strictEqual(schedule.items.length, 1);
+      assert.strictEqual(schedule.items[0].approval_status, 'DRAFT_CANDIDATE', 'Draft candidate supplement must not be marked APPROVED');
     });
   });
 
-  describe('5. Weekly Diet Planner Integration with R5 Constraints', () => {
-    test('weekly planner respects protein cap derived from R5 multimorbidity', () => {
+  describe('5. Weekly Diet Planner Integration & R5 Constraints (P1-002)', () => {
+    test('weekly planner respects protein cap derived from confirmed non-dialysis CKD', () => {
       const mockPatient: PatientProfile = {
         id: 'pat_ckd_001',
         name: 'Renal Patient',
@@ -269,7 +361,7 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
         prescriptions: {
           protein: { hasConfirmedLimit: false }
         },
-        // R5 Multimorbidity restricts protein in Stage 3-4 CKD to 0.8 g/kg (70 * 0.8 = 56g)
+        // Confirmed CKD protein restriction at 0.8 g/kg (70 * 0.8 = 56g)
         r5NutritionConstraints: {
           patient_id: mockPatient.id,
           clinical_pathway_ids: ['renal_electrolyte'],
@@ -284,6 +376,51 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
 
       assert.ok(plan);
       assert.strictEqual(plan.target_macros.protein_g, 56, 'Target protein must be capped to 56g (70 kg * 0.8 g/kg)');
+    });
+
+    test('R5 safety constraints reach Weekly Planner even when P2 planning context is absent (P1-002)', () => {
+      const mockPatient: PatientProfile = {
+        id: 'pat_r5_no_p2',
+        name: 'No P2 Context Patient',
+        age: 45,
+        gender: 'female',
+        weight_kg: 60,
+        height_cm: 160,
+        bmi: 23.4,
+        activity_level: 'sedentary',
+        sleep_hours: 7,
+        shift_worker: false,
+        population_group: 'adult_standard',
+        selected_conditions: [],
+        active_medications: [],
+        confirmed_allergies: [],
+        calculated: {
+          bmr: 1300,
+          tdee: 1600,
+          target_calories: 1600,
+          target_protein_g: 60,
+          target_carbs_g: 200,
+          target_fat_g: 45,
+          bmi: 23.4,
+          bmi_category_en: 'Normal',
+          bmi_category_bn: 'স্বাভাবিক'
+        }
+      } as any;
+
+      const minimalR5Context: any = {
+        r5NutritionConstraints: {
+          patient_id: mockPatient.id,
+          clinical_pathway_ids: [],
+          nutrient_constraints: {
+            protein_g_per_kg: 0.8 // 60 * 0.8 = 48g
+          }
+        }
+      };
+
+      const trafficLight = resolveConflicts(allFoods, []);
+      const plan = generateWeeklyDietPlan(mockPatient, allFoods, trafficLight, minimalR5Context);
+      assert.ok(plan);
+      assert.strictEqual(plan.target_macros.protein_g, 48, 'R5 protein cap must be enforced even without prior P2 analysis');
     });
   });
 

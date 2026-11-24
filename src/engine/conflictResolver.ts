@@ -52,15 +52,33 @@ export function resolveConflicts(
   const normalizedClinicianFoods = clinicianDisallowedFoods.map(norm).filter(Boolean);
   const normalizedClinicianTags = clinicianDisallowedTags.map(norm).filter(Boolean);
 
-  // Check objective lab thresholds for renal and electrolyte safety
-  const serumK = typeof patientLabs?.serum_potassium === 'number' 
-    ? patientLabs.serum_potassium 
-    : parseFloat(patientLabs?.serum_potassium || '0');
-  const egfr = typeof patientLabs?.egfr === 'number' 
-    ? patientLabs.egfr 
-    : parseFloat(patientLabs?.egfr || '100');
-  const isHighPotassiumRestricted = (serumK >= 5.0) || (egfr > 0 && egfr < 30) || 
-    (Boolean(r5NutritionContract?.nutrient_constraints.potassium_mg_max) && (r5NutritionContract?.nutrient_constraints.potassium_mg_max || 9999) < 2500);
+  // Check objective lab thresholds for renal and electrolyte safety (P0-002)
+  const rawSerumK = patientLabs?.serum_potassium;
+  const hasSerumK = rawSerumK !== undefined && rawSerumK !== null && rawSerumK !== '';
+  const serumK = hasSerumK 
+    ? (typeof rawSerumK === 'number' ? rawSerumK : parseFloat(rawSerumK))
+    : undefined;
+
+  const rawEgfr = patientLabs?.egfr;
+  const hasEgfr = rawEgfr !== undefined && rawEgfr !== null && rawEgfr !== '';
+  const egfr = hasEgfr 
+    ? (typeof rawEgfr === 'number' ? rawEgfr : parseFloat(rawEgfr))
+    : undefined;
+
+  // Clinician confirmed strict limit:
+  const confirmedPotassiumLimit = r5NutritionContract?.nutrient_constraints?.potassium_mg_max;
+  const hasStrictClinicianLimit = Boolean(confirmedPotassiumLimit && confirmedPotassiumLimit < 2000);
+
+  // Severe emergency hyperkalemia (K >= 6.0 mEq/L) or explicit confirmed clinician restriction:
+  const isSevereHyperkalemiaContraindicated = (serumK !== undefined && serumK >= 6.0) || hasStrictClinicianLimit;
+
+  // Mild to moderate elevation (5.0 <= K < 6.0) or advanced CKD (eGFR < 30 with borderline/unmonitored K):
+  // Triggers PORTION_REVIEW_REQUIRED / CLINICAL_REVIEW_REQUIRED (YELLOW), NOT blanket un-overridable RED!
+  const isPotassiumPortionReviewRequired = !isSevereHyperkalemiaContraindicated && (
+    (serumK !== undefined && serumK >= 5.0 && serumK < 6.0) ||
+    (egfr !== undefined && egfr > 0 && egfr < 30 && (serumK === undefined || serumK >= 4.8)) ||
+    (Boolean(confirmedPotassiumLimit) && (confirmedPotassiumLimit || 9999) < 2500)
+  );
 
   for (const food of foods) {
     const reasons: EvaluatedReason[] = [];
@@ -87,19 +105,33 @@ export function resolveConflicts(
       }
     }
 
-    // 0b. Objective Lab-Gated Hyperkalemia Safety Boundary
-    if (isHighPotassiumRestricted && food.tags.includes('high_potassium')) {
-      reasons.push({
-        conditionId: 'HYPERKALEMIA_SAFETY',
-        conditionNameBn: 'সিকেডি/হাইপারক্যালেমিয়া পটাশিয়াম সীমাবদ্ধতা',
-        conditionNameEn: 'Renal / Hyperkalemia Potassium Safety Boundary',
-        status: 'RED',
-        category: 'hard_contraindication',
-        provenance: 'Clinical Laboratory Biomarker Integration (eGFR/K+)',
-        isOverridable: false,
-        note_bn: 'উচ্চ পটাশিয়ামযুক্ত খাদ্য; সিকেডি বা হাইপারক্যালেমিয়া ঝুঁকিতে হৃদপিণ্ডের সুরক্ষায় বর্জনীয়।',
-        note_en: 'High potassium food; contraindicated in reduced eGFR / elevated serum K+ to prevent cardiac arrhythmia.'
-      });
+    // 0b. Objective Lab-Gated Hyperkalemia Safety Boundary & Portion Review (P0-002)
+    if (food.tags.includes('high_potassium')) {
+      if (isSevereHyperkalemiaContraindicated) {
+        reasons.push({
+          conditionId: 'HYPERKALEMIA_SAFETY',
+          conditionNameBn: 'গুরুতর হাইপারক্যালেমিয়া জরুরি নিষেধাজ্ঞা',
+          conditionNameEn: 'Severe Hyperkalemia Acute Safety Stop',
+          status: 'RED',
+          category: 'hard_contraindication',
+          provenance: 'Clinical Laboratory Biomarker Integration (Serum K+ >= 6.0 or Clinician Ceiling)',
+          isOverridable: false,
+          note_bn: 'মারাত্মক উচ্চ পটাশিয়াম (>= ৬.০ mEq/L) বা প্রেসক্রাইবড কঠোর সীমা; জীবনঘাতী কার্ডিয়াক অ্যারিথমিয়া রোধে সম্পূর্ণ বর্জন আবশ্যক।',
+          note_en: 'Severe documented hyperkalemia (K+ >= 6.0 mEq/L) or confirmed clinical ceiling; contraindicated to prevent lethal cardiac arrhythmia.'
+        });
+      } else if (isPotassiumPortionReviewRequired) {
+        reasons.push({
+          conditionId: 'POTASSIUM_REVIEW',
+          conditionNameBn: 'পটাশিয়াম সতর্কতা (পরিমাপ ও রন্ধন পর্যালোচনা প্রয়োজন)',
+          conditionNameEn: 'Potassium Precaution (Portion & Preparation Review Required)',
+          status: 'YELLOW',
+          category: 'evidence_conditional',
+          provenance: 'Renal / Potassium Laboratory Assessment (Borderline K+ or eGFR < 30)',
+          isOverridable: true,
+          note_bn: 'রক্তে পটাশিয়াম কিছুটা বৃদ্ধি বা কিডনির ফিল্ট্রেশন কম। শাকসবজি কুচিয়ে গরম পানিতে ভিজিয়ে সিদ্ধ করে পানি ফেলে পরিমিত গ্রহণ করা যাবে; চিকিৎসকের নির্দেশ ব্যতিরেকে সম্পূর্ণ বর্জন নয়।',
+          note_en: 'Borderline elevated serum K+ or reduced eGFR. Portion moderation and culinary leaching/boiling methods advised; requires individualized clinician portion guidance rather than blanket prohibition.'
+        });
+      }
     }
 
     // 0c. R5 Conditional Cautions Check

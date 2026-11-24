@@ -1184,13 +1184,35 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ? labsAny.egfr 
       : parseFloat(labsAny.egfr || '100');
 
-    if (serumK >= 5.0 || (egfr > 0 && egfr < 30)) {
+    // P0-002: Nuanced lab evaluation. Emergency ceiling at K >= 6.0 or explicit clinician ceiling:
+    const patientPrescriptions = (patient as any).prescriptions;
+    if (patientPrescriptions?.potassium?.limit_mg) {
+      potassiumLimit = patientPrescriptions.potassium.limit_mg;
+    } else if (serumK >= 6.0) {
       potassiumLimit = 2000;
     }
-    if (pathwayIds.includes('renal_electrolyte') && egfr > 0 && egfr < 60) {
-      proteinGPerKg = 0.8;
+
+    // P0-003: Protein targets derived from verified clinical diagnosis & dialysis status, NOT broad pathway:
+    const confirmedConditions = (patient.selected_conditions || []) as string[];
+    const isDialysis = confirmedConditions.includes('ckd_dialysis') || (patient as any).is_on_dialysis === true;
+    const isCKDNonDialysis = confirmedConditions.includes('ckd_stage_1_3b') || 
+                             (confirmedConditions.includes('hypertension_ckd') && egfr > 0 && egfr < 60);
+    const isSarcopenicOrMalnourished = Boolean(patient.age && patient.age >= 65) || 
+                                       Boolean(patient.calculated?.bmi && patient.calculated.bmi < 18.5);
+
+    if (patientPrescriptions?.protein?.target_g_per_kg) {
+      proteinGPerKg = patientPrescriptions.protein.target_g_per_kg;
+    } else if (isDialysis) {
+      proteinGPerKg = 1.2; // Dialysis replacement requirement
+    } else if (isCKDNonDialysis && !isSarcopenicOrMalnourished && egfr > 0 && egfr < 60) {
+      proteinGPerKg = 0.8; // Non-dialysis confirmed CKD
     }
-    if (pathwayIds.includes('cardiovascular')) {
+
+    // P0-003: Sodium limits require verified cardiovascular/renal diagnosis, NOT broad pathway:
+    const hasSodiumRestrictedDiagnosis = confirmedConditions.includes('hypertension_ckd') || 
+                                         confirmedConditions.includes('ckd_stage_1_3b') || 
+                                         Boolean((patient.clinical_safety as any)?.sodium_restriction?.is_restricted);
+    if (hasSodiumRestrictedDiagnosis) {
       sodiumLimit = 2000;
     }
 
@@ -1220,9 +1242,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         engine_version: 'R5.1.0-INTEGRATED'
       }
     };
-  }, [patient.id, patient.labs, patient.fluid_prescription?.total_fluid_limit_ml, patient.clinical_safety?.fluid_restriction?.limit_ml, r5Pathways, r5Medications]);
+  }, [patient.id, patient.labs, patient.selected_conditions, (patient as any).prescriptions, (patient as any).is_on_dialysis, patient.age, patient.calculated?.bmi, patient.fluid_prescription?.total_fluid_limit_ml, patient.clinical_safety?.fluid_restriction?.limit_ml, (patient.clinical_safety as any)?.sodium_restriction?.is_restricted, r5Pathways, r5Medications]);
 
   // 1. Reactive Traffic Light Conflict Resolver
+  // P0-001: Only confirmed clinical conditions activate disease-specific food rules.
+  // Broad functional pathways do NOT automatically assign disease diagnoses!
   const trafficLight = useMemo(() => {
     const activeMeds = allMedicines.filter(m => 
       patient.active_medications.some(userMed => 
@@ -1232,15 +1256,11 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       )
     );
 
-    const pathwayConditions = mapPathwaysToConditionIds(r5Pathways?.selected_pathways || []);
-    const combinedConditions = Array.from(new Set([
-      ...(patient.selected_conditions || []),
-      ...pathwayConditions
-    ])) as ClinicalConditionId[];
+    const confirmedConditions = (patient.selected_conditions || []) as ClinicalConditionId[];
 
     return resolveConflicts(
       allFoods,
-      combinedConditions,
+      confirmedConditions,
       activeMeds,
       patient.confirmed_allergies,
       patient.clinician_disallowed_foods,
@@ -1251,7 +1271,6 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   }, [
     patient.selected_conditions,
-    r5Pathways?.selected_pathways,
     patient.active_medications,
     patient.confirmed_allergies,
     patient.clinician_disallowed_foods,
@@ -1643,9 +1662,19 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return weeklyDietPlan;
     }
 
+    // P1-002: Ensure R5 Nutrition Contract ALWAYS reaches the Diet Engine, even if P2 context is absent
     const effectiveP3Context = p2AnalysisResult?.p3PlanningContext
       ? { ...p2AnalysisResult.p3PlanningContext, r5NutritionConstraints: r5NutritionContract }
-      : undefined;
+      : {
+          patientId: patient.id,
+          visitId: targetVisitId || 'vis_current',
+          assessmentId: 'asm_current',
+          assessmentVersion: '1.0',
+          clinicalAssessmentApproved: false,
+          confirmedAllergies: patient.confirmed_allergies || [],
+          feedingRoute: { route: 'oral', oral_intake_permitted: true, requires_specialist_support: false },
+          r5NutritionConstraints: r5NutritionContract
+        } as any;
 
     const plan = generateWeeklyDietPlan(
       patient,
@@ -1668,7 +1697,16 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!weeklyDietPlan || !patient?.id) return null;
     const effectiveP3Context = p2AnalysisResult?.p3PlanningContext
       ? { ...p2AnalysisResult.p3PlanningContext, r5NutritionConstraints: r5NutritionContract }
-      : undefined;
+      : {
+          patientId: patient.id,
+          visitId: currentVisit?.visit_id || currentVisit?.id || 'vis_current',
+          assessmentId: 'asm_current',
+          assessmentVersion: '1.0',
+          clinicalAssessmentApproved: false,
+          confirmedAllergies: patient.confirmed_allergies || [],
+          feedingRoute: { route: 'oral', oral_intake_permitted: true, requires_specialist_support: false },
+          r5NutritionConstraints: r5NutritionContract
+        } as any;
     const updated = regenerateDayInWeeklyPlan(
       dayNumber,
       weeklyDietPlan,
@@ -2293,18 +2331,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const legacyPathways = isExplicitlyNoPathways || selectedIds.length === 0
       ? []
       : mapExpandedPathwaysToLegacy(selectedIds);
-    const derivedConditions = isExplicitlyNoPathways || selectedIds.length === 0
-      ? []
-      : mapPathwaysToConditionIds(selectedIds);
     setPatient(prev => {
-      const mergedConditions = Array.from(new Set([
-        ...(prev.selected_conditions || []),
-        ...derivedConditions
-      ])) as ClinicalConditionId[];
       return {
         ...prev,
         clinical_pathways: legacyPathways,
-        selected_conditions: mergedConditions,
+        // P0-001: Preserve confirmed conditions exactly as entered.
+        // Never auto-inject unconfirmed disease diagnoses from broad pathway selections!
+        selected_conditions: prev.selected_conditions || [],
         r5_pathways: newState,
         assessment_last_updated_at: new Date().toISOString()
       };

@@ -96,11 +96,33 @@ npx supabase migration up
   3. `UnifiedPrescriptionSchedule`: 6-column chronological prescription schedule contract bridging Domain 13 medications and R4 supplements for Phase R6 handoff.
 - **Verification Evidence:**
   - `npx tsc --noEmit`: 0 errors.
-  - `npm run test:r5`: 64/64 passed (37 systems intelligence + 16 consolidation + 11 diet integration).
+  - `npm run test:r5`: 64/64 passed.
   - `npm run test:r5:browser`: 36/36 assertions passed across 22 scenarios.
   - `npm run build`: 7/7 static routes prerendered cleanly.
-- **Phase Status:** **100% PHASE R5 DEFINITIVE CLOSURE COMPLETED. AUTHORIZED TO PROCEED TO PHASE R6.**
+
+---
+
+### 7. Phase R5 Final Critical Correction & Clinical Safety Gate (November 24, 2026)
+
+- **Production Database Policy:** **ZERO LIVE MUTATIONS EXECUTED**. Strictly preserved post-R15 database deferral standard.
+- **Clinical Safety Gate Corrections (P0-001 through P1-007):**
+  1. **P0-001 (Decoupling Clinical Pathways from Confirmed Diagnoses):** Removed false disease inference (Mental Health $\ne$ Dysbiosis, Renal $\ne$ Gout, Metabolic $\ne$ T2D). In `PracticeContext.tsx` and `r5PathwayRegistry.ts`, clinical pathways are strictly treated as assessment lenses rather than auto-confirmed diagnoses.
+  2. **P0-002 (Calibrated Potassium Safety Rules):** Removed blanket RED restrictions. Normal potassium ($3.5 \le K < 5.0$) in CKD does not trigger hyperkalemia bans. Borderline potassium ($5.0 \le K < 6.0$) or $\text{eGFR} < 30$ triggers `POTASSIUM_REVIEW` (YELLOW, overridable). Severe hyperkalemia ($K \ge 6.0$) triggers `HYPERKALEMIA_SAFETY` (RED, hard ceiling).
+  3. **P0-003 (Calibrated Protein & Sodium Target Generation):** Non-dialysis CKD stage 3-5 without sarcopenia receives $0.8\text{ g/kg}$; dialysis receives $1.2\text{ g/kg}$; sarcopenia/frailty flagged for clinician review; sodium $2000\text{ mg}$ requires verified hypertension/HF diagnosis.
+  4. **P0-004 (Medication Reconciliation & Chronological Scheduling):** In `r5ToR4Adapter.ts`, product strength is never substituted for prescribed dose. Twice-daily medications generate distinct administration entries (e.g., 08:30 and 20:30). Unverified draft supplements are strictly prevented from appearing as approved.
+  5. **P1-001 (Conditions Tab Deduplication):** Removed interactive toggles in `ConditionsTab.tsx`; replaced with read-only confirmed clinical diagnoses, active pathways, and direct clinical link to Assessment.
+  6. **P1-002 (Diet Engine Context Decoupling):** Fallback planning context guarantees `r5NutritionConstraints` reaches `weeklyPlanner.ts` even when P2 planning context is absent.
+  7. **P1-004 - P1-007 (Report & Planner Polish):** Deterministic 7-food-group categorization checking food categories before exchange metadata, print-safe multi-page A4 CSS table, and clinician-directed meal structuring without forced 16:8 fasting assumptions.
+- **Verification Evidence:**
+  - `npx tsc --noEmit`: 0 errors.
+  - `npm run test:r5`: 71/71 passed (37 systems intelligence + 16 consolidation + 18 diet integration).
+  - `npm run test:r4`: 82/82 passed.
+  - `npm test`: All Step 01-05 & R1-R4 test suites passed.
+  - `npm run test:r5:browser`: 36/36 assertions passed across 22 scenarios.
+  - `npm run build`: 7/7 static routes prerendered cleanly.
+- **Phase Status:** **100% PHASE R5 DEFINITIVE CLINICAL SAFETY GATE VERIFIED. PERMANENT R5 CLOSURE APPROVED.**
 
 ---
 *Signed by: Principal Full-Stack Engineer, Supabase Security Architect & Clinical Database Architect*
+
 

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 export const ConditionsTab: React.FC = () => {
-  const { patient, toggleCondition, trafficLight, language, r5Pathways } = usePractice();
+  const { patient, trafficLight, language, r5Pathways, setActiveTab } = usePractice();
   const bn = language === 'bn';
 
   const [activeTrafficTab, setActiveTrafficTab] = useState<'GREEN' | 'YELLOW' | 'RED'>('GREEN');
@@ -31,22 +31,15 @@ export const ConditionsTab: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [expandedFoodId, setExpandedFoodId] = useState<string | null>(null);
 
-  const conditionList = Object.values(DISEASE_RULES);
+  // Confirmed clinical conditions are authoritative from patient profile
+  const confirmedConditions = useMemo(() => {
+    return (patient.selected_conditions || []) as string[];
+  }, [patient.selected_conditions]);
 
-  // Derived conditions synchronized with Step 1 Clinical Pathways
-  const derivedConditions = useMemo(() => {
-    return mapPathwaysToConditionIds(r5Pathways?.selected_pathways || []);
-  }, [r5Pathways?.selected_pathways]);
-
-  // Combined active conditions (Manual + Authoritative Step 1 Pathways)
-  const combinedActiveConditions = useMemo(() => {
-    return Array.from(new Set([...(patient.selected_conditions || []), ...derivedConditions]));
-  }, [patient.selected_conditions, derivedConditions]);
-
-  // Selected rules for display
+  // Selected rules for confirmed conditions display
   const activeRules = useMemo(() => {
-    return combinedActiveConditions.map(c => DISEASE_RULES[c]).filter(Boolean);
-  }, [combinedActiveConditions]);
+    return confirmedConditions.map(c => (DISEASE_RULES as any)[c]).filter(Boolean);
+  }, [confirmedConditions]);
 
   // Current list based on traffic tab
   const currentFoods = trafficLight[activeTrafficTab.toLowerCase() as 'green' | 'yellow' | 'red'];
@@ -77,89 +70,107 @@ export const ConditionsTab: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       
-      {/* 1. Condition Selector Grid & Step 1 Synchronization */}
+      {/* 1. Read-Only Clinical Pathways & Confirmed Diagnoses Summary (P1-001) */}
       <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
-        {/* Step 1 Pathway Synchronization Banner */}
-        {r5Pathways?.selected_pathways && r5Pathways.selected_pathways.length > 0 && (
-          <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary flex-shrink-0" />
-              <span className="text-xs font-semibold text-foreground">
-                {bn ? 'ধাপ ১ ক্লিনিক্যাল পাথওয়ে সক্রিয়:' : 'Step 1 Clinical Pathways Active:'}{' '}
-                <span className="text-primary font-bold">
-                  {r5Pathways.selected_pathways.join(', ')}
-                </span>
-              </span>
-            </div>
-            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium self-start sm:self-auto">
-              {bn ? 'ট্রাফিক লাইট নির্দেশিকা সমন্বিত' : 'Traffic Light Synchronized'}
-            </span>
-          </div>
-        )}
-
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3.5">
+        
+        {/* Header with Navigation Link to Authoritative Assessment */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3.5">
           <div className="flex items-center gap-2.5 text-foreground font-bold text-sm">
             <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
-              <Flame className="h-4 w-4" />
+              <ShieldCheck className="h-4 w-4" />
             </div>
-            <span>{bn ? 'মাল্টি-ডিজিজ ও মেটাবলিক সিন্ড্রোম নির্বাচন' : 'Concurrent Clinical Conditions Selection'}</span>
+            <div>
+              <span>{bn ? 'ক্লিনিক্যাল খাদ্য নির্দেশিকা ও রোগ বিশ্লেষণ ওয়ার্কস্পেস' : 'Clinical Food Guide & Diagnostic Reference Workspace'}</span>
+              <p className="text-[11px] text-muted-foreground font-normal mt-0.5">
+                {bn ? 'নিশ্চিত রোগ নির্ণয় ও ক্লিনিক্যাল পাথওয়ের ওপর ভিত্তি করে স্বয়ংক্রিয় ট্রাফিক লাইট ফিল্টারিং' : 'Evidence-based traffic light food classification driven by confirmed diagnoses and pathways'}
+              </p>
+            </div>
           </div>
-          <span className="text-xs text-muted-foreground">
-            {bn ? 'ধাপ ১ পাথওয়ে ও অতিরিক্ত ক্লিনিক্যাল সমস্যা সমন্বিত তালিকা' : 'Synchronized with Step 1 pathways & concurrent pathologies'}
-          </span>
+          <button
+            type="button"
+            onClick={() => setActiveTab('assessment')}
+            className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground font-bold text-xs flex items-center gap-1.5 shadow-subtle hover:bg-primary/90 transition self-start sm:self-auto"
+          >
+            <Activity className="h-3.5 w-3.5" />
+            <span>{bn ? 'অ্যাসেসমেন্টে রোগ পরিবর্তন করুন' : 'Edit Diagnoses in Assessment'}</span>
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {conditionList.map(rule => {
-            const isDerived = derivedConditions.includes(rule.id as any);
-            const isManuallySelected = patient.selected_conditions.includes(rule.id);
-            const isSelected = isDerived || isManuallySelected;
+        {/* Selected Clinical Pathways (Read-Only) */}
+        <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+              <Layers className="h-3.5 w-3.5 text-primary" />
+              <span>{bn ? 'সক্রিয় ক্লিনিক্যাল পাথওয়ে (ধাপ ১):' : 'Active Clinical Pathways (Step 1):'}</span>
+            </span>
+            <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">
+              {r5Pathways?.selected_pathways?.length || 0} {bn ? 'টি সক্রিয়' : 'active'}
+            </span>
+          </div>
+          {r5Pathways?.selected_pathways && r5Pathways.selected_pathways.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {r5Pathways.selected_pathways.map(pId => (
+                <span key={pId} className="px-2.5 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20 text-xs font-semibold flex items-center gap-1">
+                  <Activity className="h-3 w-3" />
+                  <span>{pId.replace(/_/g, ' ')}</span>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground italic">
+              {bn ? 'কোনো ক্লিনিক্যাল পাথওয়ে নির্ধারিত নেই।' : 'No broad clinical pathways selected.'}
+            </p>
+          )}
+        </div>
 
-            return (
-              <button
-                key={rule.id}
-                type="button"
-                onClick={() => toggleCondition(rule.id)}
-                className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all ${
-                  isSelected 
-                    ? 'bg-primary/10 border-primary shadow-subtle ring-1 ring-primary/40' 
-                    : 'bg-card hover:bg-secondary/40 border-border text-muted-foreground'
-                }`}
-              >
-                <div>
-                  <div className="flex justify-between items-start mb-1.5">
-                    <span className={`font-bold text-xs leading-tight ${isSelected ? 'text-primary' : 'text-foreground'}`}>
+        {/* Confirmed Diagnoses Summary (Read-Only) */}
+        <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+              <Flame className="h-3.5 w-3.5 text-amber-500" />
+              <span>{bn ? 'নিশ্চিত ক্লিনিক্যাল সমস্যা ও রোগ নির্ণয়:' : 'Confirmed Clinical Diagnoses (Authoritative):'}</span>
+            </span>
+            <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-2 py-0.5 rounded-full">
+              {activeRules.length} {bn ? 'টি নিশ্চিত রোগ' : 'confirmed'}
+            </span>
+          </div>
+          {activeRules.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+              {activeRules.map(rule => (
+                <div key={rule.id} className="p-3 rounded-xl border border-primary/30 bg-primary/5 text-xs space-y-1.5 shadow-2xs">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-foreground">
                       {bn ? rule.name_bn : rule.name_en}
                     </span>
-                    <span className={`h-4 w-4 rounded-full flex items-center justify-center text-[10px] ${
-                      isSelected ? 'bg-primary text-primary-foreground font-bold' : 'border border-border'
-                    }`}>
-                      {isSelected ? '✓' : ''}
+                    <span className="text-[9px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded font-bold">
+                      {bn ? 'নিশ্চিত' : 'Confirmed'}
                     </span>
                   </div>
-                  {isDerived && (
-                    <div className="mb-1.5">
-                      <span className="text-[9px] bg-primary/15 text-primary px-1.5 py-0.5 rounded font-semibold flex items-center gap-1 w-fit">
-                        <Lock className="h-2.5 w-2.5" />
-                        {bn ? 'ধাপ ১ পাথওয়ে হতে সক্রিয়' : 'Step 1 Pathway Active'}
-                      </span>
-                    </div>
-                  )}
                   <p className="text-[11px] text-muted-foreground line-clamp-2">
                     {bn ? rule.clinical_summary_bn : rule.clinical_summary_en}
                   </p>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {(rule.redTags || []).slice(0, 3).map((t: string, idx: number) => (
+                      <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-medium">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-
-                <div className="mt-2.5 pt-2 border-t border-border/60 flex flex-wrap gap-1">
-                  {rule.redTags.slice(0, 2).map((t, idx) => (
-                    <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-medium">
-                      avoid: {t}
-                    </span>
-                  ))}
-                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground p-3 rounded-xl border border-dashed border-border flex items-center justify-between">
+              <span>{bn ? 'কোনো নির্দিষ্ট রোগ নির্ণয় রেকর্ড করা হয়নি। সাধারণ পুষ্টি নির্দেশনা সক্রিয়।' : 'No specific disease diagnoses confirmed. General therapeutic baseline active.'}</span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('assessment')}
+                className="text-primary hover:underline font-bold text-xs"
+              >
+                {bn ? 'রোগ যোগ করুন' : 'Add Diagnoses'}
               </button>
-            );
-          })}
+            </div>
+          )}
         </div>
       </div>
 

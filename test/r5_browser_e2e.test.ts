@@ -488,16 +488,16 @@ async function runBrowserE2E() {
     assert(true, 'Mobile responsive layout adapts smoothly to desktop');
 
     // ============================================================================
-    // TEST 21: Conditions Tab Step 1 Pathway Synchronization
+    // TEST 21: Conditions Tab Step 1 Pathway & Confirmed Diagnoses Summary (P1-001)
     // ============================================================================
-    console.log('\n--- TEST 21: Conditions Tab Step 1 Pathway Synchronization ---');
+    console.log('\n--- TEST 21: Conditions Tab Step 1 Pathway & Confirmed Diagnoses Summary ---');
     const conditionsNavBtn = page.locator('button:has-text("Conditions"), button:has-text("রোগসমূহ")').first();
     if (await conditionsNavBtn.isVisible()) {
       await conditionsNavBtn.click();
       await page.waitForTimeout(400);
 
-      const condGrid = page.locator('button:has-text("Type 2 Diabetes"), button:has-text("টাইপ ২ ডায়াবেটিস")').first();
-      assert(await condGrid.isVisible(), 'Conditions Tab rendered with concurrent conditions selection');
+      const editBtn = page.locator('button:has-text("Edit Diagnoses in Assessment"), button:has-text("অ্যাসেসমেন্টে রোগ পরিবর্তন করুন")').first();
+      assert(await editBtn.isVisible(), 'Conditions Tab rendered as read-only clinical guide with link to Assessment');
     } else {
       assert(true, 'Conditions Tab verified in clinical workflow');
     }

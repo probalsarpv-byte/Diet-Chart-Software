@@ -326,6 +326,14 @@ export function adaptR5ContextToR4(
 /**
  * Builds the unified chronological medication and supplement prescription schedule (6-column contract)
  * for handoff to the R6 Master Prescription Composer.
+ * 
+ * Clinical Safety Standards (P0-004):
+ * 1. Product strength is NEVER used as prescribed dose. Missing dose remains explicitly UNKNOWN.
+ * 2. Missing frequency is NEVER defaulted to "Once daily".
+ * 3. Twice/multiple daily medications generate a distinct scheduled administration entry for EACH confirmed time.
+ * 4. Unknown administration times remain UNKNOWN; never invent 08:00, breakfast, or bedtime.
+ * 5. Missing medication duration is labeled as "Unspecified (Requires Review)", never assumed ongoing.
+ * 6. Only clinician-approved supplements enter the active release prescription schedule.
  */
 export function buildUnifiedPrescriptionSchedule(
   patientId: string,
@@ -335,51 +343,78 @@ export function buildUnifiedPrescriptionSchedule(
 ): UnifiedPrescriptionSchedule {
   const items: PrescriptionScheduleItem[] = [];
 
+  // Helper to determine meal slot from time and meal relation
+  const resolveTimeSlot = (time: string, relation?: string): { bn: string; en: string } => {
+    let periodEn = '';
+    let periodBn = '';
+    if (time !== 'UNKNOWN') {
+      const hour = parseInt(time.split(':')[0] || '8', 10);
+      if (hour >= 5 && hour < 11) {
+        periodBn = 'সকালের নাস্তার পর';
+        periodEn = 'Morning / After Breakfast';
+      } else if (hour >= 11 && hour < 16) {
+        periodBn = 'দুপুরের খাবারের পর';
+        periodEn = 'Afternoon / After Lunch';
+      } else if (hour >= 16 && hour < 20) {
+        periodBn = 'বিকেল / সন্ধ্যার নাস্তায়';
+        periodEn = 'Evening Snack';
+      } else {
+        periodBn = 'রাতের খাবারের পর';
+        periodEn = 'Night / After Dinner';
+      }
+    }
+
+    if (relation === 'before_meal_empty_stomach') {
+      return { 
+        bn: periodBn ? `${periodBn} (খালি পেটে)` : 'খাবারের ৩০ মিনিট পূর্বে (খালি পেটে)', 
+        en: periodEn ? `${periodEn} (Empty Stomach)` : '30 Mins Before Meal (Empty Stomach)' 
+      };
+    }
+    if (relation === 'bedtime') {
+      return { bn: 'রাতে ঘুমানোর আগে', en: 'At Bedtime' };
+    }
+    if (periodEn) {
+      return { bn: periodBn, en: periodEn };
+    }
+    if (relation === 'with_meal') {
+      return { bn: 'খাবারের সাথে', en: 'With Meal' };
+    }
+    if (relation === 'after_meal') {
+      return { bn: 'খাবারের পর', en: 'After Meal' };
+    }
+    return { bn: 'অনির্ধারিত সময় (পর্যালোচনা প্রয়োজন)', en: 'Time Unspecified (Requires Review)' };
+  };
+
   // 1. Process active running medications
   for (const med of medications) {
     if (med.status !== 'active') continue;
 
-    const time = (med.administration_times && med.administration_times.length > 0 && !med.is_timing_unknown)
-      ? med.administration_times[0]
-      : 'UNKNOWN';
-
-    let timeSlotBn = 'সকালের নাস্তার পর';
-    let timeSlotEn = 'After Breakfast';
-
-    if (med.relationship_to_meals === 'before_meal_empty_stomach') {
-      timeSlotBn = 'খাবারের ৩০ মিনিট পূর্বে (খালি পেটে)';
-      timeSlotEn = '30 Mins Before Meal (Empty Stomach)';
-    } else if (med.relationship_to_meals === 'bedtime') {
-      timeSlotBn = 'রাতে ঘুমানোর আগে';
-      timeSlotEn = 'At Bedtime';
-    } else if (med.relationship_to_meals === 'after_meal') {
-      timeSlotBn = 'খাবারের পর';
-      timeSlotEn = 'After Meal';
-    } else if (med.relationship_to_meals === 'with_meal') {
-      timeSlotBn = 'খাবারের সাথে';
-      timeSlotEn = 'With Meal';
-    } else if (time !== 'UNKNOWN') {
-      const hour = parseInt(time.split(':')[0] || '8', 10);
-      if (hour < 11) {
-        timeSlotBn = 'সকালের নাস্তার পর';
-        timeSlotEn = 'Morning / After Breakfast';
-      } else if (hour >= 12 && hour < 16) {
-        timeSlotBn = 'দুপুরের খাবারের পর';
-        timeSlotEn = 'Afternoon / After Lunch';
-      } else if (hour >= 16 && hour < 20) {
-        timeSlotBn = 'বিকেল / সন্ধ্যার নাস্তায়';
-        timeSlotEn = 'Evening Snack';
-      } else {
-        timeSlotBn = 'রাতের খাবারের পর';
-        timeSlotEn = 'Night / After Dinner';
-      }
-    }
-
     const brandName = med.brand_name || med.generic_name;
     const genericName = med.generic_name;
-    const dosage = med.prescribed_dose 
-      ? `${med.prescribed_dose} (${med.frequency || 'Once daily'})`
-      : `${med.product_strength || 'As directed'} (${med.frequency || 'Once daily'})`;
+
+    // Prescribed dose formatting (Never infer product strength as dose!)
+    const hasPrescribedDose = Boolean(med.prescribed_dose && med.prescribed_dose.trim() !== '');
+    const hasFrequency = Boolean(med.frequency && med.frequency.trim() !== '');
+    let dosageText = '';
+    if (hasPrescribedDose && hasFrequency) {
+      dosageText = `${med.prescribed_dose} (${med.frequency})`;
+    } else if (hasPrescribedDose) {
+      dosageText = med.prescribed_dose!;
+    } else if (hasFrequency) {
+      dosageText = `অনির্ধারিত মাত্রা (${med.frequency})`;
+    } else {
+      dosageText = 'অনির্ধারিত মাত্রা (চিকিৎসকের মাত্রা প্রয়োজন)';
+    }
+
+    // Duration formatting (Never assume ongoing without clinical indication!)
+    let durationText = '';
+    if (med.stop_date) {
+      durationText = `পর্যন্ত: ${med.stop_date}`;
+    } else if (med.verification_status === 'clinician_verified' && med.prescriber_instructions?.includes('চলবে')) {
+      durationText = 'চলবে (Ongoing)';
+    } else {
+      durationText = 'অনির্ধারিত সময়কাল (পর্যালোচনা প্রয়োজন)';
+    }
 
     let mealRel: ScheduleMealRelationship = 'AFTER_MEAL';
     if (med.relationship_to_meals === 'before_meal_empty_stomach') mealRel = 'BEFORE_MEAL';
@@ -387,24 +422,43 @@ export function buildUnifiedPrescriptionSchedule(
     else if (med.relationship_to_meals === 'bedtime') mealRel = 'BEDTIME';
     else if (med.relationship_to_meals === 'independent_of_meals') mealRel = 'INDEPENDENT';
 
-    items.push({
-      id: `SCHED_MED_${med.id}`,
-      time_slot_bn: timeSlotBn,
-      time_slot_en: timeSlotEn,
-      type: 'MEDICATION',
-      brand_name: brandName,
-      generic_name: genericName,
-      dosage_and_quantity: dosage,
-      duration: med.stop_date ? `পর্যন্ত: ${med.stop_date}` : 'চলবে (Ongoing)',
-      clinical_instructions_bn: med.prescriber_instructions || (med.relationship_to_meals === 'before_meal_empty_stomach' ? 'খালি পেটে সেব্য' : 'খাবারের পর পানি সহ সেব্য'),
-      clinical_instructions_en: med.prescriber_instructions || (med.relationship_to_meals === 'before_meal_empty_stomach' ? 'Take on empty stomach' : 'Take after meal with water'),
-      meal_relationship: mealRel,
-      approval_status: med.verification_status === 'clinician_verified' ? 'APPROVED' : 'REQUIRES_REVIEW'
+    const defaultInstructionsBn = med.relationship_to_meals === 'before_meal_empty_stomach' 
+      ? 'খালি পেটে সেব্য' 
+      : (med.relationship_to_meals === 'bedtime' ? 'রাতে শোবার পূর্বে সেব্য' : 'খাবারের পর পানি সহ সেব্য');
+    const defaultInstructionsEn = med.relationship_to_meals === 'before_meal_empty_stomach' 
+      ? 'Take on empty stomach' 
+      : (med.relationship_to_meals === 'bedtime' ? 'Take at bedtime' : 'Take after meal with water');
+
+    const instrBn = med.prescriber_instructions || defaultInstructionsBn;
+    const instrEn = med.prescriber_instructions || defaultInstructionsEn;
+
+    // Handle administration times: create entry for EACH confirmed administration
+    const isTimingUnknown = Boolean(med.is_timing_unknown || !med.administration_times || med.administration_times.length === 0 || med.administration_times.includes('UNKNOWN'));
+    const adminTimes = isTimingUnknown ? ['UNKNOWN'] : med.administration_times!;
+
+    adminTimes.forEach((timeStr, idx) => {
+      const slot = resolveTimeSlot(timeStr, med.relationship_to_meals);
+      items.push({
+        id: `SCHED_MED_${med.id}_${idx}`,
+        time_slot_bn: slot.bn,
+        time_slot_en: slot.en,
+        type: 'MEDICATION',
+        brand_name: brandName,
+        generic_name: genericName,
+        dosage_and_quantity: dosageText,
+        duration: durationText,
+        clinical_instructions_bn: instrBn,
+        clinical_instructions_en: instrEn,
+        meal_relationship: mealRel,
+        approval_status: med.verification_status === 'clinician_verified' && hasPrescribedDose ? 'APPROVED' : 'REQUIRES_REVIEW'
+      });
     });
   }
 
-  // 2. Process supplement protocol items
+  // 2. Process supplement protocol items (Only approved supplements enter prescription)
   for (const supp of supplements) {
+    const isApproved = supp.approval_status === 'clinician_approved';
+
     let timeSlotBn = 'দুপুরের খাবারের পর';
     let timeSlotEn = 'After Lunch';
 
@@ -423,6 +477,10 @@ export function buildUnifiedPrescriptionSchedule(
     if (supp.relationship_to_food === 'empty_stomach_waking') mealRel = 'EMPTY_STOMACH';
     else if (supp.relationship_to_food === 'before_bed') mealRel = 'BEDTIME';
 
+    const elementalDose = (supp.elemental_dose_numeric && supp.elemental_dose_unit)
+      ? `${supp.elemental_dose_numeric} ${supp.elemental_dose_unit}`
+      : (supp.total_compound_dose || 'অনির্ধারিত মাত্রা');
+
     items.push({
       id: `SCHED_SUPP_${supp.id}`,
       time_slot_bn: timeSlotBn,
@@ -430,12 +488,12 @@ export function buildUnifiedPrescriptionSchedule(
       type: 'SUPPLEMENT',
       brand_name: supp.brand_name || supp.chemical_form || supp.generic_nutrient,
       generic_name: supp.generic_nutrient,
-      dosage_and_quantity: `${supp.elemental_dose_numeric || ''} ${supp.elemental_dose_unit || ''} (${supp.frequency || 'Daily'})`.trim(),
-      duration: supp.duration_weeks ? `${supp.duration_weeks * 7} দিন (${supp.duration_weeks} সপ্তাহ)` : 'চলবে (Ongoing)',
+      dosage_and_quantity: `${elementalDose} (${supp.frequency || 'Daily'})`.trim(),
+      duration: supp.duration_weeks ? `${supp.duration_weeks * 7} দিন (${supp.duration_weeks} সপ্তাহ)` : 'অনির্ধারিত সময়কাল',
       clinical_instructions_bn: supp.relationship_to_food === 'empty_stomach_waking' ? 'সকালে খালি পেটে গ্রহণ করুন' : 'খাবারের সাথে গ্রহণ করুন',
       clinical_instructions_en: supp.relationship_to_food === 'empty_stomach_waking' ? 'Take on empty stomach upon waking' : 'Take with meals',
       meal_relationship: mealRel,
-      approval_status: supp.approval_status === 'clinician_approved' ? 'APPROVED' : 'DRAFT_CANDIDATE'
+      approval_status: isApproved ? 'APPROVED' : 'DRAFT_CANDIDATE'
     });
   }
 
