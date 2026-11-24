@@ -6,15 +6,15 @@ import { useAssessment } from '@/context/AssessmentContext';
 import { FeedingRouteType } from '@/types/clinical';
 import {
   FileText,
-  AlertOctagon
+  AlertOctagon,
+  Pill,
+  CheckCircle2
 } from 'lucide-react';
 import { AllergyReconciliationEditor } from '@/components/reconciliation/AllergyReconciliationEditor';
-import { MedicationReconciliationEditor } from '@/components/reconciliation/MedicationReconciliationEditor';
-import { RunningMedicationList } from '@/components/r5/RunningMedicationList';
 
 export const StepHistorySafety: React.FC = () => {
-  const { patient, updatePatient, language, r5Medications, updateR5Medications } = usePractice();
-  const { setCurrentStep, setAnswer, functionalAnswers } = useAssessment();
+  const { patient, updatePatient, language } = usePractice();
+  const { setCurrentStep, setActiveDomain, setAnswer, functionalAnswers } = useAssessment();
   const bn = language === 'bn';
 
   return (
@@ -91,15 +91,63 @@ export const StepHistorySafety: React.FC = () => {
       {/* 2. Explicit Allergy Reconciliation (4-State Lifecycle) */}
       <AllergyReconciliationEditor />
 
-      {/* 3. Medication Reconciliation (Full MediNutrition V5 Corpus & Administration Timing) */}
-      <MedicationReconciliationEditor />
+      {/* 3. Authoritative Prescribed Medications Summary (Domain 13 Reference) */}
+      <div className="bg-card border rounded-2xl p-4 shadow-sm space-y-3" data-testid="step-history-medication-summary">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2.5">
+          <div className="flex items-center gap-2">
+            <Pill className="h-4 w-4 text-primary" />
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
+              {bn ? '৩. চলমান প্রেসক্রিপশন ওষুধের সারসংক্ষেপ (ডোমেন ১৩)' : '3. Current Prescribed Medications Summary (Domain 13)'}
+            </h4>
+          </div>
 
-      {/* Phase R5: Running Medication Cards & Reconciliation */}
-      <div className="pt-2">
-        <RunningMedicationList
-          medications={r5Medications}
-          onUpdateMedications={updateR5Medications}
-        />
+          <button
+            type="button"
+            onClick={() => {
+              setCurrentStep('step_functional');
+              setActiveDomain('medication_supplements');
+            }}
+            className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 transition flex items-center gap-1.5 self-start sm:self-auto"
+            data-testid="nav-to-domain13-btn"
+          >
+            <span>{bn ? 'ফাংশনাল মূল্যায়নে ওষুধ সম্পাদনা করুন (ডোমেন ১৩) →' : 'Edit Medications in Functional Assessment (Domain 13) →'}</span>
+          </button>
+        </div>
+
+        {patient.medication_reconciliation?.verified_no_medications ? (
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-700 flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4" />
+            <span>{bn ? 'যাচাইকৃত: রোগী বর্তমানে কোনো ওষুধ সেবন করছেন না।' : 'Verified: Patient currently takes no medications.'}</span>
+          </div>
+        ) : (patient.medication_records && patient.medication_records.length > 0) ? (
+          <div className="space-y-2">
+            <div className="text-[11px] text-muted-foreground">
+              {patient.medication_records.length} {bn ? 'টি ওষুধ সক্রিয়ভাবে রেকর্ড করা আছে:' : 'active medication(s) recorded:'}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {patient.medication_records.map(rec => (
+                <div key={rec.id} className="p-2.5 rounded-xl border bg-muted/20 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-foreground">{rec.brand_name || rec.medication_name}</span>
+                    {rec.product_strength && <span className="ml-1.5 text-[10px] text-teal-800 bg-teal-50 px-1 rounded">{rec.product_strength}</span>}
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      Dose: {rec.prescribed_dose || rec.dose || 'Unknown'} • {rec.frequency || 'Unknown'}
+                    </div>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 capitalize">
+                    {rec.verification_status?.replace(/_/g, ' ') || 'Reported'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 text-center rounded-xl bg-muted/20 text-xs text-muted-foreground">
+            {bn
+              ? 'এখনও কোনো ওষুধ রেকর্ড করা হয়নি। ফাংশনাল অ্যাসেসমেন্টের ডোমেন ১৩-এ ওষুধ যোগ করুন।'
+              : 'No medications recorded yet. Use Domain 13 in Functional Assessment for structured medication entry.'}
+          </div>
+        )}
       </div>
 
       {/* 4. Mandatory Clinical Safety Screening */}

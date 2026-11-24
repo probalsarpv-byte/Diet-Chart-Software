@@ -10,6 +10,7 @@ import {
   QuestionDefinition
 } from '@/questionnaire/registry';
 import { filterVisibleQuestions } from '@/engine/questionEngine';
+import { MedicationReconciliationEditor } from '@/components/reconciliation/MedicationReconciliationEditor';
 import {
   Stethoscope,
   ChevronRight,
@@ -138,6 +139,13 @@ export const StepFunctionalDomains: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Integrated Medication & Prescription Reconciliation inside Domain 13 */}
+      {activeDomain === 'medication_supplements' && (
+        <div className="space-y-4">
+          <MedicationReconciliationEditor />
+        </div>
+      )}
 
       {/* Questions List for Active Domain */}
       <div className="space-y-4">

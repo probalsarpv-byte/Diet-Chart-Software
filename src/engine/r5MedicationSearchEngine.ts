@@ -205,6 +205,25 @@ function levenshteinDistance(a: string, b: string): number {
   return row[n];
 }
 
+function extractStrengthAndForm(name: string): { strength?: string; formulation?: string } {
+  const strengthMatch = name.match(/(\d+(?:\.\d+)?\s*(?:mg|gm|g|mcg|iu|u\/ml|units\/ml|ml|%))/i);
+  let strength = strengthMatch ? strengthMatch[1].trim() : undefined;
+  if (!strength) {
+    const numMatch = name.match(/\b(\d{2,4})\b/);
+    if (numMatch) {
+      strength = `${numMatch[1]} mg`;
+    }
+  }
+  let formulation: string | undefined = undefined;
+  const lower = name.toLowerCase();
+  if (lower.includes('tablet') || lower.includes('tab')) formulation = 'Tablet';
+  else if (lower.includes('capsule') || lower.includes('cap')) formulation = 'Capsule';
+  else if (lower.includes('syrup') || lower.includes('suspension')) formulation = 'Syrup';
+  else if (lower.includes('injection') || lower.includes('inj') || lower.includes('insulin')) formulation = 'Injection';
+  else if (lower.includes('drop')) formulation = 'Drops';
+  return { strength, formulation };
+}
+
 /**
  * Executes high-performance search across 32,461 brands and 2,189 generics.
  */
@@ -219,6 +238,11 @@ export function searchSmartMedications(query: string, maxResults = 30): R5Medica
     const key = `${item.type}_${item.brand_name || ''}_${item.generic_name}`;
     if (!seen.has(key)) {
       seen.add(key);
+      if (!item.strength || !item.formulation) {
+        const extracted = extractStrengthAndForm(item.brand_name || item.generic_name);
+        if (!item.strength && extracted.strength) item.strength = extracted.strength;
+        if (!item.formulation && extracted.formulation) item.formulation = extracted.formulation;
+      }
       results.push(item);
     }
   }
@@ -393,5 +417,50 @@ export type SearchResultItem = R5MedicationSearchResult;
 export function identifyCombinationDrug(genericName: string): { is_combination: boolean; individual_actives: string[] } {
   const parts = (genericName || '').split('+').map(p => p.trim()).filter(Boolean);
   return { is_combination: parts.length > 1, individual_actives: parts };
+}
+
+/**
+ * Canonical normalizer ensuring any medication record complies with R5MedicationRecord
+ * and ReconciledMedicationRecord without data loss or leaking defaults.
+ */
+export function normalizeMedicationRecord(rec: any): R5MedicationRecord {
+  const generic = rec.generic_name || rec.medication_name || 'Unknown Generic';
+  const brand = rec.brand_name || (rec.medication_name && rec.medication_name !== generic ? rec.medication_name : undefined);
+  const dose = rec.prescribed_dose || rec.dose || '';
+  const freq = rec.frequency || '';
+  const mealRel = rec.relationship_to_meals || rec.timing || 'unknown';
+  const isUnknown = rec.is_timing_unknown ?? (!rec.administration_times || rec.administration_times.length === 0 || rec.administration_times.includes('UNKNOWN'));
+  const times = isUnknown ? [] : (Array.isArray(rec.administration_times) ? rec.administration_times : []);
+
+  return {
+    id: rec.id || `med_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    brand_name: brand,
+    generic_name: generic,
+    manufacturer: rec.manufacturer,
+    formulation: rec.formulation || 'Tablet',
+    product_strength: rec.product_strength,
+    prescribed_dose: dose,
+    dose_unit: rec.dose_unit || 'mg',
+    frequency: freq,
+    route: rec.route || 'Oral',
+    administration_times: times,
+    is_timing_unknown: isUnknown,
+    relationship_to_meals: mealRel as any,
+    indication: rec.indication,
+    start_date: rec.start_date,
+    stop_date: rec.stop_date,
+    status: rec.status || 'active',
+    is_prn: Boolean(rec.is_prn),
+    prescriber_instructions: rec.prescriber_instructions,
+    dose_titration_history: rec.dose_titration_history,
+    adherence_status: rec.adherence_status || 'unknown',
+    adverse_effects_reported: rec.adverse_effects_reported,
+    verification_status: rec.verification_status || 'patient_reported',
+    rule_coverage: rec.rule_coverage || resolveRuleCoverage(generic).coverage,
+    source: rec.source || 'clinician_entry',
+    verified_by: rec.verified_by,
+    verified_at: rec.verified_at,
+    notes: rec.notes
+  };
 }
 

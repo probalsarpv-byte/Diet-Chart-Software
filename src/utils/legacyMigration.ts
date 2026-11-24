@@ -49,6 +49,8 @@ export function migratePatientRecord(record: any): PatientRecord {
     sleep_hours: rawPatient.sleep_hours || 7,
     shift_worker: Boolean(rawPatient.shift_worker),
     population_group: rawPatient.population_group || 'adult_standard',
+    clinical_pathways: Array.isArray(rawPatient.clinical_pathways) ? rawPatient.clinical_pathways : [],
+    r5_pathways: rawPatient.r5_pathways || undefined,
     trimester: rawPatient.trimester,
     bmr_floor_strategy: rawPatient.bmr_floor_strategy || 'clamped_to_bmr',
     custom_calorie_floor: rawPatient.custom_calorie_floor,

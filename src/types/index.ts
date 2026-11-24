@@ -325,17 +325,39 @@ export interface ReconciledMedicationRecord {
   id: string;
   medication_name: string;
   generic_name?: string;
+  brand_name?: string;
+  manufacturer?: string;
+  formulation?: string;
+  product_strength?: string;
+  prescribed_dose?: string;
   dose: string;
+  dose_unit?: string;
   frequency: string;
   timing: string;
   route?: string;
+  administration_times?: string[];
+  is_timing_unknown?: boolean;
+  relationship_to_meals?: 'with_meal' | 'before_meal_empty_stomach' | 'after_meal' | 'independent_of_meals' | 'bedtime' | 'unknown';
   indication?: string;
-  verification_status: MedicationVerificationStatus;
+  start_date?: string;
+  stop_date?: string;
+  status?: 'active' | 'discontinued' | 'held' | 'tapering' | 'draft_candidate' | 'unknown';
+  is_prn?: boolean;
+  prescriber_instructions?: string;
+  dose_titration_history?: string;
+  adherence_status?: 'adherent' | 'intermittent_misses' | 'severe_nonadherence' | 'unknown';
+  adverse_effects_reported?: string[];
+  verification_status: MedicationVerificationStatus | 'patient_reported' | 'clinician_verified' | 'prescription_documented' | 'unverified';
+  rule_coverage?: 'interaction_monitored' | 'rules_unavailable' | 'safety_gated';
+  source?: 'intake_staged' | 'clinician_entry' | 'legacy_record';
   verified_by?: string;
   verified_at?: string;
+  notes?: string;
   relevant_safety_notes?: string[];
   depletions?: string[];
   food_interactions?: string[];
+  insulin_regimen_type?: string;
+  prescribed_units?: string;
 }
 
 export type MedicationReconciliationOverallStatus =
@@ -373,6 +395,7 @@ export interface PatientProfile {
   shift_worker: boolean;
   population_group: PopulationGroup;
   clinical_pathways?: ClinicalPathway[];
+  r5_pathways?: any;
   feeding_status?: FeedingStatus;
   fluid_prescription?: FluidPrescription;
   clinical_safety?: {

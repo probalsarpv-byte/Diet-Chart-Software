@@ -104,7 +104,12 @@ import {
   ExpandedClinicalPathwayId, 
   R5ClinicalContextPayload 
 } from '@/types/r5Systems';
-import { evaluatePathwaySelectionState } from '@/engine/r5PathwayRegistry';
+import { 
+  evaluatePathwaySelectionState,
+  mapLegacyPathwaysToExpanded,
+  mapExpandedPathwaysToLegacy
+} from '@/engine/r5PathwayRegistry';
+import { normalizeMedicationRecord } from '@/engine/r5MedicationSearchEngine';
 import { deriveR5PopulationProfile } from '@/engine/r5PopulationEngine';
 import { evaluateFunctionalMatrix, buildSystemsNetworkGraph } from '@/engine/r5SystemsNetworkEngine';
 import { resolveMultimorbidityConflicts } from '@/engine/r5MultimorbidityEngine';
@@ -381,11 +386,21 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [r4Protocol, setR4Protocol] = useState<R4ProtocolStudioData | null>(null);
   const [isR4ProtocolDirty, setIsR4ProtocolDirty] = useState<boolean>(false);
 
-  // Phase R5: Systems Intelligence & Expanded Pathways State
-  const [r5Pathways, setR5Pathways] = useState<PatientPathwayState>(() => evaluatePathwaySelectionState([]));
-  const [r5Medications, setR5Medications] = useState<R5MedicationRecord[]>([]);
-
   const [patient, setPatient] = useState<PatientProfile>(createInitialSeedPatient);
+
+  // Phase R5: Systems Intelligence & Expanded Pathways State (derived from active patient)
+  const [r5Pathways, setR5Pathways] = useState<PatientPathwayState>(() => {
+    const init = createInitialSeedPatient();
+    if (init.r5_pathways) return init.r5_pathways;
+    if (init.clinical_pathways && init.clinical_pathways.length > 0) {
+      return evaluatePathwaySelectionState(mapLegacyPathwaysToExpanded(init.clinical_pathways), false);
+    }
+    return evaluatePathwaySelectionState([]);
+  });
+  const [r5Medications, setR5Medications] = useState<R5MedicationRecord[]>(() => {
+    const init = createInitialSeedPatient();
+    return (init.medication_records || []).map(normalizeMedicationRecord);
+  });
   const [visits, setVisits] = useState<LongitudinalVisit[]>([]);
   const [clinicalVisits, setClinicalVisits] = useState<ClinicalVisit[]>([]);
   const [currentVisit, setCurrentVisit] = useState<ClinicalVisit | null>(null);
@@ -2174,10 +2189,33 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const updateR5Pathways = useCallback((selectedIds: ExpandedClinicalPathwayId[], isExplicitlyNoPathways: boolean) => {
     const newState = evaluatePathwaySelectionState(selectedIds, isExplicitlyNoPathways);
     setR5Pathways(newState);
+    const legacyPathways = isExplicitlyNoPathways || selectedIds.length === 0
+      ? []
+      : mapExpandedPathwaysToLegacy(selectedIds);
+    setPatient(prev => ({
+      ...prev,
+      clinical_pathways: legacyPathways,
+      r5_pathways: newState,
+      assessment_last_updated_at: new Date().toISOString()
+    }));
   }, []);
 
   const updateR5Medications = useCallback((meds: R5MedicationRecord[]) => {
-    setR5Medications(meds);
+    const normalized = meds.map(normalizeMedicationRecord);
+    setR5Medications(normalized);
+    const activeNames = Array.from(new Set(
+      normalized
+        .filter(m => (m.status || 'active') === 'active')
+        .map(m => m.brand_name || m.generic_name || (m as any).medication_name || '')
+        .filter(Boolean)
+    ));
+    setPatient(prev => ({
+      ...prev,
+      medication_records: normalized as any,
+      active_medications: activeNames,
+      medication_reconciliation_status: normalized.length > 0 ? 'fully_reconciled' : prev.medication_reconciliation?.verified_no_medications ? 'no_medications' : 'not_assessed',
+      assessment_last_updated_at: new Date().toISOString()
+    }));
   }, []);
 
   const syncR5ToR4Protocol = useCallback(() => {
@@ -2624,6 +2662,19 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setDietChart(loadedPlan.days[0].meals);
     }
 
+    // Rehydrate R5 Pathways and Medications from loaded patient record (zero leakage)
+    if (migrated.patient.r5_pathways) {
+      setR5Pathways(migrated.patient.r5_pathways);
+    } else if (migrated.patient.clinical_pathways && migrated.patient.clinical_pathways.length > 0) {
+      const expanded = mapLegacyPathwaysToExpanded(migrated.patient.clinical_pathways);
+      setR5Pathways(evaluatePathwaySelectionState(expanded, false));
+    } else {
+      setR5Pathways(evaluatePathwaySelectionState([], false));
+    }
+
+    const loadedMeds = (migrated.patient.medication_records || []).map(normalizeMedicationRecord);
+    setR5Medications(loadedMeds);
+
     safeStorage.setItem('shuddho_active_patient_id', id);
     return true;
   }, [savedPatients, patient, saveCurrentPatient, language]);
@@ -2743,6 +2794,8 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setWeeklyDietPlan(null);
     setActiveDayNumber(1);
     setCandidateSupplements([]);
+    setR5Pathways(evaluatePathwaySelectionState([], false));
+    setR5Medications([]);
     setP2AnalysisResult(null);
     setCurrentClinicalAssessment(null);
     setSelectedReportVisitId(null);

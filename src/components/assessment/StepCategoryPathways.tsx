@@ -4,17 +4,10 @@ import React from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { useAssessment } from '@/context/AssessmentContext';
 import { PopulationGroup } from '@/types/index';
-import { ClinicalPathway } from '@/types/clinical';
 import { PathwaySelector } from '@/components/r5/PathwaySelector';
 import {
   Users,
   Activity,
-  Heart,
-  Baby,
-  Sparkles,
-  ShieldCheck,
-  Stethoscope,
-  Scissors,
   CheckCircle2
 } from 'lucide-react';
 
@@ -86,84 +79,15 @@ const PRIMARY_POPULATIONS: PopulationOption[] = [
   }
 ];
 
-interface PathwayOption {
-  id: ClinicalPathway;
-  title_en: string;
-  title_bn: string;
-  desc_en: string;
-  desc_bn: string;
-}
-
-const CLINICAL_PATHWAYS: PathwayOption[] = [
-  {
-    id: 'metabolic',
-    title_en: 'Diabetes & Glycemic Regulation',
-    title_bn: 'ডায়াবেটিস ও গ্লাইসেমিক নিয়ন্ত্রণ',
-    desc_en: 'Type 2 Diabetes, prediabetes, reactive hypoglycemia, insulin resistance.',
-    desc_bn: 'টাইপ ২ ডায়াবেটিস, প্রি-ডায়াবেটিস, সুগার ওঠানামা ও ইনসুলিন রেজিস্ট্যান্স।'
-  },
-  {
-    id: 'underweight_restoration',
-    title_en: 'Underweight & Nutritional Restoration',
-    title_bn: 'অপুষ্টি ও দৈহিক ওজন পুনরুদ্ধার',
-    desc_en: 'Severe unintentional weight loss, anorexia, early satiety, refeeding syndrome risk screening.',
-    desc_bn: 'অতিরিক্ত কম ওজন, ক্ষুধামন্দা, দ্রুত পেট ভরা ও রিফিডিং সিন্ড্রোম স্ক্রিনিং।'
-  },
-  {
-    id: 'cardiovascular',
-    title_en: 'Cardiovascular & Hypertension',
-    title_bn: 'হৃদরোগ ও উচ্চ রক্তচাপ',
-    desc_en: 'Essential hypertension, heart failure, fluid & sodium tracking, dyslipidemia.',
-    desc_bn: 'উচ্চ রক্তচাপ, হার্ট ফেইলিউর, সোডিয়াম ও ফ্লুইড সীমাবদ্ধতা।'
-  },
-  {
-    id: 'gastrointestinal_hepatic',
-    title_en: 'Gastrointestinal & Hepatic (Gut Reset)',
-    title_bn: 'গ্যাস্ট্রোইন্টেস্টাইনাল ও লিভার স্বাস্থ্য',
-    desc_en: 'IBS, dysbiosis, GERD, non-alcoholic fatty liver disease (NAFLD), gut barrier restoration.',
-    desc_bn: 'আইবিএস, ফ্যাটি লিভার, গ্যাস্ট্রিক রিফ্লাক্স ও গাট ব্যারিয়ার মেরামত।'
-  },
-  {
-    id: 'surgical_postoperative',
-    title_en: 'Surgical & Postoperative Nutrition',
-    title_bn: 'অস্ত্রোপচার পরবর্তী ক্লিনিক্যাল পুষ্টি',
-    desc_en: 'Post-op recovery, wound healing, oral feeding tolerance, transitional feeding.',
-    desc_bn: 'অপারেশন পরবর্তী খাদ্য সহনশীলতা, ক্ষত নিরাময় ও ট্রানজিশনাল ডায়েট।'
-  },
-  {
-    id: 'critical_care_specialized_support',
-    title_en: 'Critical Care & Specialized Nutrition Support',
-    title_bn: 'বিশেষায়িত পুষ্টি সাপোর্ট ও ফিডিং রুট',
-    desc_en: 'Enteral tube feeds, parenteral TPN coordination, dysphagia texture modification.',
-    desc_bn: 'টিউব ফিডিং, স্যালাইন পুষ্টি ও ডিসফ্যাজিয়া টেক্সচার মডিফিকেশন।'
-  }
-];
-
 export const StepCategoryPathways: React.FC = () => {
   const { patient, updatePatient, language, r5Pathways, updateR5Pathways } = usePractice();
   const { setCurrentStep } = useAssessment();
   const bn = language === 'bn';
 
   const selectedPrimary = patient.population_group || 'adult_standard';
-  const selectedPathways = patient.clinical_pathways || ['metabolic'];
 
   const handleSelectPrimary = (group: PopulationGroup) => {
     updatePatient({ population_group: group });
-  };
-
-  const handleTogglePathway = (pathway: ClinicalPathway) => {
-    let updated: ClinicalPathway[];
-    if (selectedPathways.includes(pathway)) {
-      // Don't remove if it's the last one
-      if (selectedPathways.length > 1) {
-        updated = selectedPathways.filter(p => p !== pathway);
-      } else {
-        return;
-      }
-    } else {
-      updated = [...selectedPathways, pathway];
-    }
-    updatePatient({ clinical_pathways: updated });
   };
 
   return (
@@ -228,62 +152,24 @@ export const StepCategoryPathways: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Additional Clinical Pathways (Multi-select) */}
-      <div className="space-y-3 pt-4 border-t">
+      {/* 2. Unified Clinical Pathways Matrix (Single Authoritative Selector) */}
+      <div className="pt-4 border-t space-y-3">
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" />
             {bn ? '২. ওভারল্যাপিং ক্লিনিক্যাল পথসমূহ (একাধিক নির্বাচনযোগ্য)' : '2. Overlapping Clinical Pathways (Multi-Selectable)'}
           </label>
           <span className="text-[11px] text-muted-foreground">
-            {selectedPathways.length} {bn ? 'টি পথ সক্রিয়' : 'active'}
+            {r5Pathways.selected_pathways.length} {bn ? 'টি পথ সক্রিয়' : 'active'}
           </span>
         </div>
 
         <p className="text-xs text-muted-foreground">
           {bn
-            ? 'একজন রোগী একসাথে অনকোলজি এবং অপুষ্টিতে আক্রান্ত হতে পারেন, বা গর্ভাবস্থার সাথে ডায়াবেটিসে আক্রান্ত হতে পারেন। প্রযোজ্য সব পাথওয়ে নির্বাচন করুন।'
-            : 'Patients frequently have concurrent comorbidities (e.g. oncology + underweight, pregnancy + gestational diabetes). Select all applicable pathways.'}
+            ? 'রোগীর সব প্রাসঙ্গিক ক্লিনিক্যাল পাথওয়ে নির্বাচন করুন (যেমন: ডায়াবেটিস, হৃদরোগ, কিডনি রোগ) অথবা সুস্থ প্রতিরোধমূলক পরিচর্যা চিহ্নিত করুন।'
+            : 'Select all applicable clinical pathways (e.g. diabetes, cardiovascular, renal), or designate healthy preventive care.'}
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {CLINICAL_PATHWAYS.map((p) => {
-            const isSelected = selectedPathways.includes(p.id);
-            return (
-              <div
-                key={p.id}
-                onClick={() => handleTogglePathway(p.id)}
-                className={`p-3.5 rounded-2xl border text-left cursor-pointer transition-all ${
-                  isSelected
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary/30 shadow-sm'
-                    : 'border-border bg-card hover:border-primary/40 hover:bg-muted/30'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h4 className="text-xs font-bold text-foreground">
-                      {bn ? p.title_bn : p.title_en}
-                    </h4>
-                    <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                      {bn ? p.desc_bn : p.desc_en}
-                    </p>
-                  </div>
-                  <div
-                    className={`h-5 w-5 rounded-md flex items-center justify-center flex-shrink-0 ${
-                      isSelected ? 'bg-primary text-primary-foreground' : 'border border-muted-foreground/30'
-                    }`}
-                  >
-                    {isSelected && <CheckCircle2 className="h-3.5 w-3.5" />}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 3. Phase R5: Expanded 16+ Clinical Pathways Matrix */}
-      <div className="pt-4 border-t space-y-3">
         <PathwaySelector
           selectedPathwayIds={r5Pathways.selected_pathways}
           isExplicitlyNoPathways={r5Pathways.status === 'NO_KNOWN_PATHWAY'}

@@ -27,6 +27,68 @@ import {
   PatientPathwayState, 
   PathwaySelectionState 
 } from '@/types/r5Systems';
+import { ClinicalPathway } from '@/types/clinical';
+
+export const LEGACY_TO_EXPANDED_PATHWAY_MAP: Record<ClinicalPathway, ExpandedClinicalPathwayId> = {
+  metabolic: 'metabolic_endocrine',
+  underweight_restoration: 'underweight_malnutrition',
+  cardiovascular: 'cardiovascular',
+  renal: 'renal_electrolyte',
+  oncology: 'oncology',
+  gastrointestinal_hepatic: 'gastrointestinal_hepatobiliary',
+  surgical_postoperative: 'surgical_postoperative',
+  critical_care_specialized_support: 'critical_care_specialized_feeding',
+  other_multimorbidity: 'other_multimorbidity'
+};
+
+export const EXPANDED_TO_LEGACY_PATHWAY_MAP: Record<ExpandedClinicalPathwayId, ClinicalPathway> = {
+  metabolic_endocrine: 'metabolic',
+  underweight_malnutrition: 'underweight_restoration',
+  cardiovascular: 'cardiovascular',
+  renal_electrolyte: 'renal',
+  oncology: 'oncology',
+  gastrointestinal_hepatobiliary: 'gastrointestinal_hepatic',
+  surgical_postoperative: 'surgical_postoperative',
+  critical_care_specialized_feeding: 'critical_care_specialized_support',
+  other_multimorbidity: 'other_multimorbidity',
+  mental_health_neuropsychiatric: 'other_multimorbidity',
+  neurological_neurodevelopmental: 'other_multimorbidity',
+  autoimmune_inflammatory: 'other_multimorbidity',
+  reproductive_hormonal: 'other_multimorbidity',
+  musculoskeletal_bone: 'other_multimorbidity',
+  dermatological_skin: 'other_multimorbidity',
+  feeding_swallowing_rehabilitation: 'critical_care_specialized_support'
+};
+
+export function mapLegacyPathwaysToExpanded(
+  pathways: (ClinicalPathway | ExpandedClinicalPathwayId | string)[]
+): ExpandedClinicalPathwayId[] {
+  const result = new Set<ExpandedClinicalPathwayId>();
+  pathways.forEach(p => {
+    if (p in EXPANDED_TO_LEGACY_PATHWAY_MAP) {
+      result.add(p as ExpandedClinicalPathwayId);
+    } else if (p in LEGACY_TO_EXPANDED_PATHWAY_MAP) {
+      result.add(LEGACY_TO_EXPANDED_PATHWAY_MAP[p as ClinicalPathway]);
+    }
+  });
+  return Array.from(result);
+}
+
+export function mapExpandedPathwaysToLegacy(
+  pathways: (ExpandedClinicalPathwayId | ClinicalPathway | string)[]
+): ClinicalPathway[] {
+  const result = new Set<ClinicalPathway>();
+  pathways.forEach(p => {
+    if (p in EXPANDED_TO_LEGACY_PATHWAY_MAP) {
+      result.add(EXPANDED_TO_LEGACY_PATHWAY_MAP[p as ExpandedClinicalPathwayId]);
+    } else if (p in LEGACY_TO_EXPANDED_PATHWAY_MAP) {
+      result.add(p as ClinicalPathway);
+    } else {
+      result.add('other_multimorbidity');
+    }
+  });
+  return Array.from(result);
+}
 
 export const CLINICAL_PATHWAY_REGISTRY: ClinicalPathwayMetadata[] = [
   // ── Category 1: Metabolic & Organ Systems ─────────────────────────

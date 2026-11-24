@@ -60,8 +60,8 @@ export function adaptR5ContextToR4(
     if (med.status !== 'active') continue;
 
     const generic = (med.generic_name || '').toLowerCase();
-    const isTimingUnknown = med.is_timing_unknown || !med.administration_times || med.administration_times.length === 0;
-    const displayTime = isTimingUnknown ? 'UNKNOWN' : (med.administration_times[0] || '08:00');
+    const isTimingUnknown = med.is_timing_unknown || !med.administration_times || med.administration_times.length === 0 || med.administration_times.includes('UNKNOWN');
+    const displayTime = isTimingUnknown ? 'UNKNOWN' : (med.administration_times[0] || 'UNKNOWN');
 
     let instructionsEn = 'Take as prescribed';
     let instructionsBn = 'নির্দেশনা অনুযায়ী সেবন করুন';

@@ -19,6 +19,8 @@ import { evaluateMedicationNutritionInteractions } from '../../engine/r5Medicati
 import { analyzeInsulinRegimen } from '../../engine/r5InsulinEngine';
 import { resolveMultimorbidityConflicts } from '../../engine/r5MultimorbidityEngine';
 import { adaptR5ContextToR4 } from '../../engine/r5ToR4Adapter';
+import { usePractice } from '@/context/PracticeContext';
+import { useAssessment } from '@/context/AssessmentContext';
 import {
   Activity,
   Layers,
@@ -55,6 +57,15 @@ export const R5SystemsDashboard: React.FC<R5SystemsDashboardProps> = ({
   readOnly = false
 }) => {
   const [syncAlert, setSyncAlert] = useState<string | null>(null);
+
+  const { setActiveTab } = usePractice();
+  const { setCurrentStep, setActiveDomain } = useAssessment();
+
+  const handleNavigateToMedicationAssessment = () => {
+    setActiveTab('assessment');
+    setCurrentStep('step_functional');
+    setActiveDomain('medication_supplements');
+  };
 
   // 1. Evaluate Drug-Nutrient Interactions
   const dniFindings = useMemo(() => {
@@ -225,11 +236,11 @@ export const R5SystemsDashboard: React.FC<R5SystemsDashboardProps> = ({
         readOnly={readOnly}
       />
 
-      {/* 3. Running Medications & Reconciliation */}
+      {/* 3. Running Medications & Reconciliation (Authoritative Read-Only Reference) */}
       <RunningMedicationList
         medications={medications}
-        onUpdateMedications={onUpdateMedications}
-        readOnly={readOnly}
+        readOnly={true}
+        onNavigateToAssessment={handleNavigateToMedicationAssessment}
       />
 
       {/* 4. Insulin-Aware Nutrition Regimen (If Active) */}
