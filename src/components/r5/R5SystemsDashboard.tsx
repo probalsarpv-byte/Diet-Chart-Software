@@ -13,7 +13,11 @@ import { RunningMedicationList } from './RunningMedicationList';
 import { FunctionalMatrixSection } from './FunctionalMatrixSection';
 import { SystemsNetworkViewer } from './SystemsNetworkViewer';
 import { MultimorbidityConflictSection } from './MultimorbidityConflictSection';
-import { evaluateFunctionalMatrix, buildSystemsNetworkGraph } from '../../engine/r5SystemsNetworkEngine';
+import { 
+  evaluateFunctionalMatrix, 
+  buildSystemsNetworkGraph, 
+  adaptAssessmentEvidenceToMatrixInput 
+} from '../../engine/r5SystemsNetworkEngine';
 import { evaluateMedicationNutritionInteractions } from '../../engine/r5MedicationNutritionEngine';
 import { analyzeInsulinRegimen } from '../../engine/r5InsulinEngine';
 import { resolveMultimorbidityConflicts } from '../../engine/r5MultimorbidityEngine';
@@ -59,8 +63,8 @@ export const R5SystemsDashboard: React.FC<R5SystemsDashboardProps> = ({
 }) => {
   const [syncAlert, setSyncAlert] = useState<string | null>(null);
 
-  const { setActiveTab } = usePractice();
-  const { setCurrentStep, setActiveDomain } = useAssessment();
+  const { patient, setActiveTab } = usePractice();
+  const { functionalAnswers, labEntries, ffqHabits, setCurrentStep, setActiveDomain } = useAssessment();
 
   const handleNavigateToMedicationAssessment = () => {
     setActiveTab('assessment');
@@ -83,13 +87,18 @@ export const R5SystemsDashboard: React.FC<R5SystemsDashboardProps> = ({
     return analyzeInsulinRegimen(medications);
   }, [medications]);
 
-  // 3. Evaluate Functional Matrix & ATM
+  // 3. Evaluate Functional Matrix & ATM with full 14-domain assessment adapter (P1-001)
   const matrixState = useMemo(() => {
-    return evaluateFunctionalMatrix({
-      pathway_ids: pathwayState.selected_pathways,
+    const input = adaptAssessmentEvidenceToMatrixInput(
+      patient,
+      functionalAnswers,
+      labEntries,
+      ffqHabits,
+      pathwayState.selected_pathways,
       medications
-    });
-  }, [pathwayState.selected_pathways, medications]);
+    );
+    return evaluateFunctionalMatrix(input);
+  }, [patient, functionalAnswers, labEntries, ffqHabits, pathwayState.selected_pathways, medications]);
 
   // 4. Build Systems Network Graph
   const systemsGraph = useMemo(() => {

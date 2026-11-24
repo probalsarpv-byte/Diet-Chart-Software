@@ -105,19 +105,31 @@ export function resolveConflicts(
       }
     }
 
-    // 0b. Objective Lab-Gated Hyperkalemia Safety Boundary & Portion Review (P0-002)
+    // 0b. Objective Lab-Gated Hyperkalemia Safety Boundary & Portion Review (P0-001)
     if (food.tags.includes('high_potassium')) {
-      if (isSevereHyperkalemiaContraindicated) {
+      if (serumK !== undefined && serumK >= 6.0) {
         reasons.push({
-          conditionId: 'HYPERKALEMIA_SAFETY',
-          conditionNameBn: 'গুরুতর হাইপারক্যালেমিয়া জরুরি নিষেধাজ্ঞা',
-          conditionNameEn: 'Severe Hyperkalemia Acute Safety Stop',
+          conditionId: 'URGENT_CLINICAL_ASSESSMENT_REQUIRED',
+          conditionNameBn: 'জরুরি ক্লিনিক্যাল মূল্যায়ন প্রয়োজন (মারাত্মক হাইপারক্যালেমিয়া)',
+          conditionNameEn: 'Urgent Clinical Assessment Required (Severe Hyperkalemia)',
           status: 'RED',
           category: 'hard_contraindication',
-          provenance: 'Clinical Laboratory Biomarker Integration (Serum K+ >= 6.0 or Clinician Ceiling)',
+          provenance: 'Clinical Laboratory Biomarker Integration (Serum K+ >= 6.0 mEq/L)',
           isOverridable: false,
-          note_bn: 'মারাত্মক উচ্চ পটাশিয়াম (>= ৬.০ mEq/L) বা প্রেসক্রাইবড কঠোর সীমা; জীবনঘাতী কার্ডিয়াক অ্যারিথমিয়া রোধে সম্পূর্ণ বর্জন আবশ্যক।',
-          note_en: 'Severe documented hyperkalemia (K+ >= 6.0 mEq/L) or confirmed clinical ceiling; contraindicated to prevent lethal cardiac arrhythmia.'
+          note_bn: 'মারাত্মক উচ্চ পটাশিয়াম (>= ৬.০ mEq/L); জীবনঘাতী কার্ডিয়াক অ্যারিথমিয়ার জরুরি ঝুঁকি বিদ্যমান। শুধু ডায়েট নয়, অবিলম্বে চিকিৎসকের প্রত্যক্ষ মূল্যায়ন ও পর্যবেক্ষণ প্রয়োজন।',
+          note_en: 'Severe documented hyperkalemia (K+ >= 6.0 mEq/L); acute electrophysiological arrhythmia emergency. Urgent medical evaluation required before release of nutrition prescription.'
+        });
+      } else if (hasStrictClinicianLimit) {
+        reasons.push({
+          conditionId: 'HYPERKALEMIA_SAFETY',
+          conditionNameBn: 'চিকিৎসক-অনুমোদিত পটাশিয়াম সিলিং',
+          conditionNameEn: 'Clinician-Confirmed Potassium Limit',
+          status: 'RED',
+          category: 'hard_contraindication',
+          provenance: 'Prescribed Clinical Potassium Ceiling (< 2000 mg/day)',
+          isOverridable: false,
+          note_bn: 'চিকিৎসক কর্তৃক অনুমোদিত কঠোর পটাশিয়াম সীমাবদ্ধতা; উচ্চ পটাশিয়ামযুক্ত এই খাবারটি বর্জনীয়।',
+          note_en: 'Clinician-confirmed strict potassium ceiling (< 2000 mg/day); high potassium food restricted per medical order.'
         });
       } else if (isPotassiumPortionReviewRequired) {
         reasons.push({

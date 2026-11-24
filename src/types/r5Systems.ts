@@ -127,19 +127,39 @@ export type ATMType =
   | 'trigger'                  // Initiating acute event or circumstance
   | 'mediator';                // Factors perpetuating the observed dysfunction
 
+export type FunctionalConfidenceClassification =
+  | 'OBSERVED'
+  | 'PATIENT_REPORTED'
+  | 'LAB_SUPPORTED'
+  | 'CLINICIAN_VERIFIED'
+  | 'PLAUSIBLE_HYPOTHESIS'
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'confirmed_clinical'
+  | 'patient_reported'
+  | 'lab_supported'
+  | 'clinician_verified'
+  | 'plausible_hypothesis'
+  | 'insufficient_evidence';
+
 export interface FunctionalObservation {
   id: string;
   observation_id?: string;
+  patient_id?: string;
   domain: FunctionalMatrixDomain;
+  clinical_domain?: string;
   atm_type?: ATMType;
+  observation_type?: 'symptom' | 'biomarker' | 'anthropometric' | 'dietary' | 'medication_impact' | 'lifestyle' | 'pathway_context';
   title_en: string;
   title_bn: string;
   description_en: string;
   description_bn: string;
-  confidence_status: 'confirmed_clinical' | 'patient_reported' | 'lab_supported' | 'clinician_verified' | 'plausible_hypothesis' | 'insufficient_evidence';
+  confidence_status: FunctionalConfidenceClassification;
   evidence_source: string;
   source_type: 'intake_self_report' | 'clinical_history' | 'biomarker_lab' | 'functional_assessment' | 'clinician_evaluation';
+  supporting_data?: any;
   clinician_verified: boolean;
+  related_systems?: FunctionalMatrixDomain[];
+  potential_nutrition_implication?: string;
   visit_id?: string;
   recorded_at: string;
 }
@@ -219,9 +239,9 @@ export interface R5MedicationRecord {
   manufacturer?: string;
   formulation?: string;              // e.g. "Tablet", "Capsule", "Injection"
   product_strength?: string;         // e.g. "500 mg", "10 mg/5 mL"
-  prescribed_dose: string;           // e.g. "500 mg" or "2 tablets"
-  dose_unit: string;                 // e.g. "mg", "units", "tablets"
-  frequency: string;                 // e.g. "Twice Daily", "With breakfast"
+  prescribed_dose?: string;          // e.g. "500 mg" or "2 tablets"
+  dose_unit?: string;                // e.g. "mg", "units", "tablets"
+  frequency?: string;                // e.g. "Twice Daily", "With breakfast"
   route: string;                     // e.g. "Oral", "Subcutaneous"
   administration_times: string[];    // e.g. ["08:00", "20:00"]
   is_timing_unknown: boolean;
@@ -377,6 +397,31 @@ export interface R5NutritionAdjustmentContract {
     fluid_ml_max?: number;
     carbohydrate_consistency_required: boolean;
   };
+  acute_escalation?: {
+    required: boolean;
+    trigger?: string;
+    message_en: string;
+    message_bn: string;
+    priority: 'CRITICAL_URGENT' | 'HIGH_REVIEW';
+    block_release: boolean;
+  };
+  clinical_review_flags?: {
+    parameter: string;
+    flag: 'CLINICAL_REVIEW_REQUIRED' | 'RISK_FLAG' | 'NUTRITION_ADJUSTMENT_CANDIDATE' | 'CLINICIAN_APPROVED_TARGET' | 'HARD_CONTRAINDICATION';
+    rationale_en: string;
+    rationale_bn: string;
+    evidence_status?: string;
+  }[];
+  adjustment_candidates?: Array<{
+    id: string;
+    triggering_source: string;
+    clinical_rationale: string;
+    relevant_functional_systems: string[];
+    evidence_status: string;
+    proposed_adjustment: string;
+    clinician_review_required: boolean;
+    affected_diet_components: string[];
+  }>;
   absolute_contraindications: {
     food_id?: string;
     food_name_bn: string;
@@ -413,12 +458,13 @@ export type ScheduleMealRelationship =
   | 'AFTER_MEAL'
   | 'EMPTY_STOMACH'
   | 'INDEPENDENT'
-  | 'BEDTIME';
+  | 'BEDTIME'
+  | 'UNKNOWN';
 
 export interface PrescriptionScheduleItem {
   id: string;
-  time_slot_bn: string;        // e.g. "সকালের নাস্তার পর", "দুপুরের খাবারের পর", "রাতে ঘুমানোর আগে"
-  time_slot_en: string;        // e.g. "After Breakfast", "After Lunch", "Before Bed"
+  time_slot_bn: string;        // e.g. "সকালের নাস্তার পূর্বে (খালি পেটে)", "দুপুরের খাবারের পর"
+  time_slot_en: string;        // e.g. "Before Breakfast (Empty Stomach)", "After Lunch"
   type: PrescriptionScheduleItemType;
   brand_name: string;          // e.g. "Seclo 20", "Magnesium Glycinate"
   generic_name: string;        // e.g. "Omeprazole", "Magnesium"
@@ -428,6 +474,11 @@ export interface PrescriptionScheduleItem {
   clinical_instructions_en: string;
   meal_relationship: ScheduleMealRelationship;
   approval_status: 'APPROVED' | 'DRAFT_CANDIDATE' | 'REQUIRES_REVIEW';
+  actual_time?: string;        // e.g. "08:30" or "UNKNOWN"
+  is_prn?: boolean;            // As-needed
+  source_id?: string;          // Medication / Supplement record ID
+  source_type?: 'medication' | 'supplement';
+  verification_status?: string;
 }
 
 export interface UnifiedPrescriptionSchedule {
@@ -475,6 +526,7 @@ export interface StructuredTrafficLightGuide {
   total_green: number;
   total_yellow: number;
   total_red: number;
+  unclassified_queue?: FoodGuideEntry[];
   generated_at: string;
 }
 

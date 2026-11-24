@@ -667,7 +667,7 @@ describe('SHUDDHO R5 — Targeted Assessment Consolidation & Safety Acceptance',
       'Must require clinical review when serum potassium is unmeasured'
     );
 
-    // 2. CKD + CVD WITH documented hyperkalemia (K = 5.4 mEq/L) -> triggers strict restriction
+    // 2. CKD + CVD WITH documented borderline hyperkalemia (K = 5.4 mEq/L) -> triggers clinical review and portion control
     const kConflictWithHighK = resolveMultimorbidityConflicts({
       pathway_ids: ['renal_electrolyte', 'cardiovascular'],
       medications: [],
@@ -676,8 +676,23 @@ describe('SHUDDHO R5 — Targeted Assessment Consolidation & Safety Acceptance',
     const kConflictHigh = kConflictWithHighK.find(c => c.conflict_id === 'CONFLICT_RENAL_CVD_POTASSIUM');
     assert.ok(kConflictHigh);
     assert.ok(
+      kConflictHigh.resolved_priority_recommendation_en.includes('BORDERLINE POTASSIUM ELEVATION') ||
+      kConflictHigh.resolved_priority_recommendation_en.includes('CLINICAL_REVIEW_REQUIRED') ||
       kConflictHigh.resolved_priority_recommendation_en.includes('STRICT POTASSIUM RESTRICTION'),
-      'Must enforce strict potassium restriction when hyperkalemia is documented'
+      'Must require clinical review and portion control when borderline hyperkalemia is documented'
+    );
+
+    // 2b. CKD + CVD WITH severe acute hyperkalemia (K = 6.2 mEq/L) -> triggers acute medical escalation
+    const kConflictSevere = resolveMultimorbidityConflicts({
+      pathway_ids: ['renal_electrolyte', 'cardiovascular'],
+      medications: [],
+      lab_markers: { potassium: 6.2 }
+    });
+    const kConflictAcute = kConflictSevere.find(c => c.conflict_id === 'CONFLICT_RENAL_CVD_POTASSIUM');
+    assert.ok(kConflictAcute);
+    assert.ok(
+      kConflictAcute.resolved_priority_recommendation_en.includes('URGENT_CLINICAL_ASSESSMENT_REQUIRED'),
+      'Must trigger URGENT_CLINICAL_ASSESSMENT_REQUIRED when severe hyperkalemia (K >= 6.0) is documented'
     );
 
     // 3. CKD + Sarcopenia without dialysis status -> requires clinician review

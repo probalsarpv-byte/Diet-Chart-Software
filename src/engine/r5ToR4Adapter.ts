@@ -343,44 +343,72 @@ export function buildUnifiedPrescriptionSchedule(
 ): UnifiedPrescriptionSchedule {
   const items: PrescriptionScheduleItem[] = [];
 
-  // Helper to determine meal slot from time and meal relation
+  // Helper to determine meal slot from time and meal relation without inventing false defaults (P0-003)
   const resolveTimeSlot = (time: string, relation?: string): { bn: string; en: string } => {
     let periodEn = '';
     let periodBn = '';
-    if (time !== 'UNKNOWN') {
+    const hasTime = Boolean(time && time !== 'UNKNOWN');
+    if (hasTime) {
       const hour = parseInt(time.split(':')[0] || '8', 10);
       if (hour >= 5 && hour < 11) {
-        periodBn = 'সকালের নাস্তার পর';
-        periodEn = 'Morning / After Breakfast';
+        periodBn = 'সকালের নাস্তা';
+        periodEn = 'Breakfast';
       } else if (hour >= 11 && hour < 16) {
-        periodBn = 'দুপুরের খাবারের পর';
-        periodEn = 'Afternoon / After Lunch';
+        periodBn = 'দুপুরের খাবার';
+        periodEn = 'Lunch';
       } else if (hour >= 16 && hour < 20) {
-        periodBn = 'বিকেল / সন্ধ্যার নাস্তায়';
+        periodBn = 'বিকেল/সন্ধ্যার নাস্তা';
         periodEn = 'Evening Snack';
       } else {
-        periodBn = 'রাতের খাবারের পর';
-        periodEn = 'Night / After Dinner';
+        periodBn = 'রাতের খাবার';
+        periodEn = 'Dinner';
       }
     }
 
     if (relation === 'before_meal_empty_stomach') {
+      if (periodEn) {
+        return {
+          bn: `${periodBn}র ৩০ মিনিট পূর্বে (খালি পেটে)`,
+          en: `30 Mins Before ${periodEn} (Empty Stomach)`
+        };
+      }
       return { 
-        bn: periodBn ? `${periodBn} (খালি পেটে)` : 'খাবারের ৩০ মিনিট পূর্বে (খালি পেটে)', 
-        en: periodEn ? `${periodEn} (Empty Stomach)` : '30 Mins Before Meal (Empty Stomach)' 
+        bn: 'খাবারের ৩০ মিনিট পূর্বে (খালি পেটে)', 
+        en: '30 Mins Before Meal (Empty Stomach)' 
       };
     }
-    if (relation === 'bedtime') {
-      return { bn: 'রাতে ঘুমানোর আগে', en: 'At Bedtime' };
-    }
-    if (periodEn) {
-      return { bn: periodBn, en: periodEn };
-    }
-    if (relation === 'with_meal') {
+    if (relation === 'with_meal' || relation === 'with_breakfast' || relation === 'with_dinner') {
+      if (relation === 'with_breakfast') {
+        return { bn: 'সকালের নাস্তার সাথে', en: 'With Breakfast' };
+      }
+      if (relation === 'with_dinner') {
+        return { bn: 'রাতের খাবারের সাথে', en: 'With Dinner' };
+      }
+      if (periodEn) {
+        return { bn: `${periodBn}র সাথে`, en: `With ${periodEn}` };
+      }
       return { bn: 'খাবারের সাথে', en: 'With Meal' };
     }
     if (relation === 'after_meal') {
+      if (periodEn) {
+        return { bn: `${periodBn}র পর`, en: `After ${periodEn}` };
+      }
       return { bn: 'খাবারের পর', en: 'After Meal' };
+    }
+    if (relation === 'bedtime' || relation === 'before_bed') {
+      return { bn: 'রাতে ঘুমানোর আগে', en: 'At Bedtime' };
+    }
+    if (relation === 'empty_stomach_waking') {
+      return { bn: 'ঘুম থেকে উঠে খালি পেটে', en: 'Upon Waking (Empty Stomach)' };
+    }
+    if (relation === 'independent_of_meals') {
+      return { 
+        bn: hasTime ? `নির্দিষ্ট সময়ে (${time})` : 'খাবারের সাথে সম্পর্কহীন', 
+        en: hasTime ? `Scheduled Time (${time})` : 'Independent of Meals' 
+      };
+    }
+    if (hasTime) {
+      return { bn: `নির্দিষ্ট সময়ে (${time})`, en: `Scheduled Time (${time})` };
     }
     return { bn: 'অনির্ধারিত সময় (পর্যালোচনা প্রয়োজন)', en: 'Time Unspecified (Requires Review)' };
   };
@@ -416,21 +444,29 @@ export function buildUnifiedPrescriptionSchedule(
       durationText = 'অনির্ধারিত সময়কাল (পর্যালোচনা প্রয়োজন)';
     }
 
-    let mealRel: ScheduleMealRelationship = 'AFTER_MEAL';
+    // Never default unknown meal relationship to AFTER_MEAL (P0-003)
+    let mealRel: ScheduleMealRelationship = 'UNKNOWN';
     if (med.relationship_to_meals === 'before_meal_empty_stomach') mealRel = 'BEFORE_MEAL';
     else if (med.relationship_to_meals === 'with_meal') mealRel = 'WITH_MEAL';
+    else if (med.relationship_to_meals === 'after_meal') mealRel = 'AFTER_MEAL';
     else if (med.relationship_to_meals === 'bedtime') mealRel = 'BEDTIME';
     else if (med.relationship_to_meals === 'independent_of_meals') mealRel = 'INDEPENDENT';
 
-    const defaultInstructionsBn = med.relationship_to_meals === 'before_meal_empty_stomach' 
-      ? 'খালি পেটে সেব্য' 
-      : (med.relationship_to_meals === 'bedtime' ? 'রাতে শোবার পূর্বে সেব্য' : 'খাবারের পর পানি সহ সেব্য');
-    const defaultInstructionsEn = med.relationship_to_meals === 'before_meal_empty_stomach' 
-      ? 'Take on empty stomach' 
-      : (med.relationship_to_meals === 'bedtime' ? 'Take at bedtime' : 'Take after meal with water');
-
-    const instrBn = med.prescriber_instructions || defaultInstructionsBn;
-    const instrEn = med.prescriber_instructions || defaultInstructionsEn;
+    // Never default missing instructions to "Take after meal with water" (P0-003)
+    const instrBn = med.prescriber_instructions || (
+      med.relationship_to_meals === 'before_meal_empty_stomach' ? 'খালি পেটে সেব্য' :
+      med.relationship_to_meals === 'bedtime' ? 'রাতে শোবার পূর্বে সেব্য' :
+      med.relationship_to_meals === 'with_meal' ? 'খাবারের সাথে সেব্য' :
+      med.relationship_to_meals === 'after_meal' ? 'খাবারের পর সেব্য' :
+      'ক্লিনিক্যাল নির্দেশনা অনুপস্থিত (পর্যালোচনা প্রয়োজন)'
+    );
+    const instrEn = med.prescriber_instructions || (
+      med.relationship_to_meals === 'before_meal_empty_stomach' ? 'Take on empty stomach' :
+      med.relationship_to_meals === 'bedtime' ? 'Take at bedtime' :
+      med.relationship_to_meals === 'with_meal' ? 'Take with meal' :
+      med.relationship_to_meals === 'after_meal' ? 'Take after meal' :
+      'Clinical instructions unspecified (Requires Review)'
+    );
 
     // Handle administration times: create entry for EACH confirmed administration
     const isTimingUnknown = Boolean(med.is_timing_unknown || !med.administration_times || med.administration_times.length === 0 || med.administration_times.includes('UNKNOWN'));
@@ -450,7 +486,12 @@ export function buildUnifiedPrescriptionSchedule(
         clinical_instructions_bn: instrBn,
         clinical_instructions_en: instrEn,
         meal_relationship: mealRel,
-        approval_status: med.verification_status === 'clinician_verified' && hasPrescribedDose ? 'APPROVED' : 'REQUIRES_REVIEW'
+        approval_status: med.verification_status === 'clinician_verified' && hasPrescribedDose ? 'APPROVED' : 'REQUIRES_REVIEW',
+        actual_time: timeStr,
+        is_prn: Boolean(med.is_prn),
+        source_id: med.id,
+        source_type: 'medication',
+        verification_status: med.verification_status
       });
     });
   }
@@ -459,43 +500,58 @@ export function buildUnifiedPrescriptionSchedule(
   for (const supp of supplements) {
     const isApproved = supp.approval_status === 'clinician_approved';
 
-    let timeSlotBn = 'দুপুরের খাবারের পর';
-    let timeSlotEn = 'After Lunch';
+    // Never default supplement timing to Lunch; use supp.administration_time and relationship_to_food (P0-003)
+    const suppTime = supp.administration_time || 'UNKNOWN';
+    const suppSlot = resolveTimeSlot(suppTime, supp.relationship_to_food);
 
-    if (supp.relationship_to_food === 'empty_stomach_waking') {
-      timeSlotBn = 'ঘুম থেকে উঠে খালি পেটে';
-      timeSlotEn = 'Upon Waking (Empty Stomach)';
-    } else if (supp.relationship_to_food === 'before_bed' || supp.relationship_to_food === 'with_dinner') {
-      timeSlotBn = 'রাতে ঘুমানোর আগে';
-      timeSlotEn = 'At Bedtime';
-    } else if (supp.relationship_to_food === 'with_breakfast') {
-      timeSlotBn = 'সকালের নাস্তার সাথে';
-      timeSlotEn = 'With Breakfast';
-    }
-
-    let mealRel: ScheduleMealRelationship = 'WITH_MEAL';
-    if (supp.relationship_to_food === 'empty_stomach_waking') mealRel = 'EMPTY_STOMACH';
-    else if (supp.relationship_to_food === 'before_bed') mealRel = 'BEDTIME';
+    let mealRel: ScheduleMealRelationship = 'UNKNOWN';
+    const rel = (supp.relationship_to_food || '') as string;
+    if (rel === 'empty_stomach_waking') mealRel = 'EMPTY_STOMACH';
+    else if (rel === 'before_bed') mealRel = 'BEDTIME';
+    else if (rel === 'with_meal' || rel === 'with_breakfast' || rel === 'with_lunch' || rel === 'with_dinner' || rel === 'with_fatty_meal') mealRel = 'WITH_MEAL';
+    else if (rel === 'after_meal') mealRel = 'AFTER_MEAL';
+    else if (rel === 'before_meal') mealRel = 'BEFORE_MEAL';
 
     const elementalDose = (supp.elemental_dose_numeric && supp.elemental_dose_unit)
       ? `${supp.elemental_dose_numeric} ${supp.elemental_dose_unit}`
       : (supp.total_compound_dose || 'অনির্ধারিত মাত্রা');
 
+    // Never default supplement frequency to "Daily" (P0-003)
+    const hasFrequency = Boolean(supp.frequency && supp.frequency.trim() !== '');
+    const freqText = hasFrequency ? supp.frequency : 'অনির্ধারিত ফ্রিকোয়েন্সি (পর্যালোচনা প্রয়োজন)';
+
     items.push({
       id: `SCHED_SUPP_${supp.id}`,
-      time_slot_bn: timeSlotBn,
-      time_slot_en: timeSlotEn,
+      time_slot_bn: suppSlot.bn,
+      time_slot_en: suppSlot.en,
       type: 'SUPPLEMENT',
       brand_name: supp.brand_name || supp.chemical_form || supp.generic_nutrient,
       generic_name: supp.generic_nutrient,
-      dosage_and_quantity: `${elementalDose} (${supp.frequency || 'Daily'})`.trim(),
-      duration: supp.duration_weeks ? `${supp.duration_weeks * 7} দিন (${supp.duration_weeks} সপ্তাহ)` : 'অনির্ধারিত সময়কাল',
-      clinical_instructions_bn: supp.relationship_to_food === 'empty_stomach_waking' ? 'সকালে খালি পেটে গ্রহণ করুন' : 'খাবারের সাথে গ্রহণ করুন',
-      clinical_instructions_en: supp.relationship_to_food === 'empty_stomach_waking' ? 'Take on empty stomach upon waking' : 'Take with meals',
+      dosage_and_quantity: `${elementalDose} (${freqText})`.trim(),
+      duration: supp.duration_weeks ? `${supp.duration_weeks * 7} দিন (${supp.duration_weeks} সপ্তাহ)` : 'অনির্ধারিত সময়কাল (পর্যালোচনা প্রয়োজন)',
+      clinical_instructions_bn: supp.relationship_to_food === 'empty_stomach_waking' ? 'সকালে খালি পেটে গ্রহণ করুন' : (supp.relationship_to_food === 'with_dinner' ? 'রাতের খাবারের সাথে গ্রহণ করুন' : (hasFrequency ? 'চিকিৎসকের নির্দেশ অনুযায়ী গ্রহণ করুন' : 'ক্লিনিক্যাল নির্দেশনা প্রয়োজন')),
+      clinical_instructions_en: supp.relationship_to_food === 'empty_stomach_waking' ? 'Take on empty stomach upon waking' : (supp.relationship_to_food === 'with_dinner' ? 'Take with dinner' : (hasFrequency ? 'Take as directed by clinician' : 'Clinical instructions required')),
       meal_relationship: mealRel,
-      approval_status: isApproved ? 'APPROVED' : 'DRAFT_CANDIDATE'
+      approval_status: isApproved ? 'APPROVED' : 'DRAFT_CANDIDATE',
+      actual_time: suppTime,
+      is_prn: false,
+      source_id: supp.id,
+      source_type: 'supplement',
+      verification_status: isApproved ? 'clinician_approved' : 'draft_candidate'
     });
   }
+
+  // 3. Chronological Sorting by Actual Time (P0-003)
+  const getTimeWeight = (item: PrescriptionScheduleItem): number => {
+    if (item.is_prn) return 99999;
+    if (!item.actual_time || item.actual_time === 'UNKNOWN') return 99000;
+    const parts = item.actual_time.split(':');
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1] || '0', 10);
+    return isNaN(h) ? 99000 : h * 60 + m;
+  };
+
+  items.sort((a, b) => getTimeWeight(a) - getTimeWeight(b));
 
   return {
     patient_id: patientId,

@@ -107,13 +107,13 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
       assert.strictEqual(redK.length, 0, 'Borderline potassium must not trigger un-overridable RED');
     });
 
-    test('severe hyperkalemia (K+ >= 6.0) triggers strict HYPERKALEMIA_SAFETY RED stop', () => {
+    test('severe hyperkalemia (K+ >= 6.0) triggers strict emergency stop', () => {
       const labs = { serum_potassium: 6.2, egfr: 20 };
       const result = resolveConflicts(allFoods, [], [], [], [], [], 1, undefined, labs);
 
-      const redK = result.red.filter(f => f.reasons.some(r => r.conditionId === 'HYPERKALEMIA_SAFETY'));
-      assert.ok(redK.length > 0, 'K+ >= 6.0 must trigger HYPERKALEMIA_SAFETY RED');
-      assert.strictEqual(redK[0].reasons.find(r => r.conditionId === 'HYPERKALEMIA_SAFETY')?.isOverridable, false);
+      const redK = result.red.filter(f => f.reasons.some(r => r.conditionId === 'URGENT_CLINICAL_ASSESSMENT_REQUIRED' || r.conditionId === 'HYPERKALEMIA_SAFETY'));
+      assert.ok(redK.length > 0, 'K+ >= 6.0 must trigger URGENT_CLINICAL_ASSESSMENT_REQUIRED / HYPERKALEMIA_SAFETY RED');
+      assert.strictEqual(redK[0].reasons.find(r => r.conditionId === 'URGENT_CLINICAL_ASSESSMENT_REQUIRED' || r.conditionId === 'HYPERKALEMIA_SAFETY')?.isOverridable, false);
     });
 
     test('unknown potassium results remain unknown without arbitrary restriction', () => {
@@ -186,6 +186,8 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
         raw_to_cooked_ratio: 1,
         glycemic_load: 'low',
         pral_score: -0.5,
+        prep_note_bn: '',
+        prep_note_en: '',
         tags: []
       };
 
@@ -264,7 +266,7 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
       ];
 
       const schedule = buildUnifiedPrescriptionSchedule('pat_001', mockMeds, mockSupplements, {
-        clinician_name: 'Dr. Clinical Nutritionist',
+        clinician_name: 'Dr. Authorized Clinician',
         license_number: 'CN-2026-001',
         approved_at: new Date().toISOString()
       });
@@ -291,10 +293,17 @@ describe('Phase R5 — Diet Integration & Prescription Contracts', () => {
           generic_name: 'Paracetamol',
           product_strength: '500 mg',
           prescribed_dose: undefined, // Missing dose!
+          dose_unit: 'mg',
           frequency: undefined, // Missing frequency!
+          route: 'Oral',
+          administration_times: [],
+          is_timing_unknown: true,
+          relationship_to_meals: 'unknown',
+          is_prn: false,
+          verification_status: 'unverified',
           status: 'active',
           rule_coverage: 'fully_covered',
-          source: 'patient_intake'
+          source: 'intake_staged'
         }
       ];
 

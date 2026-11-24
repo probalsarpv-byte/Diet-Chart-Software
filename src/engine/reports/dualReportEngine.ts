@@ -795,7 +795,7 @@ export function buildClinicianReportProjection(options: {
 
 // ── 4b. 7-FOOD-GROUP TRAFFIC LIGHT CLASSIFICATION ENGINE ─────────
 
-export function mapFoodToSevenFoodGroup(food: FoodItem): SevenFoodGroupCategory {
+export function mapFoodToSevenFoodGroup(food: FoodItem): SevenFoodGroupCategory | 'unclassified' {
   const cat = (food.category || '').toLowerCase().trim();
   const exchange = ((food as any).exchange_group || '').toLowerCase().trim();
   const nameEn = (food.name_en || '').toLowerCase();
@@ -870,8 +870,10 @@ export function mapFoodToSevenFoodGroup(food: FoodItem): SevenFoodGroupCategory 
     return 'vegetables';
   }
 
-  // 3. If genuinely unclassifiable, assign to spices_beverages / other context rather than silently dumping into vegetables
-  return 'spices_beverages';
+  // 3. P1-003: For food records without a reliable category: mark as UNCLASSIFIED.
+  // Never silently assign an incorrect group (e.g. Vegetables or Spices).
+  // Preserves original food ID for data quality review queue.
+  return 'unclassified';
 }
 
 export function buildStructuredTrafficLightGuide(trafficLight: any): StructuredTrafficLightGuide {
@@ -895,6 +897,18 @@ export function buildStructuredTrafficLightGuide(trafficLight: any): StructuredT
     guidance_en: (f as any).reasons?.[0]?.note_en
   });
 
+  const unclassifiedQueue: FoodGuideEntry[] = [];
+  const allTrafficFoods = [
+    ...(trafficLight?.green || []),
+    ...(trafficLight?.yellow || []),
+    ...(trafficLight?.red || [])
+  ];
+  for (const f of allTrafficFoods) {
+    if (mapFoodToSevenFoodGroup(f) === 'unclassified') {
+      unclassifiedQueue.push(mapToEntry(f));
+    }
+  }
+
   const sections: SevenFoodGroupSection[] = groupsDefinition.map(g => {
     const green = (trafficLight?.green || []).filter((f: FoodItem) => mapFoodToSevenFoodGroup(f) === g.id).map(mapToEntry);
     const yellow = (trafficLight?.yellow || []).filter((f: FoodItem) => mapFoodToSevenFoodGroup(f) === g.id).map(mapToEntry);
@@ -914,6 +928,7 @@ export function buildStructuredTrafficLightGuide(trafficLight: any): StructuredT
     total_green: trafficLight?.green?.length || 0,
     total_yellow: trafficLight?.yellow?.length || 0,
     total_red: trafficLight?.red?.length || 0,
+    unclassified_queue: unclassifiedQueue.length > 0 ? unclassifiedQueue : undefined,
     generated_at: new Date().toISOString()
   };
 }

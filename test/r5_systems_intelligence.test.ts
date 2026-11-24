@@ -596,7 +596,21 @@ describe('Phase R5 — Systems Intelligence & Clinical Engines', () => {
       const kConflict = conflicts.find(c => c.conflict_id === 'CONFLICT_RENAL_CVD_POTASSIUM');
       assert.ok(kConflict);
       assert.strictEqual(kConflict.parameter, 'potassium');
-      assert.ok(kConflict.resolved_priority_recommendation_en.includes('STRICT POTASSIUM RESTRICTION'));
+      assert.ok(
+        kConflict.resolved_priority_recommendation_en.includes('POTASSIUM PHARMACOTHERAPY ADVISORY') ||
+        kConflict.resolved_priority_recommendation_en.includes('STRICT POTASSIUM RESTRICTION') ||
+        kConflict.resolved_priority_recommendation_en.includes('URGENT_CLINICAL_ASSESSMENT_REQUIRED')
+      );
+
+      // Verify documented acute hyperkalemia (K+ >= 6.0) triggers acute medical escalation
+      const acuteConflicts = resolveMultimorbidityConflicts({
+        pathway_ids: ['renal_electrolyte', 'cardiovascular'],
+        medications: meds,
+        lab_markers: { potassium: 6.2 }
+      });
+      const acuteK = acuteConflicts.find(c => c.conflict_id === 'CONFLICT_RENAL_CVD_POTASSIUM');
+      assert.ok(acuteK);
+      assert.ok(acuteK.resolved_priority_recommendation_en.includes('URGENT_CLINICAL_ASSESSMENT_REQUIRED'));
     });
 
     it('Priority 4: CKD vs Sarcopenia balances protein at 0.8 g/kg to avoid protein-energy wasting', () => {

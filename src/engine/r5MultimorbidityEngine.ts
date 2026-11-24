@@ -150,21 +150,26 @@ export function resolveMultimorbidityConflicts(input: MultimorbidityInput): Mult
 
     let resEn = '';
     let resBn = '';
+    let requiresUrgentEscalation = false;
 
     if (serumK !== undefined && serumK !== null) {
-      if (serumK > 5.0 || hasKRetention) {
-        resEn = `STRICT POTASSIUM RESTRICTION (< 2000 mg/day): Documented serum K+ (${serumK} mEq/L) ${hasKRetention ? 'with K-retaining pharmacotherapy' : ''} indicates severe hyperkalemic vulnerability. Lethal cardiac arrhythmia overrides DASH potassium liberalization. Avoid potassium chloride salt substitutes.`;
-        resBn = `কঠোর পটাশিয়াম নিয়ন্ত্রণ (< ২০০০ মিলিগ্রাম/দিন): রক্তে উচ্চ পটাশিয়াম (${serumK} mEq/L) এবং কিডনির কারণে হৃদযন্ত্রের ছন্দপতনের মারাত্মক ঝুঁকি বিদ্যমান। বিকল্প ডায়েট লবণ বর্জন করুন।`;
+      if (serumK >= 6.0) {
+        requiresUrgentEscalation = true;
+        resEn = `URGENT_CLINICAL_ASSESSMENT_REQUIRED (Serum K+ ${serumK} mEq/L): Severe documented hyperkalemia constitutes an acute medical emergency. Immediate medical/nephrological escalation, repeat electrolyte verification, and ECG monitoring take precedence. A dietary guide cannot manage an acute electrolyte crisis; unreviewed nutrition prescription release is blocked pending clinical stabilization.`;
+        resBn = `জরুরি ক্লিনিক্যাল মূল্যায়ন প্রয়োজন (সিরাম পটাশিয়াম ${serumK} mEq/L): মারাত্মক হাইপারক্যালেমিয়া একটি তীব্র জরুরি অবস্থা। অবিলম্বে চিকিৎসকের পর্যবেক্ষণ ও ইসিজি প্রয়োজন। শুধু ডায়েট চার্ট দিয়ে তীব্র হাইপারক্যালেমিয়া নিয়ন্ত্রণ সম্ভব নয়; চিকিৎসকের অনুমোদন ছাড়া প্রেসক্রিপশন প্রকাশ স্থগিত।`;
+      } else if (serumK >= 5.0) {
+        resEn = `CLINICAL_REVIEW_REQUIRED — BORDERLINE POTASSIUM ELEVATION (${serumK} mEq/L)${hasKRetention ? ' with K-retaining pharmacotherapy' : ''}: Serum potassium is mildly to moderately elevated. Individualized portion control, culinary preparation (leaching/boiling vegetables), and clinician-confirmed potassium target are required. Avoid arbitrary universal 2000 mg/day restriction without documented clinical indication.`;
+        resBn = `ক্লিনিক্যাল পর্যালোচনা প্রয়োজন — পটাশিয়াম কিছুটা বৃদ্ধি (${serumK} mEq/L): রক্তে পটাশিয়াম কিছুটা বেশি। খাবারের পরিমাণ নিয়ন্ত্রণ এবং শাকসবজি সিদ্ধ করে পানি ফেলে খাওয়ার পরামর্শ; কোনো সুনির্দিষ্ট ক্লিনিক্যাল আদেশ ছাড়া সবার জন্য ২০০০ মিলিগ্রামের ঢালাও বাধ্যবাধকতা নয়।`;
       } else if (serumK < 3.5) {
         resEn = `HYPOKALEMIA RISK DETECTED (${serumK} mEq/L): Serum potassium is subnormal. Strict potassium restriction is CONTRAINDICATED. Maintain potassium intake and recheck electrolytes.`;
         resBn = `লো পটাশিয়াম ঝুঁকি (${serumK} mEq/L): রক্তে পটাশিয়াম স্বাভাবিকের নিচে। পটাশিয়াম সীমাবদ্ধ করা নিষিদ্ধ।`;
       } else {
-        resEn = `MONITORED POTASSIUM BALANCE: Serum potassium (${serumK} mEq/L) is currently normal. Avoid severe restriction; monitor serum potassium regularly while maintaining cardiovascular-healthy foods.`;
-        resBn = `নিয়ন্ত্রিত সুষম পটাশিয়াম: রক্তে পটাশিয়াম স্বাভাবিক রয়েছে। অতিরিক্ত নিয়ন্ত্রণ না করে নিয়মিত পরীক্ষা করুন।`;
+        resEn = `MONITORED POTASSIUM BALANCE: Serum potassium (${serumK} mEq/L) is currently normal. Avoid severe blanket restriction; monitor serum potassium regularly while maintaining cardiovascular-healthy foods.`;
+        resBn = `নিয়ন্ত্রিত সুষম পটাশিয়াম: রক্তে পটাশিয়াম স্বাভাবিক রয়েছে। ঢালাও নিষেধাজ্ঞা পরিহার করুন এবং কার্ডিওভাসকুলার স্বাস্থ্যকর খাবার বজায় রেখে পর্যবেক্ষণ করুন।`;
       }
     } else if (hasKRetention) {
-      resEn = 'STRICT POTASSIUM RESTRICTION ADVISORY (< 2000-2400 mg/day): Patient is on potassium-retaining pharmacotherapy in renal impairment context. Lethal hyperkalemic arrhythmia risk overrides DASH potassium liberalization. Monitor serum potassium.';
-      resBn = 'পটাশিয়াম নিয়ন্ত্রণ পরামর্শ: পটাশিয়াম ধরে রাখা ওষুধ সেবনের কারণে পটাশিয়াম পরীক্ষা না করা পর্যন্ত উচ্চ পটাশিয়ামযুক্ত খাবার সতর্কতার সাথে গ্রহণ করুন।';
+      resEn = 'POTASSIUM PHARMACOTHERAPY ADVISORY: Patient is on potassium-retaining pharmacotherapy in renal impairment context. Individualized clinician review and electrolyte monitoring required before establishing numeric intake ceilings.';
+      resBn = 'পটাশিয়াম ওষুধ সংক্রান্ত সতর্কতা: পটাশিয়াম ধরে রাখা ওষুধ সেবনের কারণে সুনির্দিষ্ট সংখ্যাসূচক সীমা নির্ধারণের পূর্বে ল্যাব পরীক্ষা ও চিকিৎসকের পর্যালোচনা প্রয়োজন।';
     } else {
       resEn = 'INDIVIDUALIZED POTASSIUM TARGET REQUIRES CLINICIAN REVIEW: Serum potassium and renal function unmeasured. Avoid autonomous severe potassium restriction (< 2000 mg/day) without laboratory confirmation of hyperkalemia. Screen electrolytes prior to establishing numeric intake ceilings.';
       resBn = 'ব্যক্তিগত পটাশিয়াম লক্ষ্যমাত্রা চিকিৎসকের পর্যালোচনা প্রয়োজন: সিরাম পটাশিয়াম এবং কিডনি কার্যকারিতা পরীক্ষিত নয়। রক্ত পরীক্ষার আগে স্বয়ংক্রিয়ভাবে পটাশিয়াম অতিরিক্ত নিয়ন্ত্রণ করবেন না।';
@@ -192,8 +197,12 @@ export function resolveMultimorbidityConflicts(input: MultimorbidityInput): Mult
       ],
       resolved_priority_recommendation_en: resEn,
       resolved_priority_recommendation_bn: resBn,
-      clinical_decision_rationale_en: 'Electrophysiological vulnerability of myocardium: Hyperkalemia alters cardiac resting membrane potential, leading to peaked T waves, conduction block, and fatal ventricular fibrillation. Excretory renal threshold strictly overrides vascular benefits.',
-      clinical_decision_rationale_bn: 'রক্তে অতিরিক্ত পটাশিয়াম হৃদযন্ত্রের স্পন্দনের স্বাভাবিক বৈদ্যুতিক তরঙ্গ বিঘ্নিত করে এবং হঠাৎ হার্ট অ্যাটাকের ঝুঁকি তৈরি করে। তাই কিডনির সুরক্ষায় পটাশিয়াম সীমিত রাখা বাধ্যতামূলক।',
+      clinical_decision_rationale_en: requiresUrgentEscalation 
+        ? 'CRITICAL SAFETY ESCALATION: Severe hyperkalemia (K >= 6.0) causes rapid conduction abnormalities and ventricular fibrillation. Acute medical stabilization overrides standard dietary planning.'
+        : 'Electrophysiological vulnerability of myocardium: Hyperkalemia alters cardiac resting membrane potential. Excretory renal status and measured laboratory levels guide balanced portion moderation rather than uncalibrated prohibition.',
+      clinical_decision_rationale_bn: requiresUrgentEscalation
+        ? 'জরুরি নিরাপত্তা সতর্কতা: মারাত্মক উচ্চ পটাশিয়াম (>= ৬.০) হৃদযন্ত্রের স্পন্দনে হঠাৎ ব্যাঘাত ঘটাতে পারে। তীব্র ইলেক্ট্রোলাইট অস্বাভাবিকতায় জরুরি চিকিৎসা ডায়েট চার্টের চেয়ে অগ্রাধিকার পাবে।'
+        : 'রক্তে অতিরিক্ত পটাশিয়াম হৃদযন্ত্রের স্পন্দনের স্বাভাবিক বৈদ্যুতিক তরঙ্গ বিঘ্নিত করতে পারে। সুনির্দিষ্ট ল্যাব পরীক্ষার ভিত্তিতে পরিমিত রন্ধন ও পরিমাপ নিশ্চিত করতে হবে।',
       requires_clinician_verification: true,
       hard_safety_boundary_en: 'Potassium chloride salt substitutes are strictly contraindicated in renal impairment.',
       hard_safety_boundary_bn: 'পটাশিয়াম ক্লোরাইডযুক্ত ডায়েট লবণ বা বিকল্প লবণ ব্যবহার সম্পূর্ণ নিষিদ্ধ।'

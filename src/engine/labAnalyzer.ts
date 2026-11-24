@@ -9,7 +9,7 @@ function isValidNumber(val: any): val is number {
  * Evaluates biomarkers against strict Functional Medicine Optimal Targets
  * and clearly separates functional risk indicators from clinical diagnostic thresholds.
  */
-export function analyzeFunctionalLabs(labs: Partial<FunctionalLabs>, gender: 'male' | 'female' = 'female'): FunctionalLabs {
+export function analyzeFunctionalLabs(labs: Partial<FunctionalLabs>, gender: 'male' | 'female' | 'unspecified' = 'female'): FunctionalLabs {
   const flags: LabFlag[] = [];
 
   // 1. HOMA-IR Calculation
@@ -267,14 +267,14 @@ export function analyzeFunctionalLabs(labs: Partial<FunctionalLabs>, gender: 'ma
   // 9. Ferritin
   if (isValidNumber(labs.ferritin)) {
     const val = labs.ferritin;
-    const minOpt = gender === 'female' ? 40 : 50;
-    const maxOpt = gender === 'female' ? 120 : 150;
+    const minOpt = gender === 'male' ? 50 : 40;
+    const maxOpt = gender === 'male' ? 150 : 120;
     const isOpt = val >= minOpt && val <= maxOpt;
     flags.push({
       marker: "Ferritin (Iron Stores)",
       value: val,
       unit: "ng/mL",
-      conventional_range: gender === 'female' ? "15 - 150 ng/mL" : "30 - 400 ng/mL",
+      conventional_range: gender === 'male' ? "30 - 400 ng/mL" : "15 - 150 ng/mL",
       optimal_range: `${minOpt} - ${maxOpt} ng/mL`,
       status: isOpt ? 'optimal' : val < minOpt ? 'abnormal' : 'borderline',
       is_diagnostic_threshold: false,
@@ -410,7 +410,7 @@ export function analyzeFunctionalLabs(labs: Partial<FunctionalLabs>, gender: 'ma
 
 export function analyzeFunctionalBiomarkers(
   labs: Partial<FunctionalLabs>,
-  gender: 'male' | 'female' = 'female'
+  gender: 'male' | 'female' | 'unspecified' = 'female'
 ) {
   const result = analyzeFunctionalLabs(labs, gender);
   const nonHdlFlag = result.lab_flags.find(f => f.marker.toLowerCase().includes('non-hdl'));

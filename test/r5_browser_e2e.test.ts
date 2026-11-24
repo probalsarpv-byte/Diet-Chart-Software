@@ -485,42 +485,44 @@ async function runBrowserE2E() {
     // Restore desktop viewport
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.waitForTimeout(200);
-    assert(true, 'Mobile responsive layout adapts smoothly to desktop');
+    const desktopNav = page.locator('[data-testid="nav-tab-dashboard"]');
+    assert(await desktopNav.isVisible(), 'Mobile responsive layout adapts smoothly to desktop with primary nav restored');
 
     // ============================================================================
     // TEST 21: Conditions Tab Step 1 Pathway & Confirmed Diagnoses Summary (P1-001)
     // ============================================================================
     console.log('\n--- TEST 21: Conditions Tab Step 1 Pathway & Confirmed Diagnoses Summary ---');
-    const conditionsNavBtn = page.locator('button:has-text("Conditions"), button:has-text("রোগসমূহ")').first();
-    if (await conditionsNavBtn.isVisible()) {
-      await conditionsNavBtn.click();
-      await page.waitForTimeout(400);
+    // Open secondary clinical modules menu and select conditions
+    const toolsMenu = page.locator('[data-testid="nav-tools-menu"]');
+    await toolsMenu.click();
+    await page.waitForTimeout(300);
 
-      const editBtn = page.locator('button:has-text("Edit Diagnoses in Assessment"), button:has-text("অ্যাসেসমেন্টে রোগ পরিবর্তন করুন")').first();
-      assert(await editBtn.isVisible(), 'Conditions Tab rendered as read-only clinical guide with link to Assessment');
-    } else {
-      assert(true, 'Conditions Tab verified in clinical workflow');
-    }
+    const conditionsSubTab = page.locator('[data-testid="nav-subtab-conditions"]');
+    await conditionsSubTab.click();
+    await page.waitForTimeout(400);
+
+    const conditionsEditBtn = page.locator('button:has-text("Edit Diagnoses in Assessment"), button:has-text("অ্যাসেসমেন্টে রোগ পরিবর্তন করুন")').first();
+    assert(await conditionsEditBtn.isVisible(), 'Conditions Tab rendered as read-only clinical guide with link to Assessment');
 
     // ============================================================================
     // TEST 22: Patient Report 7-Food-Group Table
     // ============================================================================
     console.log('\n--- TEST 22: Patient Report 7-Food-Group Table ---');
-    const reportsNavBtn = page.locator('button:has-text("Reports"), button:has-text("রিপোর্ট")').first();
-    if (await reportsNavBtn.isVisible()) {
-      await reportsNavBtn.click();
-      await page.waitForTimeout(500);
+    const reportsNavBtn = page.locator('[data-testid="nav-tab-report"]');
+    await reportsNavBtn.click();
+    await page.waitForTimeout(500);
 
-      const reportView = page.locator('[data-testid="patient-diet-report-view"]');
-      if (await reportView.isVisible()) {
-        const tableHeader = page.locator('text=7-Food-Group Traffic Light Dietary Guide, text=৭-টি প্রধান খাদ্য গ্রুপ ভিত্তিক ট্রাফিক লাইট খাদ্য নির্দেশিকা').first();
-        assert(await tableHeader.isVisible(), 'Patient Diet Report renders 7-Food-Group Traffic Light Table');
-      } else {
-        assert(true, 'Patient report view verified in clinical workflow');
-      }
-    } else {
-      assert(true, 'Patient report view verified in clinical workflow');
+    // Switch to Patient Report Mode (U21)
+    const patientModeBtn = page.locator('[data-testid="btn-mode-patient"]');
+    if (await patientModeBtn.isVisible()) {
+      await patientModeBtn.click();
+      await page.waitForTimeout(400);
     }
+
+    const reportView = page.locator('[data-testid="patient-diet-report-view"]');
+    assert(await reportView.isVisible(), 'Patient Diet Report view rendered successfully');
+    const tableHeader = page.locator(':has-text("7-Food-Group Traffic Light Dietary Guide"), :has-text("৭-টি প্রধান খাদ্য গ্রুপ ভিত্তিক ট্রাফিক লাইট খাদ্য নির্দেশিকা")').first();
+    assert(await tableHeader.isVisible(), 'Patient Diet Report renders 7-Food-Group Traffic Light Table');
 
   } catch (err: any) {
     console.error('Browser Test Error:', err);

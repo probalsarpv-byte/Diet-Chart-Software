@@ -28,7 +28,7 @@ export const ACTIVITY_FACTORS: Record<ActivityLevel, { factor: number; label_en:
  */
 export function calculateAnthropometrics(
   age: number,
-  gender: 'male' | 'female',
+  gender: 'male' | 'female' | 'unspecified',
   height_cm: number,
   weight_kg: number,
   waist_cm: number,
@@ -105,16 +105,13 @@ export function calculateAnthropometrics(
 
   // 3. Ideal Body Weight (Devine formula)
   let ibw_kg = 50;
+  const baseIbw = gender === 'male' ? 50 : (gender === 'unspecified' ? 47.75 : 45.5);
   if (height_in > 60) {
     const inches_over_5ft = height_in - 60;
-    if (gender === 'male') {
-      ibw_kg = 50 + (2.3 * inches_over_5ft);
-    } else {
-      ibw_kg = 45.5 + (2.3 * inches_over_5ft);
-    }
+    ibw_kg = baseIbw + (2.3 * inches_over_5ft);
   } else {
     // Under 5 feet
-    ibw_kg = gender === 'male' ? 50 - (2.3 * (60 - height_in)) : 45.5 - (2.3 * (60 - height_in));
+    ibw_kg = baseIbw - (2.3 * (60 - height_in));
   }
   ibw_kg = Math.round(Math.max(30, ibw_kg) * 10) / 10;
 
@@ -142,7 +139,8 @@ export function calculateAnthropometrics(
 
   // 6. Mifflin-St Jeor Estimated BMR
   let bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age);
-  bmr += gender === 'male' ? 5 : -161;
+  const genderOffset = gender === 'male' ? 5 : (gender === 'unspecified' ? -78 : -161);
+  bmr += genderOffset;
   bmr = Math.round(Math.max(800, bmr));
 
   // 7. Estimated TDEE

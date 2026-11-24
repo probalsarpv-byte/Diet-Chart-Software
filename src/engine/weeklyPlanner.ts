@@ -939,7 +939,7 @@ export function buildDayPlan(
     safetyNotesBn.push(warn.title_bn + ': ' + warn.clinical_explanation_bn);
   }
 
-  // Check feeding route contraindications
+  // Check feeding route contraindications (P0-004)
   const isFeedingRouteContraindicated = 
     p3Context?.feedingRoute?.oral_intake_permitted === false ||
     patient.feeding_status?.oral_intake_permitted === false;
@@ -947,6 +947,12 @@ export function buildDayPlan(
   if (isFeedingRouteContraindicated) {
     safetyNotes.unshift('Non-oral feeding route / NPO status prohibits standard solid food weekly diet plan.');
     safetyNotesBn.unshift('নন-ওরাল ফিডিং রুট / এনপিও স্ট্যাটাসের কারণে স্বাভাবিক কঠিন খাবারের পরিকল্পনা নিষিদ্ধ।');
+  }
+
+  const isFeedingRouteUnknown = (p3Context?.feedingRoute?.route === 'unknown') && !patient.feeding_status;
+  if (isFeedingRouteUnknown) {
+    safetyNotes.unshift('Feeding route unknown/unassessed. Requires clinical verification of oral intake clearance.');
+    safetyNotesBn.unshift('ফিডিং রুট অজ্ঞাত বা অপরীক্ষিত। মুখে স্বাভাবিক খাদ্য গ্রহণের ক্লিনিক্যাল অনুমোদন যাচাই প্রয়োজন।');
   }
 
   // Check clinician-specified nutrient prescriptions
@@ -982,7 +988,7 @@ export function buildDayPlan(
   let safetyDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = 'SAFE';
   if (isFeedingRouteContraindicated || safetyEval.overallDecision === 'HARD_STOP') {
     safetyDecision = 'HARD_STOP';
-  } else if (safetyEval.overallDecision === 'CLINICAL_REVIEW_REQUIRED' || safetyEval.overallDecision === 'ADVISORY') {
+  } else if (isFeedingRouteUnknown || safetyEval.overallDecision === 'CLINICAL_REVIEW_REQUIRED' || safetyEval.overallDecision === 'ADVISORY') {
     safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
   }
 
@@ -997,13 +1003,19 @@ export function buildDayPlan(
     safetyNotesBn.push('রোগীর শারীরিক অবস্থা বা ঔষধের কারণে উপবাস ঝুঁকিপূর্ণ হওয়ায় নিরাপদ নিয়মিত খাবারের সময়সূচি নির্ধারণ করা হয়েছে।');
   }
 
-  // Fasting Schedule Metadata
+  // Fasting Schedule Metadata (P1-006: Dynamic eating windows without hardcoded 12:00-20:00)
   const isFastingDay = dayStructure === 'intermittent_fasting_16_8';
+  const prescribedWindowStart = (patient as any).fasting_regimen?.eating_window_start || 
+                                (patient.dietary_preferences as any)?.eating_window_start || 
+                                '12:00 PM';
+  const prescribedWindowEnd = (patient as any).fasting_regimen?.eating_window_end || 
+                              (patient.dietary_preferences as any)?.eating_window_end || 
+                              '08:00 PM';
 
   // Circadian & Meal Timing Evaluation
   const timingEval = evaluateMealScheduleTiming(meals, {
-    eatingWindowStart: isFastingDay ? '12:00 PM' : undefined,
-    eatingWindowEnd: isFastingDay ? '08:00 PM' : undefined,
+    eatingWindowStart: isFastingDay ? prescribedWindowStart : undefined,
+    eatingWindowEnd: isFastingDay ? prescribedWindowEnd : undefined,
     plannedFastingHours
   });
 
@@ -1046,13 +1058,13 @@ export function buildDayPlan(
     last_meal_time: timingEval.last_meal_time,
     is_intake_within_window: timingEval.is_intake_within_permitted_window,
     timing_discrepancies: timingEval.timing_discrepancies.length > 0 ? timingEval.timing_discrepancies : undefined,
-    eating_window_start: isFastingDay ? '12:00 PM' : undefined,
-    eating_window_end: isFastingDay ? '08:00 PM' : undefined,
-    eating_window_hours: isFastingDay ? (timingEval.permitted_eating_window_hours || 8) : undefined,
+    eating_window_start: isFastingDay ? prescribedWindowStart : undefined,
+    eating_window_end: isFastingDay ? prescribedWindowEnd : undefined,
+    eating_window_hours: isFastingDay ? (timingEval.permitted_eating_window_hours || (24 - plannedFastingHours)) : undefined,
     eligibility_status: fastingCheck.eligibility.risk_level === 'contraindicated' ? 'contraindicated' : (fastingCheck.eligibility.is_eligible_for_fasting ? 'eligible' : 'not_indicated'),
     decision_status: decisionStatus,
-    rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? '16:8 Intermittent Fasting Schedule (12:00 PM - 08:00 PM)' : 'Standard regular meal schedule'),
-    rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? '১৬:৮ উপবাস সময়সূচি (দুপুর ১২:০০ - রাত ০৮:০০)' : 'নিয়মিত খাবারের সময়সূচি'),
+    rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? `${plannedFastingHours}:${24 - plannedFastingHours} Fasting Schedule (${prescribedWindowStart} - ${prescribedWindowEnd})` : 'Standard regular meal schedule'),
+    rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? `${plannedFastingHours}:${24 - plannedFastingHours} উপবাস সময়সূচি (${prescribedWindowStart} - ${prescribedWindowEnd})` : 'নিয়মিত খাবারের সময়সূচি'),
     reasons_en: fastingCheck.eligibility.contraindication_reasons_en,
     reasons_bn: fastingCheck.eligibility.contraindication_reasons_bn
   };
@@ -1163,10 +1175,16 @@ export function recalculateDayPlan(
     safetyNotesBn.unshift('নন-ওরাল ফিডিং রুট / এনপিও স্ট্যাটাসের কারণে স্বাভাবিক কঠিন খাবারের পরিকল্পনা নিষিদ্ধ।');
   }
 
+  const isFeedingRouteUnknown = (p3Context?.feedingRoute?.route === 'unknown') && !patient.feeding_status;
+  if (isFeedingRouteUnknown) {
+    safetyNotes.unshift('Feeding route unknown/unassessed. Requires clinical verification of oral intake clearance.');
+    safetyNotesBn.unshift('ফিডিং রুট অজ্ঞাত বা অপরীক্ষিত। মুখে স্বাভাবিক খাদ্য গ্রহণের ক্লিনিক্যাল অনুমোদন যাচাই প্রয়োজন।');
+  }
+
   let safetyDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = 'SAFE';
   if (isFeedingRouteContraindicated || safetyEval.overallDecision === 'HARD_STOP') {
     safetyDecision = 'HARD_STOP';
-  } else if (safetyEval.overallDecision === 'CLINICAL_REVIEW_REQUIRED' || safetyEval.overallDecision === 'ADVISORY') {
+  } else if (isFeedingRouteUnknown || safetyEval.overallDecision === 'CLINICAL_REVIEW_REQUIRED' || safetyEval.overallDecision === 'ADVISORY') {
     safetyDecision = 'CLINICAL_REVIEW_REQUIRED';
   }
 
@@ -1178,9 +1196,16 @@ export function recalculateDayPlan(
   const isFastingContraindicated = !fastingCheck.eligibility.is_eligible_for_fasting || fastingCheck.safetyResults.some(r => r.decision === 'HARD_STOP');
   const isFastingDay = dayStructure === 'intermittent_fasting_16_8';
 
+  const prescribedWindowStart = (patient as any).fasting_regimen?.eating_window_start || 
+                                (patient.dietary_preferences as any)?.eating_window_start || 
+                                '12:00 PM';
+  const prescribedWindowEnd = (patient as any).fasting_regimen?.eating_window_end || 
+                              (patient.dietary_preferences as any)?.eating_window_end || 
+                              '08:00 PM';
+
   const timingEval = evaluateMealScheduleTiming(day.meals, {
-    eatingWindowStart: isFastingDay ? '12:00 PM' : undefined,
-    eatingWindowEnd: isFastingDay ? '08:00 PM' : undefined,
+    eatingWindowStart: isFastingDay ? prescribedWindowStart : undefined,
+    eatingWindowEnd: isFastingDay ? prescribedWindowEnd : undefined,
     plannedFastingHours
   });
 
@@ -1235,13 +1260,13 @@ export function recalculateDayPlan(
     last_meal_time: timingEval.last_meal_time,
     is_intake_within_window: timingEval.is_intake_within_permitted_window,
     timing_discrepancies: timingEval.timing_discrepancies.length > 0 ? timingEval.timing_discrepancies : undefined,
-    eating_window_start: isFastingDay ? '12:00 PM' : undefined,
-    eating_window_end: isFastingDay ? '08:00 PM' : undefined,
-    eating_window_hours: isFastingDay ? (timingEval.permitted_eating_window_hours || 8) : undefined,
+    eating_window_start: isFastingDay ? prescribedWindowStart : undefined,
+    eating_window_end: isFastingDay ? prescribedWindowEnd : undefined,
+    eating_window_hours: isFastingDay ? (timingEval.permitted_eating_window_hours || (24 - plannedFastingHours)) : undefined,
     eligibility_status: fastingCheck.eligibility.risk_level === 'contraindicated' ? 'contraindicated' : (fastingCheck.eligibility.is_eligible_for_fasting ? 'eligible' : 'not_indicated'),
     decision_status: decisionStatus,
-    rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? '16:8 Intermittent Fasting Schedule (12:00 PM - 08:00 PM)' : 'Standard regular meal schedule'),
-    rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? '১৬:৮ উপবাস সময়সূচি (দুপুর ১২:০০ - রাত ০৮:০০)' : 'নিয়মিত খাবারের সময়সূচি'),
+    rationale_en: fastingCheck.eligibility.contraindication_reasons_en.join('; ') || (isFastingDay ? `${plannedFastingHours}:${24 - plannedFastingHours} Fasting Schedule (${prescribedWindowStart} - ${prescribedWindowEnd})` : 'Standard regular meal schedule'),
+    rationale_bn: fastingCheck.eligibility.contraindication_reasons_bn.join('; ') || (isFastingDay ? `${plannedFastingHours}:${24 - plannedFastingHours} উপবাস সময়সূচি (${prescribedWindowStart} - ${prescribedWindowEnd})` : 'নিয়মিত খাবারের সময়সূচি'),
     reasons_en: fastingCheck.eligibility.contraindication_reasons_en,
     reasons_bn: fastingCheck.eligibility.contraindication_reasons_bn
   };
@@ -1639,8 +1664,16 @@ export function evaluateWeeklyPlanClinicalSafety(
     reasons.push(routeMsg);
   }
 
+  const isFeedingRouteUnknown = !isFeedingRouteContraindicated && (routeStr === 'unknown' || (p3Context?.feedingRoute?.route === 'unknown'));
+  if (isFeedingRouteUnknown) {
+    const unknownMsg = 'Feeding route unknown/unassessed. Requires clinical verification of oral intake clearance.';
+    reasons.push(unknownMsg);
+  }
+
   // 2. Evaluate all 7 days independently without relying on cached flags
-  let overallDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = isFeedingRouteContraindicated ? 'HARD_STOP' : 'SAFE';
+  let overallDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = isFeedingRouteContraindicated 
+    ? 'HARD_STOP' 
+    : (isFeedingRouteUnknown ? 'CLINICAL_REVIEW_REQUIRED' : 'SAFE');
 
   // Merge allergies from both patient.confirmed_allergies and p3Context?.confirmedAllergies
   const mergedPatient: PatientProfile = {

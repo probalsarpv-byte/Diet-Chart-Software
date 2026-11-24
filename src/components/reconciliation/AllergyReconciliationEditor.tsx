@@ -23,13 +23,14 @@ export const AllergyReconciliationEditor: React.FC<AllergyReconciliationEditorPr
     patient,
     updatePatient,
     addConfirmedAllergy,
-    removeConfirmedAllergy
+    removeConfirmedAllergy,
+    currentClinician
   } = usePractice();
 
   const bn = language === 'bn';
   const status: AllergyReconciliationStatus = patient.allergy_reconciliation_status || 'not_assessed';
   const [allergenInput, setAllergenInput] = useState('');
-  const [reconcilerName, setReconcilerName] = useState('Dr. Clinical Nutritionist');
+  const [reconcilerName, setReconcilerName] = useState(currentClinician?.name || 'Authorized Clinical Reviewer (Unassigned)');
 
   const commonAllergens = [
     { id: 'shrimp', bn: 'চিংড়ি (Shrimp)', en: 'Shrimp' },

@@ -59,7 +59,7 @@ import {
 } from '@/engine/weeklyPlanner';
 import { advanceToNextPhase, recordFollowUpVisit, TransitionOptions } from '@/engine/phaseProgression';
 import { runP2Analysis } from '@/engine/p2';
-import { P2AnalysisResult, ClinicianDecision } from '@/engine/p2/types';
+import { P2AnalysisResult, ClinicianDecision, P3NutritionPlanningContext } from '@/engine/p2/types';
 import { ClinicalAssessment } from '@/types/assessment';
 import { 
   executeLongitudinalComparison, 
@@ -1184,36 +1184,234 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ? labsAny.egfr 
       : parseFloat(labsAny.egfr || '100');
 
-    // P0-002: Nuanced lab evaluation. Emergency ceiling at K >= 6.0 or explicit clinician ceiling:
+    const clinicalReviewFlags: Array<{
+      parameter: string;
+      flag: 'CLINICAL_REVIEW_REQUIRED' | 'RISK_FLAG' | 'NUTRITION_ADJUSTMENT_CANDIDATE' | 'CLINICIAN_APPROVED_TARGET' | 'HARD_CONTRAINDICATION';
+      rationale_en: string;
+      rationale_bn: string;
+      evidence_status?: string;
+    }> = [];
+
+    const adjustmentCandidates: Array<{
+      id: string;
+      triggering_source: string;
+      clinical_rationale: string;
+      relevant_functional_systems: string[];
+      evidence_status: string;
+      proposed_adjustment: string;
+      clinician_review_required: boolean;
+      affected_diet_components: string[];
+    }> = [];
+
+    let acuteEscalation: {
+      required: boolean;
+      trigger?: string;
+      message_en: string;
+      message_bn: string;
+      priority: 'CRITICAL_URGENT' | 'HIGH_REVIEW';
+      block_release: boolean;
+    } | undefined = undefined;
+
+    // P0-001: Separate Acute Safety (K >= 6.0) from Long-Term Dietary Potassium Planning.
+    // Acute Escalation: K >= 6.0 triggers URGENT_CLINICAL_ASSESSMENT_REQUIRED and blocks release.
+    // DO NOT auto-prescribe 2000 mg limit without clinician confirmation.
+    if (serumK >= 6.0) {
+      acuteEscalation = {
+        required: true,
+        trigger: 'SERUM_POTASSIUM_SEVERE_ELEVATION',
+        priority: 'CRITICAL_URGENT',
+        message_en: `Critical Hyperkalemia Alert: Serum Potassium is ${serumK.toFixed(1)} mEq/L (>= 6.0 mEq/L). Acute electrophysiological risk of fatal cardiac arrhythmia. Immediate medical referral and ECG monitoring required; unreviewed diet prescription release blocked.`,
+        message_bn: `জরুরি হাইপারক্যালেমিয়া সতর্কতা: সিরাম পটাশিয়াম ${serumK.toFixed(1)} mEq/L (>= ৬.০ mEq/L)। মারাত্মক কার্ডিয়াক অ্যারিথমিয়া ঝুঁকি। অবিলম্বে চিকিৎসক রেফারেল ও ইসিজি প্রয়োজন; প্রেসক্রিপশন প্রকাশ স্থগিত।`,
+        block_release: true
+      };
+      clinicalReviewFlags.push({
+        parameter: 'potassium',
+        flag: 'HARD_CONTRAINDICATION',
+        rationale_en: `Serum Potassium ${serumK.toFixed(1)} mEq/L indicates acute severe hyperkalemia. Unreviewed nutrition release blocked; requires emergency clinician orders.`,
+        rationale_bn: `সিরাম পটাশিয়াম ${serumK.toFixed(1)} mEq/L মারাত্মক হাইপারক্যালেমিয়া নির্দেশ করে। জরুরি মূল্যায়ন ব্যতীত প্রেসক্রিপশন প্রকাশ স্থগিত।`,
+        evidence_status: 'LAB_SUPPORTED'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_potassium_acute_emergency',
+        triggering_source: 'Lab Marker: Serum Potassium >= 6.0 mEq/L',
+        clinical_rationale: 'Acute electrophysiological cardiac emergency',
+        relevant_functional_systems: ['cardiovascular', 'renal_electrolyte'],
+        evidence_status: 'LAB_SUPPORTED',
+        proposed_adjustment: 'Hold unreviewed diet chart; immediate hospital/nephrology referral',
+        clinician_review_required: true,
+        affected_diet_components: ['high_potassium_foods', 'fluid_intake']
+      });
+    }
+
     const patientPrescriptions = (patient as any).prescriptions;
     if (patientPrescriptions?.potassium?.limit_mg) {
       potassiumLimit = patientPrescriptions.potassium.limit_mg;
-    } else if (serumK >= 6.0) {
-      potassiumLimit = 2000;
+      clinicalReviewFlags.push({
+        parameter: 'potassium',
+        flag: 'CLINICIAN_APPROVED_TARGET',
+        rationale_en: `Clinician documented potassium ceiling of ${potassiumLimit} mg/day approved.`,
+        rationale_bn: `চিকিৎসক কর্তৃক অনুমোদিত পটাশিয়াম সিলিং ${potassiumLimit} মিগ্রা/দিন।`,
+        evidence_status: 'CLINICIAN_VERIFIED'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_potassium_prescribed',
+        triggering_source: 'Clinician Documented Prescription',
+        clinical_rationale: 'Prescribed potassium target',
+        relevant_functional_systems: ['renal_electrolyte'],
+        evidence_status: 'CLINICIAN_VERIFIED',
+        proposed_adjustment: `Enforce ${potassiumLimit} mg/day dietary potassium limit`,
+        clinician_review_required: false,
+        affected_diet_components: ['high_potassium_foods']
+      });
+    } else if (serumK >= 5.0 && serumK < 6.0) {
+      clinicalReviewFlags.push({
+        parameter: 'potassium',
+        flag: 'CLINICAL_REVIEW_REQUIRED',
+        rationale_en: `Serum Potassium ${serumK.toFixed(1)} mEq/L is borderline elevated. Individualized portion review and culinary leaching recommended. Clinician confirmation required before establishing numeric ceiling.`,
+        rationale_bn: `সিরাম পটাশিয়াম ${serumK.toFixed(1)} mEq/L কিছুটা বেশি। খাবারের পরিমাণ পর্যালোচনা এবং রান্নার পূর্বে ভিজিয়ে সিদ্ধ করা প্রয়োজন।`,
+        evidence_status: 'LAB_SUPPORTED'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_potassium_borderline',
+        triggering_source: `Lab Marker: Serum Potassium ${serumK.toFixed(1)} mEq/L`,
+        clinical_rationale: 'Borderline hyperkalemia requires culinary leaching and portion review',
+        relevant_functional_systems: ['renal_electrolyte'],
+        evidence_status: 'LAB_SUPPORTED',
+        proposed_adjustment: 'Advise vegetable leaching/boiling and portion moderation; avoid blanket prohibition',
+        clinician_review_required: true,
+        affected_diet_components: ['vegetables', 'fruits']
+      });
     }
 
-    // P0-003: Protein targets derived from verified clinical diagnosis & dialysis status, NOT broad pathway:
+    // P0-002: Protein targets derived from verified clinical diagnosis & dialysis status, NOT broad pathway:
     const confirmedConditions = (patient.selected_conditions || []) as string[];
     const isDialysis = confirmedConditions.includes('ckd_dialysis') || (patient as any).is_on_dialysis === true;
     const isCKDNonDialysis = confirmedConditions.includes('ckd_stage_1_3b') || 
                              (confirmedConditions.includes('hypertension_ckd') && egfr > 0 && egfr < 60);
-    const isSarcopenicOrMalnourished = Boolean(patient.age && patient.age >= 65) || 
-                                       Boolean(patient.calculated?.bmi && patient.calculated.bmi < 18.5);
+
+    // Validate documented clinical assessment for malnutrition/sarcopenia, not age/BMI proxy alone:
+    const hasDocumentedSarcopeniaOrMalnutrition = Boolean(
+      (patient as any).sarcopenia_documented === true ||
+      confirmedConditions.includes('underweight_malnutrition') ||
+      (patient.calculated?.bmi && patient.calculated.bmi < 18.5 && patient.age && patient.age >= 65)
+    );
+    const hasConflictingSarcopeniaEvidence = Boolean(
+      (patient.age && patient.age >= 65 && !hasDocumentedSarcopeniaOrMalnutrition) ||
+      (patient.calculated?.bmi && patient.calculated.bmi < 18.5 && !confirmedConditions.includes('underweight_malnutrition'))
+    );
+
+    if (hasConflictingSarcopeniaEvidence) {
+      clinicalReviewFlags.push({
+        parameter: 'protein',
+        flag: 'CLINICAL_REVIEW_REQUIRED',
+        rationale_en: 'Age >= 65 or low BMI present without formal malnutrition/sarcopenia diagnosis. Validated clinical assessment recommended to calibrate protein prescription.',
+        rationale_bn: 'বয়স ৬৫ বা তদূর্ধ্ব অথবা স্বল্প বিএমআই বিদ্যমান; সঠিক ক্লিনিক্যাল মূল্যায়ন প্রয়োজন।',
+        evidence_status: 'CLINICAL_REVIEW_REQUIRED'
+      });
+    }
 
     if (patientPrescriptions?.protein?.target_g_per_kg) {
       proteinGPerKg = patientPrescriptions.protein.target_g_per_kg;
+      clinicalReviewFlags.push({
+        parameter: 'protein',
+        flag: 'CLINICIAN_APPROVED_TARGET',
+        rationale_en: `Clinician approved protein target of ${proteinGPerKg} g/kg/day.`,
+        rationale_bn: `চিকিৎসক কর্তৃক অনুমোদিত প্রোটিন লক্ষ্যমাত্রা ${proteinGPerKg} গ্রাম/কেজি/দিন।`,
+        evidence_status: 'CLINICIAN_VERIFIED'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_protein_prescribed',
+        triggering_source: 'Clinician Documented Prescription',
+        clinical_rationale: 'Clinician individualized protein prescription',
+        relevant_functional_systems: ['structural_integrity', 'renal_electrolyte'],
+        evidence_status: 'CLINICIAN_VERIFIED',
+        proposed_adjustment: `Calibrate diet to ${proteinGPerKg} g/kg/day`,
+        clinician_review_required: false,
+        affected_diet_components: ['protein_foods']
+      });
     } else if (isDialysis) {
-      proteinGPerKg = 1.2; // Dialysis replacement requirement
-    } else if (isCKDNonDialysis && !isSarcopenicOrMalnourished && egfr > 0 && egfr < 60) {
-      proteinGPerKg = 0.8; // Non-dialysis confirmed CKD
+      clinicalReviewFlags.push({
+        parameter: 'protein',
+        flag: 'NUTRITION_ADJUSTMENT_CANDIDATE',
+        rationale_en: 'Dialysis therapy active: guideline recommendation is 1.2-1.4 g/kg/day to compensate dialytic amino acid losses.',
+        rationale_bn: 'ডায়ালাইসিস চলমান: অ্যামাইনো অ্যাসিড ক্ষয় পূরণে ১.২-১.৪ গ্রাম/কেজি/দিন প্রোটিন প্রস্তাবিত।',
+        evidence_status: 'CLINICAL_GUIDELINE'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_protein_dialysis',
+        triggering_source: 'Maintenance Dialysis Status',
+        clinical_rationale: 'Compensate dialytic protein loss',
+        relevant_functional_systems: ['renal_electrolyte', 'structural_integrity'],
+        evidence_status: 'CLINICAL_GUIDELINE',
+        proposed_adjustment: 'Candidate protein intake 1.2 - 1.4 g/kg/day pending clinician order',
+        clinician_review_required: true,
+        affected_diet_components: ['protein_foods']
+      });
+    } else if (isCKDNonDialysis) {
+      clinicalReviewFlags.push({
+        parameter: 'protein',
+        flag: 'NUTRITION_ADJUSTMENT_CANDIDATE',
+        rationale_en: hasDocumentedSarcopeniaOrMalnutrition
+          ? 'Non-dialysis CKD with sarcopenia/malnutrition: balanced 0.8-1.0 g/kg/day candidate target.'
+          : 'Non-dialysis CKD: conservative renal preservation candidate range is 0.6-0.8 g/kg/day.',
+        rationale_bn: hasDocumentedSarcopeniaOrMalnutrition
+          ? 'নন-ডায়ালাইসিস সিকেডি ও অপুষ্টি: ০.৮-১.০ গ্রাম/কেজি/দিন সুষম প্রোটিন প্রস্তাবিত।'
+          : 'নন-ডায়ালাইসিস সিকেডি: ০.৬-০.৮ গ্রাম/কেজি/দিন নিয়ন্ত্রিত প্রোটিন প্রস্তাবিত।',
+        evidence_status: 'CLINICAL_GUIDELINE'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_protein_ckd_conservative',
+        triggering_source: 'Confirmed CKD Non-Dialysis',
+        clinical_rationale: 'Renal preservation without inducing protein-energy wasting',
+        relevant_functional_systems: ['renal_electrolyte', 'structural_integrity'],
+        evidence_status: 'CLINICAL_GUIDELINE',
+        proposed_adjustment: hasDocumentedSarcopeniaOrMalnutrition ? '0.8 - 1.0 g/kg/day candidate target' : '0.6 - 0.8 g/kg/day candidate target',
+        clinician_review_required: true,
+        affected_diet_components: ['protein_foods']
+      });
     }
 
-    // P0-003: Sodium limits require verified cardiovascular/renal diagnosis, NOT broad pathway:
+    // P0-002: Sodium limits require verified cardiovascular/renal diagnosis, NOT broad pathway:
     const hasSodiumRestrictedDiagnosis = confirmedConditions.includes('hypertension_ckd') || 
                                          confirmedConditions.includes('ckd_stage_1_3b') || 
                                          Boolean((patient.clinical_safety as any)?.sodium_restriction?.is_restricted);
-    if (hasSodiumRestrictedDiagnosis) {
-      sodiumLimit = 2000;
+    if (patientPrescriptions?.sodium?.limit_mg) {
+      sodiumLimit = patientPrescriptions.sodium.limit_mg;
+      clinicalReviewFlags.push({
+        parameter: 'sodium',
+        flag: 'CLINICIAN_APPROVED_TARGET',
+        rationale_en: `Clinician approved sodium ceiling of ${sodiumLimit} mg/day.`,
+        rationale_bn: `চিকিৎসক কর্তৃক অনুমোদিত সোডিয়াম সীমা ${sodiumLimit} মিগ্রা/দিন।`,
+        evidence_status: 'CLINICIAN_VERIFIED'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_sodium_prescribed',
+        triggering_source: 'Clinician Documented Prescription',
+        clinical_rationale: 'Prescribed sodium target',
+        relevant_functional_systems: ['cardiovascular', 'renal_electrolyte'],
+        evidence_status: 'CLINICIAN_VERIFIED',
+        proposed_adjustment: `Enforce ${sodiumLimit} mg/day sodium ceiling`,
+        clinician_review_required: false,
+        affected_diet_components: ['sodium_salt']
+      });
+    } else if (hasSodiumRestrictedDiagnosis) {
+      clinicalReviewFlags.push({
+        parameter: 'sodium',
+        flag: 'NUTRITION_ADJUSTMENT_CANDIDATE',
+        rationale_en: 'Cardiorenal/hypertension diagnosis confirmed: guideline candidate restriction < 2000 mg/day pending clinician confirmation.',
+        rationale_bn: 'উচ্চ রক্তচাপ/সিকেডি বিদ্যমান: নির্দেশিকা অনুযায়ী ২০০০ মিগ্রা/দিনের নিচে রাখার প্রস্তাব।',
+        evidence_status: 'CLINICAL_GUIDELINE'
+      });
+      adjustmentCandidates.push({
+        id: 'adj_sodium_guideline_candidate',
+        triggering_source: 'Confirmed Hypertension/CKD Diagnosis',
+        clinical_rationale: 'Cardiovascular blood pressure and fluid control',
+        relevant_functional_systems: ['cardiovascular', 'renal_electrolyte'],
+        evidence_status: 'CLINICAL_GUIDELINE',
+        proposed_adjustment: 'Candidate sodium restriction < 2000 mg/day for clinician confirmation',
+        clinician_review_required: true,
+        affected_diet_components: ['sodium_salt']
+      });
     }
 
     const insulin = analyzeInsulinRegimen(r5Medications || []);
@@ -1237,6 +1435,9 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         fasting_contraindication_reasons: insulin.regimen_context.active ? ['Insulin therapy active; prolonged fasting requires endocrinologist supervision'] : [],
         default_fasting_schedule: insulin.regimen_context.active ? 'none' : '12_12'
       },
+      acute_escalation: acuteEscalation,
+      clinical_review_flags: clinicalReviewFlags,
+      adjustment_candidates: adjustmentCandidates,
       provenance: {
         generated_at: new Date().toISOString(),
         engine_version: 'R5.1.0-INTEGRATED'
@@ -1411,7 +1612,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       p.bmr_floor_strategy,
       p.custom_calorie_floor
     );
-    const labs = analyzeFunctionalLabs(p.labs, p.gender);
+    const labs = analyzeFunctionalLabs(p.labs, p.gender === 'unspecified' ? undefined : p.gender);
     return {
       ...p,
       calculated,
@@ -1653,6 +1854,106 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return recalculateDayPlan(day, macros, patientProfile, allFoods, p2AnalysisResult?.p3PlanningContext);
   }, [weeklyDietPlan?.target_macros, allFoods, p2AnalysisResult?.p3PlanningContext]);
 
+// P0-004: Typed minimal planning context fallback without synthetic clinical assumptions
+function createTypedPlanningContextFallback(
+  patient: PatientProfile,
+  targetVisitId?: string,
+  r5Contract?: R5NutritionAdjustmentContract
+): P3NutritionPlanningContext {
+  const feedingStatus = patient.feeding_status;
+  const rawRoute = String(feedingStatus?.route || patient.clinical_safety?.feeding_route || '').toLowerCase();
+
+  let routeName: string;
+  let oralPermitted: boolean;
+  let specialistRequired: boolean;
+
+  if (rawRoute.includes('npo') || rawRoute === 'npo_nil_per_os' || feedingStatus?.oral_intake_permitted === false) {
+    routeName = 'npo_nil_per_os';
+    oralPermitted = false;
+    specialistRequired = true;
+  } else if (rawRoute.includes('enteral') || rawRoute.includes('parenteral') || rawRoute.includes('peg') || rawRoute.includes('nasogastric') || rawRoute.includes('tpn')) {
+    routeName = feedingStatus?.route || 'enteral_tube_nasogastric';
+    oralPermitted = false;
+    specialistRequired = true;
+  } else if (feedingStatus?.oral_intake_permitted === true || rawRoute.includes('oral')) {
+    routeName = feedingStatus?.route || 'oral_standard';
+    oralPermitted = true;
+    specialistRequired = Boolean(feedingStatus?.requires_specialist_support);
+  } else {
+    // Unknown feeding status: do NOT invent oral intake!
+    routeName = 'unknown';
+    oralPermitted = false;
+    specialistRequired = true;
+  }
+
+  return {
+    patientId: patient.id,
+    visitId: targetVisitId || patient.current_visit_id || '',
+    assessmentId: '', // Never fabricate 'asm_current'
+    assessmentVersion: '',
+    clinicalAssessmentApproved: false,
+    confirmedAllergies: patient.confirmed_allergies || [],
+    allergyReconciliation: patient.allergy_reconciliation,
+    medicationReconciliation: patient.medication_reconciliation,
+    feedingRoute: {
+      route: routeName,
+      oral_intake_permitted: oralPermitted,
+      requires_specialist_support: specialistRequired
+    },
+    hardRestrictions: [],
+    prescribedFluidLimit_mL: r5Contract?.nutrient_constraints?.fluid_ml_max,
+    prescribedSodiumLimit_mg: r5Contract?.nutrient_constraints?.sodium_mg_max,
+    prescribedPotassiumLimit_mg: r5Contract?.nutrient_constraints?.potassium_mg_max,
+    prescribedProteinCap_g: r5Contract?.nutrient_constraints?.protein_g_per_kg 
+      ? Math.round(r5Contract.nutrient_constraints.protein_g_per_kg * (patient.weight_kg || 60)) 
+      : undefined,
+    prescriptions: {
+      sodium: { nutrient: 'sodium', isRestricted: Boolean(r5Contract?.nutrient_constraints?.sodium_mg_max), hasConfirmedLimit: Boolean(r5Contract?.nutrient_constraints?.sodium_mg_max), numericalLimit: r5Contract?.nutrient_constraints?.sodium_mg_max, unit: 'mg/day', source: 'patient_profile', requiresClarification: false },
+      potassium: { nutrient: 'potassium', isRestricted: Boolean(r5Contract?.nutrient_constraints?.potassium_mg_max), hasConfirmedLimit: Boolean(r5Contract?.nutrient_constraints?.potassium_mg_max), numericalLimit: r5Contract?.nutrient_constraints?.potassium_mg_max, unit: 'mg/day', source: 'patient_profile', requiresClarification: false },
+      protein: { nutrient: 'protein', isRestricted: Boolean(r5Contract?.nutrient_constraints?.protein_g_per_kg), hasConfirmedLimit: Boolean(r5Contract?.nutrient_constraints?.protein_g_per_kg), numericalLimit: r5Contract?.nutrient_constraints?.protein_g_per_kg, unit: 'g/kg/day', source: 'patient_profile', requiresClarification: false },
+      fluid: { nutrient: 'fluid', isRestricted: Boolean(r5Contract?.nutrient_constraints?.fluid_ml_max), hasConfirmedLimit: Boolean(r5Contract?.nutrient_constraints?.fluid_ml_max), numericalLimit: r5Contract?.nutrient_constraints?.fluid_ml_max, unit: 'mL/day', source: 'patient_profile', requiresClarification: false }
+    },
+    hasSuspectedRenalAbnormality: Boolean(
+      (patient.labs as any)?.egfr && (patient.labs as any).egfr < 60 ||
+      (patient.labs as any)?.serum_creatinine && (patient.labs as any).serum_creatinine > 1.2
+    ),
+    hasConfirmedCkdDiagnosis: Boolean(
+      patient.selected_conditions?.includes('ckd_stage_1_3b' as any) ||
+      patient.selected_conditions?.includes('ckd_dialysis' as any) ||
+      patient.selected_conditions?.includes('hypertension_ckd' as any)
+    ),
+    energyTargetCalories: patient.calculated?.target_calories || 1800,
+    proteinTargetGrams: patient.calculated?.target_protein_g || 60,
+    nutritionalTargets: [],
+    carbohydrateConsiderations: [],
+    medicationPrecautions: [],
+    clinicalSafetyFindings: oralPermitted ? [] : ['Oral nutrition unverified or contraindicated per feeding status assessment'],
+    functionalNutritionPriorities: [],
+    r5NutritionConstraints: r5Contract,
+    dietaryFrequencyFindings: {
+      foodGroupFrequency: {},
+      summaryInsights_en: [],
+      summaryInsights_bn: [],
+      riskFlags: [],
+      protectiveFactors: []
+    } as any,
+    ayurvedicContext: {
+      primaryPrakriti: 'Kapha',
+      currentVikritiImbalances: [],
+      recommendedTastes: [],
+      tastesToModerate: []
+    } as any,
+    approvedInterventionGoals: [],
+    generatedAt: new Date().toISOString(),
+    lifeStage: patient.population_group || 'adult_standard',
+    medicationConstraints: [],
+    foodPreferences: {},
+    currentCarePhase: patient.current_phase || 1,
+    clinicianApprovedHypotheses: [],
+    unconfirmedHypotheses: []
+  };
+}
+
   const generateWeeklyPlan = useCallback((forceRegenerate: boolean = false): WeeklyDietPlan | null => {
     if (!patient?.id) return null;
     const targetVisitId = patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id || 'default_visit';
@@ -1662,19 +1963,10 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return weeklyDietPlan;
     }
 
-    // P1-002: Ensure R5 Nutrition Contract ALWAYS reaches the Diet Engine, even if P2 context is absent
-    const effectiveP3Context = p2AnalysisResult?.p3PlanningContext
+    // P0-004 & P1-002: Ensure typed planning context and R5 Nutrition Contract ALWAYS reach Diet Engine
+    const effectiveP3Context: P3NutritionPlanningContext = p2AnalysisResult?.p3PlanningContext
       ? { ...p2AnalysisResult.p3PlanningContext, r5NutritionConstraints: r5NutritionContract }
-      : {
-          patientId: patient.id,
-          visitId: targetVisitId || 'vis_current',
-          assessmentId: 'asm_current',
-          assessmentVersion: '1.0',
-          clinicalAssessmentApproved: false,
-          confirmedAllergies: patient.confirmed_allergies || [],
-          feedingRoute: { route: 'oral', oral_intake_permitted: true, requires_specialist_support: false },
-          r5NutritionConstraints: r5NutritionContract
-        } as any;
+      : createTypedPlanningContextFallback(patient, targetVisitId, r5NutritionContract);
 
     const plan = generateWeeklyDietPlan(
       patient,
@@ -1695,18 +1987,9 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const regenerateDay = useCallback((dayNumber: number, preserveLocks: boolean = true): WeeklyDietPlan | null => {
     if (!weeklyDietPlan || !patient?.id) return null;
-    const effectiveP3Context = p2AnalysisResult?.p3PlanningContext
+    const effectiveP3Context: P3NutritionPlanningContext = p2AnalysisResult?.p3PlanningContext
       ? { ...p2AnalysisResult.p3PlanningContext, r5NutritionConstraints: r5NutritionContract }
-      : {
-          patientId: patient.id,
-          visitId: currentVisit?.visit_id || currentVisit?.id || 'vis_current',
-          assessmentId: 'asm_current',
-          assessmentVersion: '1.0',
-          clinicalAssessmentApproved: false,
-          confirmedAllergies: patient.confirmed_allergies || [],
-          feedingRoute: { route: 'oral', oral_intake_permitted: true, requires_specialist_support: false },
-          r5NutritionConstraints: r5NutritionContract
-        } as any;
+      : createTypedPlanningContextFallback(patient, currentVisit?.visit_id || currentVisit?.id, r5NutritionContract);
     const updated = regenerateDayInWeeklyPlan(
       dayNumber,
       weeklyDietPlan,
@@ -2369,7 +2652,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           status: reconEval.status,
           reconciled_records: legacyRecords,
           verified_no_medications: verifiedNoMeds,
-          reconciled_by: currentClinician?.name || prev.medication_reconciliation?.reconciled_by || 'Dr. Clinical Nutritionist',
+          reconciled_by: currentClinician?.name || prev.medication_reconciliation?.reconciled_by || undefined,
           reconciled_at: reconEval.status === 'fully_reconciled' ? new Date().toISOString() : prev.medication_reconciliation?.reconciled_at,
           missing_elements: reconEval.missing_elements
         },
@@ -2377,13 +2660,15 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       };
     });
 
-    // Invalidate previously approved R4 protocol if medications change
+    // Invalidate previously approved R4 protocol if medications change (P1-007: preserve history)
     setR4Protocol(prevProto => {
       if (prevProto && (prevProto.is_approved || prevProto.status === 'active')) {
         return {
           ...prevProto,
           is_approved: false,
           status: 'draft',
+          previous_approved_version: prevProto.version,
+          approval_notes: (prevProto.approval_notes ? prevProto.approval_notes + ' | ' : '') + 'Invalidated due to medication list modification; requires clinician re-approval.',
           approval_metadata: undefined
         };
       }
@@ -2858,9 +3143,16 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const today = getDhakaTodayDateString();
     const initialVisitId = generateCollisionResistantId(`vis_${newId}`);
 
+    const isAgeUnentered = adminData.age === undefined || adminData.age === null || adminData.age === 0;
+    const isGenderUnentered = !adminData.gender || adminData.gender === ('unspecified' as any);
+    const isSleepHoursUnentered = adminData.sleep_hours === undefined || adminData.sleep_hours === null;
+    const isActivityUnentered = !adminData.activity_level;
+    const isPopulationUnentered = !adminData.population_group;
+    const isDemographicsIncomplete = isAgeUnentered || isGenderUnentered || (!adminData.height_cm) || (!adminData.weight_kg);
+
     const unmeasuredCalc = calculateAnthropometrics(
       adminData.age ?? 0,
-      adminData.gender || 'female',
+      adminData.gender || 'unspecified',
       adminData.height_cm ?? 0,
       adminData.weight_kg ?? 0,
       adminData.waist_cm ?? 0,
@@ -2876,8 +3168,9 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: newId,
       name: adminData.name || "New Patient",
       age: adminData.age ?? 0,
-      is_age_unentered: adminData.age === undefined || adminData.age === null || adminData.age === 0,
-      gender: adminData.gender || 'female',
+      is_age_unentered: isAgeUnentered,
+      gender: adminData.gender || 'unspecified',
+      is_gender_unentered: isGenderUnentered,
       phone: adminData.phone || "",
       email: adminData.email || "",
       visit_date: today,
@@ -2887,9 +3180,13 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       weight_kg: adminData.weight_kg ?? 0,
       waist_cm: adminData.waist_cm ?? 0,
       activity_level: adminData.activity_level || 'sedentary',
-      sleep_hours: adminData.sleep_hours || 7,
+      is_activity_unentered: isActivityUnentered,
+      sleep_hours: adminData.sleep_hours ?? 0,
+      is_sleep_unentered: isSleepHoursUnentered,
       shift_worker: Boolean(adminData.shift_worker),
       population_group: adminData.population_group || 'adult_standard',
+      is_population_unentered: isPopulationUnentered,
+      is_demographics_incomplete: isDemographicsIncomplete,
       bmr_floor_strategy: 'clamped_to_bmr',
       confirmed_allergies: [],
       allergy_reconciliation_status: 'not_assessed',

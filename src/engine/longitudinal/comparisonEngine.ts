@@ -807,7 +807,7 @@ export function buildComparativeProgressReport(params: {
     baselineSnapshot,
     comparisonSnapshot,
     analysis,
-    reviewingNutritionist = 'Dr. Clinical Nutritionist',
+    reviewingNutritionist = 'Authorized Clinical Reviewer',
     clinicianNotes,
     isApproved = false,
   } = params;

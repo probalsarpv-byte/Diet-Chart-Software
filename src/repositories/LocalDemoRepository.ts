@@ -873,7 +873,7 @@ export class LocalDemoRepository implements IPracticeRepository {
       status: inv.status,
       patient_display_name: patient?.name || 'Patient',
       initial_age: patient?.age || 35,
-      initial_gender: patient?.gender || 'female'
+      initial_gender: patient?.gender === 'unspecified' ? 'female' : (patient?.gender || 'female')
     };
   }
 

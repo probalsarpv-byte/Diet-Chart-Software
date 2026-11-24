@@ -47,7 +47,7 @@ export function buildR5PopulationProfile(patient: Partial<PatientProfile>): R5Po
 
   const rawGender = patient.gender;
   let sex: 'male' | 'female' | 'other' | 'unentered' = 'unentered';
-  if (rawGender === 'male' || rawGender === 'female' || rawGender === 'other') {
+  if (rawGender === 'male' || rawGender === 'female') {
     sex = rawGender;
   }
 

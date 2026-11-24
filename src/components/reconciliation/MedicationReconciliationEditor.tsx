@@ -42,7 +42,7 @@ export const MedicationReconciliationEditor: React.FC<MedicationReconciliationEd
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<ReconciledMedicationRecord>>({});
 
-  const reconcilerName = currentClinician?.name || 'Dr. Clinical Nutritionist (Demo)';
+  const reconcilerName = currentClinician?.name || 'Authorized Clinician (Demo Simulation — Non-Authoritative)';
 
   // Active records from authoritative patient profile
   const records: ReconciledMedicationRecord[] = useMemo(() => {

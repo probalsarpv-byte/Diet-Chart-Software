@@ -617,7 +617,7 @@ export function evaluateDNIAndTimeline(
 export function runDNIEngine(
   patient: {
     age: number;
-    gender: 'male' | 'female';
+    gender: 'male' | 'female' | 'unspecified';
     height_cm: number;
     weight_kg: number;
     activity_level: ActivityLevel;

@@ -383,7 +383,12 @@ export interface PatientProfile {
   name: string;
   age: number;
   is_age_unentered?: boolean;
-  gender: 'male' | 'female';
+  gender: 'male' | 'female' | 'unspecified';
+  is_gender_unentered?: boolean;
+  is_sleep_unentered?: boolean;
+  is_activity_unentered?: boolean;
+  is_population_unentered?: boolean;
+  is_demographics_incomplete?: boolean;
   phone: string;
   email?: string;
   visit_date: string;
@@ -481,7 +486,7 @@ export interface DiseaseRule {
 }
 
 export interface EvaluatedReason {
-  conditionId: ClinicalConditionId | 'DNI_INTERACTION' | 'ALLERGY' | 'CLINICIAN_RULE' | 'PHASE_RULE' | 'R5_CONTRAINDICATION' | 'HYPERKALEMIA_SAFETY' | 'R5_CAUTION' | 'POTASSIUM_REVIEW';
+  conditionId: ClinicalConditionId | 'DNI_INTERACTION' | 'ALLERGY' | 'CLINICIAN_RULE' | 'PHASE_RULE' | 'R5_CONTRAINDICATION' | 'HYPERKALEMIA_SAFETY' | 'R5_CAUTION' | 'POTASSIUM_REVIEW' | 'URGENT_CLINICAL_ASSESSMENT_REQUIRED' | 'CLINICAL_REVIEW_REQUIRED';
   conditionNameBn: string;
   conditionNameEn: string;
   status: 'GREEN' | 'YELLOW' | 'RED';
