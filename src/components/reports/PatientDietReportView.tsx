@@ -240,53 +240,143 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
           </div>
         )}
 
-        {/* Personalized Traffic Light Food Guide Summary */}
-        <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
-          <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-            <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
-              <Sparkles className="h-4 w-4 text-emerald-600" />
-              <span>{bn ? 'আপনার জন্য ব্যক্তিগতকৃত ট্রাফিক লাইট খাদ্য নির্দেশিকা' : 'Your Personalized Traffic Light Food Guide'}</span>
-            </h3>
-            <span className="text-[10px] text-slate-500 print:text-slate-600">
-              {bn ? 'স্বাচ্ছন্দ্যে গ্রহণীয় > পরিমিত > সম্পূর্ণ বর্জনীয়' : 'Green > Yellow > Red'}
-            </span>
+        {/* Personalized 7-Food-Group Traffic Light Dietary Guide */}
+        {(payload as any).seven_food_group_guide && (payload as any).seven_food_group_guide.groups?.length > 0 ? (
+          <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-emerald-600" />
+                <span>{bn ? '৭-টি প্রধান খাদ্য গ্রুপ ভিত্তিক ট্রাফিক লাইট খাদ্য নির্দেশিকা' : '7-Food-Group Traffic Light Dietary Guide'}</span>
+              </h3>
+              <span className="text-[10px] text-slate-500 print:text-slate-600">
+                {bn ? 'গ্রিন (নির্দ্বিধায়) > ইয়েলো (মেপে/বুঝে) > রেড (পুরোপুরি বাদ)' : 'Green (Eat Freely) > Yellow (Portion Control) > Red (Strict Avoidance)'}
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] border-collapse border border-slate-200 dark:border-slate-800">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/60 print:bg-slate-100 text-left border-b border-slate-200 dark:border-slate-800">
+                    <th className="p-2.5 font-bold text-slate-700 dark:text-slate-300 w-[22%] border-r border-slate-200 dark:border-slate-800">
+                      {bn ? 'ফুড গ্রুপ (Food Group)' : 'Food Group'}
+                    </th>
+                    <th className="p-2.5 font-bold text-emerald-800 dark:text-emerald-400 w-[26%] border-r border-slate-200 dark:border-slate-800 bg-emerald-50/30">
+                      {bn ? '🟢 গ্রিন জোন (নির্দ্বিধায় খান)' : '🟢 Green Zone (Eat Freely)'}
+                    </th>
+                    <th className="p-2.5 font-bold text-amber-800 dark:text-amber-400 w-[26%] border-r border-slate-200 dark:border-slate-800 bg-amber-50/30">
+                      {bn ? '🟡 ইয়েলো জোন (মেপে/বুঝে খান)' : '🟡 Yellow Zone (Moderation)'}
+                    </th>
+                    <th className="p-2.5 font-bold text-rose-800 dark:text-rose-400 w-[26%] bg-rose-50/30">
+                      {bn ? '🔴 রেড জোন (পুরোপুরি বাদ)' : '🔴 Red Zone (Avoid Completely)'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {((payload as any).seven_food_group_guide.groups as any[]).map(group => (
+                    <tr key={group.group_id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                      <td className="p-2.5 font-semibold text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-800 align-top">
+                        {bn ? group.title_bn : group.title_en}
+                      </td>
+                      <td className="p-2.5 text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-800 align-top bg-emerald-50/10">
+                        {group.green.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {group.green.map((item: any, idx: number) => (
+                              <span key={idx} className="inline-block bg-emerald-100/60 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 px-1.5 py-0.5 rounded text-[10px]">
+                                {bn ? item.name_bn : item.name_en}
+                                {item.household_measure_bn && (
+                                  <span className="text-[9px] text-emerald-700 dark:text-emerald-400 ml-0.5">({bn ? item.household_measure_bn : item.household_measure_en})</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[10px]">—</span>
+                        )}
+                      </td>
+                      <td className="p-2.5 text-slate-700 dark:text-slate-300 border-r border-slate-200 dark:border-slate-800 align-top bg-amber-50/10">
+                        {group.yellow.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {group.yellow.map((item: any, idx: number) => (
+                              <span key={idx} className="inline-block bg-amber-100/60 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 px-1.5 py-0.5 rounded text-[10px]">
+                                {bn ? item.name_bn : item.name_en}
+                                {item.household_measure_bn && (
+                                  <span className="text-[9px] text-amber-700 dark:text-amber-400 ml-0.5">({bn ? item.household_measure_bn : item.household_measure_en})</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[10px]">—</span>
+                        )}
+                      </td>
+                      <td className="p-2.5 text-slate-700 dark:text-slate-300 align-top bg-rose-50/10">
+                        {group.red.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {group.red.map((item: any, idx: number) => (
+                              <span key={idx} className="inline-block bg-rose-100/60 dark:bg-rose-950/40 text-rose-900 dark:text-rose-300 px-1.5 py-0.5 rounded text-[10px]">
+                                {bn ? item.name_bn : item.name_en}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[10px]">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            {/* Green */}
-            <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-1">
-              <span className="font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1 text-[11px]">
-                <CheckCircle className="h-3.5 w-3.5" />
-                <span>{bn ? 'সবুজ (স্বাচ্ছন্দ্যে গ্রহণীয়):' : 'Green (Eat Freely):'}</span>
+        ) : (
+          /* Baseline 3-column traffic light summary fallback */
+          <div className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-emerald-600" />
+                <span>{bn ? 'আপনার জন্য ব্যক্তিগতকৃত ট্রাফিক লাইট খাদ্য নির্দেশিকা' : 'Your Personalized Traffic Light Food Guide'}</span>
+              </h3>
+              <span className="text-[10px] text-slate-500 print:text-slate-600">
+                {bn ? 'স্বাচ্ছন্দ্যে গ্রহণীয় > পরিমিত > সম্পূর্ণ বর্জনীয়' : 'Green > Yellow > Red'}
               </span>
-              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                {(bn ? traffic_light_guide.green_foods_bn : traffic_light_guide.green_foods_en).join(', ')}...
-              </p>
             </div>
 
-            {/* Yellow */}
-            <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 space-y-1">
-              <span className="font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1 text-[11px]">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                <span>{bn ? 'হলুদ (পরিমিত ও সাবধানে):' : 'Yellow (Moderation):'}</span>
-              </span>
-              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                {(bn ? traffic_light_guide.yellow_foods_bn : traffic_light_guide.yellow_foods_en).join(', ')}...
-              </p>
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              {/* Green */}
+              <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-1">
+                <span className="font-bold text-emerald-800 dark:text-emerald-400 flex items-center gap-1 text-[11px]">
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  <span>{bn ? 'সবুজ (স্বাচ্ছন্দ্যে গ্রহণীয়):' : 'Green (Eat Freely):'}</span>
+                </span>
+                <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                  {(bn ? traffic_light_guide.green_foods_bn : traffic_light_guide.green_foods_en).join(', ')}
+                </p>
+              </div>
 
-            {/* Red */}
-            <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-50/50 dark:bg-rose-950/20 space-y-1">
-              <span className="font-bold text-rose-800 dark:text-rose-400 flex items-center gap-1 text-[11px]">
-                <XCircle className="h-3.5 w-3.5" />
-                <span>{bn ? 'লাল (সম্পূর্ণ বর্জন করুন):' : 'Red (Avoid Completely):'}</span>
-              </span>
-              <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
-                {(bn ? traffic_light_guide.red_foods_bn : traffic_light_guide.red_foods_en).join(', ')}...
-              </p>
+              {/* Yellow */}
+              <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20 space-y-1">
+                <span className="font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1 text-[11px]">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span>{bn ? 'হলুদ (পরিমিত ও সাবধানে):' : 'Yellow (Moderation):'}</span>
+                </span>
+                <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                  {(bn ? traffic_light_guide.yellow_foods_bn : traffic_light_guide.yellow_foods_en).join(', ')}
+                </p>
+              </div>
+
+              {/* Red */}
+              <div className="p-3 rounded-xl border border-rose-500/30 bg-rose-50/50 dark:bg-rose-950/20 space-y-1">
+                <span className="font-bold text-rose-800 dark:text-rose-400 flex items-center gap-1 text-[11px]">
+                  <XCircle className="h-3.5 w-3.5" />
+                  <span>{bn ? 'লাল (সম্পূর্ণ বর্জন করুন):' : 'Red (Avoid Completely):'}</span>
+                </span>
+                <p className="text-[11px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                  {(bn ? traffic_light_guide.red_foods_bn : traffic_light_guide.red_foods_en).join(', ')}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* 24-Hour Schedule & Chronotherapy Timeline */}
         {chronological_schedule.length > 0 && (

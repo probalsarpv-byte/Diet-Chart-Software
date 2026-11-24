@@ -22,6 +22,12 @@ import {
   FoodItem 
 } from '@/types';
 import { CLINICAL_PHASES } from '@/engine/phaseProgression';
+import {
+  SevenFoodGroupCategory,
+  FoodGuideEntry,
+  SevenFoodGroupSection,
+  StructuredTrafficLightGuide
+} from '@/types/r5Systems';
 
 // ── 1. CLINICIAN REPORT TYPES (U20) ────────────────────────────────
 
@@ -289,6 +295,7 @@ export interface PatientReportPayload {
     red_foods_bn: string[];
     red_foods_en: string[];
   };
+  seven_food_group_guide?: StructuredTrafficLightGuide;
   chronological_schedule: Array<{
     time: string;
     title_bn: string;
@@ -786,6 +793,103 @@ export function buildClinicianReportProjection(options: {
   };
 }
 
+// ── 4b. 7-FOOD-GROUP TRAFFIC LIGHT CLASSIFICATION ENGINE ─────────
+
+export function mapFoodToSevenFoodGroup(food: FoodItem): SevenFoodGroupCategory {
+  const cat = (food.category || '').toLowerCase();
+  const nameEn = (food.name_en || '').toLowerCase();
+  const nameBn = food.name_bn || '';
+  const text = `${cat} ${nameEn} ${nameBn} ${(food.tags || []).join(' ')}`.toLowerCase();
+
+  if (
+    cat.includes('cereal') || cat.includes('grain') || 
+    text.includes('rice') || text.includes('wheat') || text.includes('roti') || text.includes('ruti') || 
+    text.includes('oats') || text.includes('ভাত') || text.includes('রুটি') || text.includes('আটা') || 
+    text.includes('গম') || text.includes('সুজি') || text.includes('কার্বোহাইড্রেট') || text.includes('bread')
+  ) {
+    return 'grains_carbs';
+  }
+  if (
+    cat.includes('fish') || cat.includes('meat') || cat.includes('egg') || cat.includes('poultry') || 
+    cat.includes('legume') || cat.includes('pulse') || text.includes('fish') || text.includes('egg') || 
+    text.includes('chicken') || text.includes('dal') || text.includes('lentil') || text.includes('মাছ') || 
+    text.includes('ডিম') || text.includes('মাংস') || text.includes('ডাল') || text.includes('মুরগি') || text.includes('beef')
+  ) {
+    return 'proteins';
+  }
+  if (
+    cat.includes('fruit') || text.includes('fruit') || text.includes('ফল') || 
+    text.includes('আপেল') || text.includes('কলা') || text.includes('পেয়ারা') || text.includes('আম') || text.includes('কমলা')
+  ) {
+    return 'fruits';
+  }
+  if (
+    cat.includes('dairy') || text.includes('milk') || text.includes('yogurt') || text.includes('curd') || 
+    text.includes('paneer') || text.includes('দুধ') || text.includes('দই') || text.includes('ছানা') || text.includes('পনির')
+  ) {
+    return 'dairy_probiotics';
+  }
+  if (
+    cat.includes('oil') || cat.includes('fat') || cat.includes('nut') || cat.includes('seed') || 
+    text.includes('oil') || text.includes('ghee') || text.includes('seed') || text.includes('nut') || 
+    text.includes('তেল') || text.includes('ঘি') || text.includes('বাদাম') || text.includes('বীজ') || text.includes('চিয়া')
+  ) {
+    return 'fats_oils';
+  }
+  if (
+    cat.includes('spice') || cat.includes('beverage') || text.includes('tea') || text.includes('water') || 
+    text.includes('coffee') || text.includes('turmeric') || text.includes('ginger') || text.includes('garlic') || 
+    text.includes('মশলা') || text.includes('পানীয়') || text.includes('চা') || text.includes('হলুদ') || text.includes('আদা') || text.includes('রসুন')
+  ) {
+    return 'spices_beverages';
+  }
+  return 'vegetables'; // Default plant whole foods
+}
+
+export function buildStructuredTrafficLightGuide(trafficLight: any): StructuredTrafficLightGuide {
+  const groupsDefinition: { id: SevenFoodGroupCategory; title_bn: string; title_en: string }[] = [
+    { id: 'grains_carbs', title_bn: '১. শস্য ও কার্বোহাইড্রেট', title_en: '1. Grains & Carbohydrates' },
+    { id: 'proteins', title_bn: '২. প্রোটিন (মাছ, মাংস, ডিম ও ডাল)', title_en: '2. Protein (Fish, Meat, Eggs, Legumes)' },
+    { id: 'vegetables', title_bn: '৩. শাকসবজি', title_en: '3. Vegetables & Greens' },
+    { id: 'fruits', title_bn: '৪. ফলমূল', title_en: '4. Fruits' },
+    { id: 'fats_oils', title_bn: '৫. ফ্যাট ও তেল (স্বাস্থ্যকর তেল ও বীজ)', title_en: '5. Healthy Fats, Seeds & Oils' },
+    { id: 'dairy_probiotics', title_bn: '৬. দুগ্ধজাত ও প্রোবায়োটিক', title_en: '6. Dairy & Probiotics' },
+    { id: 'spices_beverages', title_bn: '৭. মশলা ও পানীয়', title_en: '7. Spices, Herbs & Beverages' }
+  ];
+
+  const mapToEntry = (f: FoodItem): FoodGuideEntry => ({
+    food_id: f.id,
+    name_bn: f.name_bn,
+    name_en: f.name_en,
+    household_measure_bn: (f as any).household_measure_bn || (f as any).default_household_measure_bn,
+    household_measure_en: (f as any).household_measure_en || (f as any).default_household_measure_en,
+    guidance_bn: (f as any).reasons?.[0]?.note_bn,
+    guidance_en: (f as any).reasons?.[0]?.note_en
+  });
+
+  const sections: SevenFoodGroupSection[] = groupsDefinition.map(g => {
+    const green = (trafficLight?.green || []).filter((f: FoodItem) => mapFoodToSevenFoodGroup(f) === g.id).map(mapToEntry);
+    const yellow = (trafficLight?.yellow || []).filter((f: FoodItem) => mapFoodToSevenFoodGroup(f) === g.id).map(mapToEntry);
+    const red = (trafficLight?.red || []).filter((f: FoodItem) => mapFoodToSevenFoodGroup(f) === g.id).map(mapToEntry);
+    return {
+      group_id: g.id,
+      title_bn: g.title_bn,
+      title_en: g.title_en,
+      green,
+      yellow,
+      red
+    };
+  });
+
+  return {
+    groups: sections,
+    total_green: trafficLight?.green?.length || 0,
+    total_yellow: trafficLight?.yellow?.length || 0,
+    total_red: trafficLight?.red?.length || 0,
+    generated_at: new Date().toISOString()
+  };
+}
+
 // ── 5. PATIENT PROJECTION BUILDER (U21) ────────────────────────────
 
 export function buildPatientReportProjection(options: {
@@ -940,13 +1044,16 @@ export function buildPatientReportProjection(options: {
     instructions_en: item.instructions_en
   }));
 
-  // Traffic light food lists for patient
-  const greenBn = (trafficLight?.green || []).slice(0, 20).map((f: FoodItem) => f.name_bn);
-  const greenEn = (trafficLight?.green || []).slice(0, 20).map((f: FoodItem) => f.name_en);
-  const yellowBn = (trafficLight?.yellow || []).slice(0, 15).map((f: FoodItem) => f.name_bn);
-  const yellowEn = (trafficLight?.yellow || []).slice(0, 15).map((f: FoodItem) => f.name_en);
-  const redBn = (trafficLight?.red || []).slice(0, 15).map((f: FoodItem) => f.name_bn);
-  const redEn = (trafficLight?.red || []).slice(0, 15).map((f: FoodItem) => f.name_en);
+  // Traffic light food lists for patient (untruncated complete lists)
+  const greenBn = (trafficLight?.green || []).map((f: FoodItem) => f.name_bn);
+  const greenEn = (trafficLight?.green || []).map((f: FoodItem) => f.name_en);
+  const yellowBn = (trafficLight?.yellow || []).map((f: FoodItem) => f.name_bn);
+  const yellowEn = (trafficLight?.yellow || []).map((f: FoodItem) => f.name_en);
+  const redBn = (trafficLight?.red || []).map((f: FoodItem) => f.name_bn);
+  const redEn = (trafficLight?.red || []).map((f: FoodItem) => f.name_en);
+
+  // 7-Food-Group Structured Traffic Light Guide
+  const sevenFoodGroupGuide = buildStructuredTrafficLightGuide(trafficLight);
 
   const isApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
   const clinicianName = weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Unassigned Clinician';
@@ -1012,6 +1119,7 @@ export function buildPatientReportProjection(options: {
       red_foods_bn: redBn,
       red_foods_en: redEn
     },
+    seven_food_group_guide: sevenFoodGroupGuide,
     chronological_schedule: patientSchedule,
     days: patientDays,
     disclaimers: {

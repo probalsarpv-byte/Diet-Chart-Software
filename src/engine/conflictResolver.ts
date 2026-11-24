@@ -8,6 +8,7 @@ import {
   RestrictionCategory
 } from '../types';
 import { DISEASE_RULES } from './diseaseRules';
+import { R5NutritionAdjustmentContract } from '../types/r5Systems';
 
 function norm(str: string): string {
   return (str || '').toLowerCase().trim();
@@ -33,7 +34,9 @@ export function resolveConflicts(
   patientAllergies: string[] = [],
   clinicianDisallowedFoods: string[] = [],
   clinicianDisallowedTags: string[] = [],
-  currentPhase: 1 | 2 | 3 | 4 = 1
+  currentPhase: 1 | 2 | 3 | 4 = 1,
+  r5NutritionContract?: R5NutritionAdjustmentContract,
+  patientLabs?: Record<string, any>
 ): TrafficLightResult {
   const result: TrafficLightResult = {
     green: [],
@@ -49,9 +52,76 @@ export function resolveConflicts(
   const normalizedClinicianFoods = clinicianDisallowedFoods.map(norm).filter(Boolean);
   const normalizedClinicianTags = clinicianDisallowedTags.map(norm).filter(Boolean);
 
+  // Check objective lab thresholds for renal and electrolyte safety
+  const serumK = typeof patientLabs?.serum_potassium === 'number' 
+    ? patientLabs.serum_potassium 
+    : parseFloat(patientLabs?.serum_potassium || '0');
+  const egfr = typeof patientLabs?.egfr === 'number' 
+    ? patientLabs.egfr 
+    : parseFloat(patientLabs?.egfr || '100');
+  const isHighPotassiumRestricted = (serumK >= 5.0) || (egfr > 0 && egfr < 30) || 
+    (Boolean(r5NutritionContract?.nutrient_constraints.potassium_mg_max) && (r5NutritionContract?.nutrient_constraints.potassium_mg_max || 9999) < 2500);
+
   for (const food of foods) {
     const reasons: EvaluatedReason[] = [];
     const foodText = `${norm(food.name_en)} ${norm(food.name_bn)} ${norm(food.category)}`;
+
+    // 0. R5 Absolute Contraindications Check (Hard Clinical Intelligence Stops)
+    if (r5NutritionContract?.absolute_contraindications) {
+      for (const contra of r5NutritionContract.absolute_contraindications) {
+        const matchesId = contra.food_id && (food.id === contra.food_id || food.code === contra.food_id);
+        const matchesName = contra.food_name_bn && (foodText.includes(norm(contra.food_name_bn)) || (contra.food_name_en && foodText.includes(norm(contra.food_name_en))));
+        if (matchesId || matchesName) {
+          reasons.push({
+            conditionId: 'R5_CONTRAINDICATION',
+            conditionNameBn: 'ক্লিনিক্যাল ইন্টেলিজেন্স নিষেধাজ্ঞা',
+            conditionNameEn: 'Clinical Intelligence Contraindication',
+            status: 'RED',
+            category: 'hard_contraindication',
+            provenance: 'R5 Systems & Multimorbidity Intelligence',
+            isOverridable: false,
+            note_bn: contra.reason_bn,
+            note_en: contra.reason_en || contra.reason_bn
+          });
+        }
+      }
+    }
+
+    // 0b. Objective Lab-Gated Hyperkalemia Safety Boundary
+    if (isHighPotassiumRestricted && food.tags.includes('high_potassium')) {
+      reasons.push({
+        conditionId: 'HYPERKALEMIA_SAFETY',
+        conditionNameBn: 'সিকেডি/হাইপারক্যালেমিয়া পটাশিয়াম সীমাবদ্ধতা',
+        conditionNameEn: 'Renal / Hyperkalemia Potassium Safety Boundary',
+        status: 'RED',
+        category: 'hard_contraindication',
+        provenance: 'Clinical Laboratory Biomarker Integration (eGFR/K+)',
+        isOverridable: false,
+        note_bn: 'উচ্চ পটাশিয়ামযুক্ত খাদ্য; সিকেডি বা হাইপারক্যালেমিয়া ঝুঁকিতে হৃদপিণ্ডের সুরক্ষায় বর্জনীয়।',
+        note_en: 'High potassium food; contraindicated in reduced eGFR / elevated serum K+ to prevent cardiac arrhythmia.'
+      });
+    }
+
+    // 0c. R5 Conditional Cautions Check
+    if (r5NutritionContract?.conditional_cautions) {
+      for (const caution of r5NutritionContract.conditional_cautions) {
+        const matchesId = caution.food_id && (food.id === caution.food_id || food.code === caution.food_id);
+        const matchesName = caution.food_name_bn && (foodText.includes(norm(caution.food_name_bn)) || (caution.food_name_en && foodText.includes(norm(caution.food_name_en))));
+        if (matchesId || matchesName) {
+          reasons.push({
+            conditionId: 'R5_CAUTION',
+            conditionNameBn: 'সতর্কতামূলক পুষ্টি নির্দেশনা',
+            conditionNameEn: 'Clinical Nutrition Precaution',
+            status: 'YELLOW',
+            category: 'evidence_conditional',
+            provenance: 'R5 Functional Systems Intelligence',
+            isOverridable: true,
+            note_bn: caution.guideline_bn,
+            note_en: caution.guideline_en || caution.guideline_bn
+          });
+        }
+      }
+    }
 
     // 1. Confirmed Allergies Check (Highest Safety Priority)
     for (const allergy of normalizedAllergies) {

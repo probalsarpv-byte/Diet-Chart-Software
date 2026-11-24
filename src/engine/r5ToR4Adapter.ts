@@ -26,7 +26,11 @@ import {
 
 import {
   R5ClinicalContextPayload,
-  R4StaleSectionNotification
+  R4StaleSectionNotification,
+  R5MedicationRecord,
+  PrescriptionScheduleItem,
+  UnifiedPrescriptionSchedule,
+  ScheduleMealRelationship
 } from '../types/r5Systems';
 
 import { analyzeInsulinRegimen } from './r5InsulinEngine';
@@ -316,5 +320,129 @@ export function adaptR5ContextToR4(
     requires_clinician_reapproval: isApproved,
     integration_alerts_en: alertsEn,
     integration_alerts_bn: alertsBn
+  };
+}
+
+/**
+ * Builds the unified chronological medication and supplement prescription schedule (6-column contract)
+ * for handoff to the R6 Master Prescription Composer.
+ */
+export function buildUnifiedPrescriptionSchedule(
+  patientId: string,
+  medications: R5MedicationRecord[] = [],
+  supplements: SupplementProtocolItem[] = [],
+  clinicianMetadata?: { clinician_name: string; license_number?: string; approved_at: string }
+): UnifiedPrescriptionSchedule {
+  const items: PrescriptionScheduleItem[] = [];
+
+  // 1. Process active running medications
+  for (const med of medications) {
+    if (med.status !== 'active') continue;
+
+    const time = (med.administration_times && med.administration_times.length > 0 && !med.is_timing_unknown)
+      ? med.administration_times[0]
+      : 'UNKNOWN';
+
+    let timeSlotBn = 'সকালের নাস্তার পর';
+    let timeSlotEn = 'After Breakfast';
+
+    if (med.relationship_to_meals === 'before_meal_empty_stomach') {
+      timeSlotBn = 'খাবারের ৩০ মিনিট পূর্বে (খালি পেটে)';
+      timeSlotEn = '30 Mins Before Meal (Empty Stomach)';
+    } else if (med.relationship_to_meals === 'bedtime') {
+      timeSlotBn = 'রাতে ঘুমানোর আগে';
+      timeSlotEn = 'At Bedtime';
+    } else if (med.relationship_to_meals === 'after_meal') {
+      timeSlotBn = 'খাবারের পর';
+      timeSlotEn = 'After Meal';
+    } else if (med.relationship_to_meals === 'with_meal') {
+      timeSlotBn = 'খাবারের সাথে';
+      timeSlotEn = 'With Meal';
+    } else if (time !== 'UNKNOWN') {
+      const hour = parseInt(time.split(':')[0] || '8', 10);
+      if (hour < 11) {
+        timeSlotBn = 'সকালের নাস্তার পর';
+        timeSlotEn = 'Morning / After Breakfast';
+      } else if (hour >= 12 && hour < 16) {
+        timeSlotBn = 'দুপুরের খাবারের পর';
+        timeSlotEn = 'Afternoon / After Lunch';
+      } else if (hour >= 16 && hour < 20) {
+        timeSlotBn = 'বিকেল / সন্ধ্যার নাস্তায়';
+        timeSlotEn = 'Evening Snack';
+      } else {
+        timeSlotBn = 'রাতের খাবারের পর';
+        timeSlotEn = 'Night / After Dinner';
+      }
+    }
+
+    const brandName = med.brand_name || med.generic_name;
+    const genericName = med.generic_name;
+    const dosage = med.prescribed_dose 
+      ? `${med.prescribed_dose} (${med.frequency || 'Once daily'})`
+      : `${med.product_strength || 'As directed'} (${med.frequency || 'Once daily'})`;
+
+    let mealRel: ScheduleMealRelationship = 'AFTER_MEAL';
+    if (med.relationship_to_meals === 'before_meal_empty_stomach') mealRel = 'BEFORE_MEAL';
+    else if (med.relationship_to_meals === 'with_meal') mealRel = 'WITH_MEAL';
+    else if (med.relationship_to_meals === 'bedtime') mealRel = 'BEDTIME';
+    else if (med.relationship_to_meals === 'independent_of_meals') mealRel = 'INDEPENDENT';
+
+    items.push({
+      id: `SCHED_MED_${med.id}`,
+      time_slot_bn: timeSlotBn,
+      time_slot_en: timeSlotEn,
+      type: 'MEDICATION',
+      brand_name: brandName,
+      generic_name: genericName,
+      dosage_and_quantity: dosage,
+      duration: med.stop_date ? `পর্যন্ত: ${med.stop_date}` : 'চলবে (Ongoing)',
+      clinical_instructions_bn: med.prescriber_instructions || (med.relationship_to_meals === 'before_meal_empty_stomach' ? 'খালি পেটে সেব্য' : 'খাবারের পর পানি সহ সেব্য'),
+      clinical_instructions_en: med.prescriber_instructions || (med.relationship_to_meals === 'before_meal_empty_stomach' ? 'Take on empty stomach' : 'Take after meal with water'),
+      meal_relationship: mealRel,
+      approval_status: med.verification_status === 'clinician_verified' ? 'APPROVED' : 'REQUIRES_REVIEW'
+    });
+  }
+
+  // 2. Process supplement protocol items
+  for (const supp of supplements) {
+    let timeSlotBn = 'দুপুরের খাবারের পর';
+    let timeSlotEn = 'After Lunch';
+
+    if (supp.relationship_to_food === 'empty_stomach_waking') {
+      timeSlotBn = 'ঘুম থেকে উঠে খালি পেটে';
+      timeSlotEn = 'Upon Waking (Empty Stomach)';
+    } else if (supp.relationship_to_food === 'before_bed' || supp.relationship_to_food === 'with_dinner') {
+      timeSlotBn = 'রাতে ঘুমানোর আগে';
+      timeSlotEn = 'At Bedtime';
+    } else if (supp.relationship_to_food === 'with_breakfast') {
+      timeSlotBn = 'সকালের নাস্তার সাথে';
+      timeSlotEn = 'With Breakfast';
+    }
+
+    let mealRel: ScheduleMealRelationship = 'WITH_MEAL';
+    if (supp.relationship_to_food === 'empty_stomach_waking') mealRel = 'EMPTY_STOMACH';
+    else if (supp.relationship_to_food === 'before_bed') mealRel = 'BEDTIME';
+
+    items.push({
+      id: `SCHED_SUPP_${supp.id}`,
+      time_slot_bn: timeSlotBn,
+      time_slot_en: timeSlotEn,
+      type: 'SUPPLEMENT',
+      brand_name: supp.brand_name || supp.chemical_form || supp.generic_nutrient,
+      generic_name: supp.generic_nutrient,
+      dosage_and_quantity: `${supp.elemental_dose_numeric || ''} ${supp.elemental_dose_unit || ''} (${supp.frequency || 'Daily'})`.trim(),
+      duration: supp.duration_weeks ? `${supp.duration_weeks * 7} দিন (${supp.duration_weeks} সপ্তাহ)` : 'চলবে (Ongoing)',
+      clinical_instructions_bn: supp.relationship_to_food === 'empty_stomach_waking' ? 'সকালে খালি পেটে গ্রহণ করুন' : 'খাবারের সাথে গ্রহণ করুন',
+      clinical_instructions_en: supp.relationship_to_food === 'empty_stomach_waking' ? 'Take on empty stomach upon waking' : 'Take with meals',
+      meal_relationship: mealRel,
+      approval_status: supp.approval_status === 'clinician_approved' ? 'APPROVED' : 'DRAFT_CANDIDATE'
+    });
+  }
+
+  return {
+    patient_id: patientId,
+    items,
+    clinician_signoff: clinicianMetadata,
+    generated_at: new Date().toISOString()
   };
 }

@@ -1291,9 +1291,12 @@ export function generateWeeklyDietPlan(
   const targetCarbs = patient.calculated.target_carbs_g;
   const targetFat = patient.calculated.target_fat_g;
 
-  // Apply confirmed protein cap if explicitly prescribed
+  // Apply confirmed protein cap if explicitly prescribed or derived from R5 multimorbidity
   if (p3Context?.prescriptions?.protein?.hasConfirmedLimit && p3Context.prescriptions.protein.numericalLimit) {
     targetProtein = Math.min(targetProtein, p3Context.prescriptions.protein.numericalLimit);
+  } else if (p3Context?.r5NutritionConstraints?.nutrient_constraints?.protein_g_per_kg && patient.weight_kg > 0) {
+    const r5ProteinCap = patient.weight_kg * p3Context.r5NutritionConstraints.nutrient_constraints.protein_g_per_kg;
+    targetProtein = Math.min(targetProtein, r5ProteinCap);
   }
 
   const targetMacros = {

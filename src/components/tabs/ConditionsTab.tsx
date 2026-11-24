@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { DISEASE_RULES } from '@/engine/diseaseRules';
+import { mapPathwaysToConditionIds } from '@/engine/r5PathwayRegistry';
 import { 
   ShieldAlert, 
   CheckCircle, 
@@ -16,11 +17,13 @@ import {
   ChevronUp,
   Sparkles,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  Activity,
+  Layers
 } from 'lucide-react';
 
 export const ConditionsTab: React.FC = () => {
-  const { patient, toggleCondition, trafficLight, language } = usePractice();
+  const { patient, toggleCondition, trafficLight, language, r5Pathways } = usePractice();
   const bn = language === 'bn';
 
   const [activeTrafficTab, setActiveTrafficTab] = useState<'GREEN' | 'YELLOW' | 'RED'>('GREEN');
@@ -30,10 +33,20 @@ export const ConditionsTab: React.FC = () => {
 
   const conditionList = Object.values(DISEASE_RULES);
 
-  // Selected rules
+  // Derived conditions synchronized with Step 1 Clinical Pathways
+  const derivedConditions = useMemo(() => {
+    return mapPathwaysToConditionIds(r5Pathways?.selected_pathways || []);
+  }, [r5Pathways?.selected_pathways]);
+
+  // Combined active conditions (Manual + Authoritative Step 1 Pathways)
+  const combinedActiveConditions = useMemo(() => {
+    return Array.from(new Set([...(patient.selected_conditions || []), ...derivedConditions]));
+  }, [patient.selected_conditions, derivedConditions]);
+
+  // Selected rules for display
   const activeRules = useMemo(() => {
-    return patient.selected_conditions.map(c => DISEASE_RULES[c]).filter(Boolean);
-  }, [patient.selected_conditions]);
+    return combinedActiveConditions.map(c => DISEASE_RULES[c]).filter(Boolean);
+  }, [combinedActiveConditions]);
 
   // Current list based on traffic tab
   const currentFoods = trafficLight[activeTrafficTab.toLowerCase() as 'green' | 'yellow' | 'red'];
@@ -64,8 +77,26 @@ export const ConditionsTab: React.FC = () => {
   return (
     <div className="space-y-6 pb-12">
       
-      {/* 1. Condition Selector Grid */}
+      {/* 1. Condition Selector Grid & Step 1 Synchronization */}
       <div className="bg-card border border-border rounded-2xl p-5 shadow-subtle space-y-4">
+        {/* Step 1 Pathway Synchronization Banner */}
+        {r5Pathways?.selected_pathways && r5Pathways.selected_pathways.length > 0 && (
+          <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary flex-shrink-0" />
+              <span className="text-xs font-semibold text-foreground">
+                {bn ? 'ধাপ ১ ক্লিনিক্যাল পাথওয়ে সক্রিয়:' : 'Step 1 Clinical Pathways Active:'}{' '}
+                <span className="text-primary font-bold">
+                  {r5Pathways.selected_pathways.join(', ')}
+                </span>
+              </span>
+            </div>
+            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium self-start sm:self-auto">
+              {bn ? 'ট্রাফিক লাইট নির্দেশিকা সমন্বিত' : 'Traffic Light Synchronized'}
+            </span>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3.5">
           <div className="flex items-center gap-2.5 text-foreground font-bold text-sm">
             <div className="p-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
@@ -74,13 +105,16 @@ export const ConditionsTab: React.FC = () => {
             <span>{bn ? 'মাল্টি-ডিজিজ ও মেটাবলিক সিন্ড্রোম নির্বাচন' : 'Concurrent Clinical Conditions Selection'}</span>
           </div>
           <span className="text-xs text-muted-foreground">
-            {bn ? 'একসাথে একাধিক স্বাস্থ্য সমস্যা নির্বাচন করুন' : 'Select all concurrent pathologies for intersection'}
+            {bn ? 'ধাপ ১ পাথওয়ে ও অতিরিক্ত ক্লিনিক্যাল সমস্যা সমন্বিত তালিকা' : 'Synchronized with Step 1 pathways & concurrent pathologies'}
           </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {conditionList.map(rule => {
-            const isSelected = patient.selected_conditions.includes(rule.id);
+            const isDerived = derivedConditions.includes(rule.id as any);
+            const isManuallySelected = patient.selected_conditions.includes(rule.id);
+            const isSelected = isDerived || isManuallySelected;
+
             return (
               <button
                 key={rule.id}
@@ -103,6 +137,14 @@ export const ConditionsTab: React.FC = () => {
                       {isSelected ? '✓' : ''}
                     </span>
                   </div>
+                  {isDerived && (
+                    <div className="mb-1.5">
+                      <span className="text-[9px] bg-primary/15 text-primary px-1.5 py-0.5 rounded font-semibold flex items-center gap-1 w-fit">
+                        <Lock className="h-2.5 w-2.5" />
+                        {bn ? 'ধাপ ১ পাথওয়ে হতে সক্রিয়' : 'Step 1 Pathway Active'}
+                      </span>
+                    </div>
+                  )}
                   <p className="text-[11px] text-muted-foreground line-clamp-2">
                     {bn ? rule.clinical_summary_bn : rule.clinical_summary_en}
                   </p>

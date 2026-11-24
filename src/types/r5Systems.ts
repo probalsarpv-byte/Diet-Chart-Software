@@ -365,3 +365,116 @@ export interface R5ClinicalContextPayload {
   stale_r4_sections: R4StaleSectionNotification[];
   generated_at: string;
 }
+
+// ── 10. Nutrition Adjustment Contract (R5 Intelligence → Diet Engine) ─
+export interface R5NutritionAdjustmentContract {
+  patient_id: string;
+  clinical_pathway_ids: string[];
+  nutrient_constraints: {
+    potassium_mg_max?: number;
+    sodium_mg_max?: number;
+    protein_g_per_kg?: number;
+    fluid_ml_max?: number;
+    carbohydrate_consistency_required: boolean;
+  };
+  absolute_contraindications: {
+    food_id?: string;
+    food_name_bn: string;
+    food_name_en?: string;
+    reason_bn: string;
+    reason_en?: string;
+    priority_level: number;
+  }[];
+  conditional_cautions: {
+    food_id?: string;
+    food_name_bn: string;
+    food_name_en?: string;
+    guideline_bn: string;
+    guideline_en?: string;
+  }[];
+  meal_schedule_rules: {
+    timing_buffers: { trigger_event: string; buffer_hours: number; description: string }[];
+    fasting_eligible: boolean;
+    fasting_contraindication_reasons: string[];
+    default_fasting_schedule?: '12_12' | '14_10' | '16_8' | 'none';
+  };
+  provenance: {
+    generated_at: string;
+    engine_version: string;
+  };
+}
+
+// ── 11. Unified Chronological Prescription Schedule Contract ──────────
+export type PrescriptionScheduleItemType = 'MEDICATION' | 'SUPPLEMENT';
+
+export type ScheduleMealRelationship =
+  | 'BEFORE_MEAL'
+  | 'WITH_MEAL'
+  | 'AFTER_MEAL'
+  | 'EMPTY_STOMACH'
+  | 'INDEPENDENT'
+  | 'BEDTIME';
+
+export interface PrescriptionScheduleItem {
+  id: string;
+  time_slot_bn: string;        // e.g. "সকালের নাস্তার পর", "দুপুরের খাবারের পর", "রাতে ঘুমানোর আগে"
+  time_slot_en: string;        // e.g. "After Breakfast", "After Lunch", "Before Bed"
+  type: PrescriptionScheduleItemType;
+  brand_name: string;          // e.g. "Seclo 20", "Magnesium Glycinate"
+  generic_name: string;        // e.g. "Omeprazole", "Magnesium"
+  dosage_and_quantity: string; // e.g. "20 mg (১টি ক্যাপসুল)", "200 mg (২টি ট্যাবলেট)"
+  duration: string;            // e.g. "১৪ দিন", "১ মাস", "চলবে (Ongoing)"
+  clinical_instructions_bn: string;
+  clinical_instructions_en: string;
+  meal_relationship: ScheduleMealRelationship;
+  approval_status: 'APPROVED' | 'DRAFT_CANDIDATE' | 'REQUIRES_REVIEW';
+}
+
+export interface UnifiedPrescriptionSchedule {
+  patient_id: string;
+  items: PrescriptionScheduleItem[];
+  clinician_signoff?: {
+    clinician_name: string;
+    license_number?: string;
+    approved_at: string;
+  };
+  generated_at: string;
+}
+
+// ── 12. 7-Food-Group Traffic Light Guide Contract ─────────────────────
+export type SevenFoodGroupCategory =
+  | 'grains_carbs'       // 1. শস্য ও কার্বোহাইড্রেট
+  | 'proteins'           // 2. প্রোটিন
+  | 'vegetables'         // 3. শাকসবজি
+  | 'fruits'             // 4. ফলমূল
+  | 'fats_oils'          // 5. ফ্যাট ও তেল
+  | 'dairy_probiotics'   // 6. দুগ্ধজাত ও প্রোবায়োটিক
+  | 'spices_beverages';  // 7. মশলা ও পানীয়
+
+export interface FoodGuideEntry {
+  food_id: string;
+  name_bn: string;
+  name_en: string;
+  household_measure_bn?: string;
+  household_measure_en?: string;
+  guidance_bn?: string;
+  guidance_en?: string;
+}
+
+export interface SevenFoodGroupSection {
+  group_id: SevenFoodGroupCategory;
+  title_bn: string;
+  title_en: string;
+  green: FoodGuideEntry[];
+  yellow: FoodGuideEntry[];
+  red: FoodGuideEntry[];
+}
+
+export interface StructuredTrafficLightGuide {
+  groups: SevenFoodGroupSection[];
+  total_green: number;
+  total_yellow: number;
+  total_red: number;
+  generated_at: string;
+}
+

@@ -463,6 +463,7 @@ export interface P3NutritionPlanningContext {
   
   clinicalSafetyFindings: string[];
   functionalNutritionPriorities: string[];
+  r5NutritionConstraints?: any;
   dietaryFrequencyFindings: DietaryPatternAnalysisResult;
   
   ayurvedicContext: AyurvedicInterpretationResult;

@@ -481,7 +481,7 @@ export interface DiseaseRule {
 }
 
 export interface EvaluatedReason {
-  conditionId: ClinicalConditionId | 'DNI_INTERACTION' | 'ALLERGY' | 'CLINICIAN_RULE' | 'PHASE_RULE';
+  conditionId: ClinicalConditionId | 'DNI_INTERACTION' | 'ALLERGY' | 'CLINICIAN_RULE' | 'PHASE_RULE' | 'R5_CONTRAINDICATION' | 'HYPERKALEMIA_SAFETY' | 'R5_CAUTION';
   conditionNameBn: string;
   conditionNameEn: string;
   status: 'GREEN' | 'YELLOW' | 'RED';

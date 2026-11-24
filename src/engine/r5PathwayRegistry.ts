@@ -28,6 +28,7 @@ import {
   PathwaySelectionState 
 } from '@/types/r5Systems';
 import { ClinicalPathway } from '@/types/clinical';
+import { ClinicalConditionId } from '@/types';
 
 export const LEGACY_TO_EXPANDED_PATHWAY_MAP: Record<ClinicalPathway, ExpandedClinicalPathwayId> = {
   metabolic: 'metabolic_endocrine',
@@ -335,4 +336,40 @@ export const determinePathwaySelectionState = (
   selectedIds: ExpandedClinicalPathwayId[],
   explicitNoKnownPathway: boolean = false
 ): PathwaySelectionState => evaluatePathwaySelectionState(selectedIds, explicitNoKnownPathway).status;
+
+/**
+ * Maps expanded clinical pathways to disease rule condition IDs for reactive Traffic Light synchronization.
+ */
+export const EXPANDED_PATHWAY_TO_CONDITION_MAP: Record<ExpandedClinicalPathwayId, ClinicalConditionId[]> = {
+  metabolic_endocrine: ['t2d_ir', 'fatty_liver', 'metabolic_syndrome'],
+  cardiovascular: ['dyslipidemia_atherosclerosis', 'hypertension_ckd'],
+  renal_electrolyte: ['hypertension_ckd', 'uric_acid_gout'],
+  gastrointestinal_hepatobiliary: ['gut_dysbiosis', 'fatty_liver'],
+  autoimmune_inflammatory: ['hypothyroid', 'gut_dysbiosis'],
+  musculoskeletal_bone: ['uric_acid_gout'],
+  underweight_malnutrition: ['gut_dysbiosis'],
+  oncology: ['gut_dysbiosis'],
+  surgical_postoperative: ['gut_dysbiosis'],
+  critical_care_specialized_feeding: ['gut_dysbiosis'],
+  mental_health_neuropsychiatric: ['gut_dysbiosis'],
+  neurological_neurodevelopmental: ['gut_dysbiosis'],
+  reproductive_hormonal: ['t2d_ir'],
+  dermatological_skin: ['gut_dysbiosis'],
+  feeding_swallowing_rehabilitation: ['gut_dysbiosis'],
+  other_multimorbidity: ['t2d_ir', 'hypertension_ckd']
+};
+
+export function mapPathwaysToConditionIds(pathwayIds: string[]): ClinicalConditionId[] {
+  const result = new Set<ClinicalConditionId>();
+  if (!pathwayIds || pathwayIds.length === 0) return [];
+  
+  pathwayIds.forEach(id => {
+    const conditions = EXPANDED_PATHWAY_TO_CONDITION_MAP[id as ExpandedClinicalPathwayId];
+    if (conditions) {
+      conditions.forEach(c => result.add(c));
+    }
+  });
+  return Array.from(result);
+}
+
 

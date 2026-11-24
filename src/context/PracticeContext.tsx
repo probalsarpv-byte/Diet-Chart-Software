@@ -102,12 +102,14 @@ import {
   PatientPathwayState, 
   R5MedicationRecord, 
   ExpandedClinicalPathwayId, 
-  R5ClinicalContextPayload 
+  R5ClinicalContextPayload,
+  R5NutritionAdjustmentContract
 } from '@/types/r5Systems';
 import { 
   evaluatePathwaySelectionState,
   mapLegacyPathwaysToExpanded,
-  mapExpandedPathwaysToLegacy
+  mapExpandedPathwaysToLegacy,
+  mapPathwaysToConditionIds
 } from '@/engine/r5PathwayRegistry';
 import {
   normalizeMedicationRecord,
@@ -1143,6 +1145,83 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
   }, [invalidateP2Approval]);
 
+  // Phase R5: Reactive Nutrition Adjustment Contract (Clinical Intelligence → Diet Engine Bridge)
+  const r5NutritionContract = useMemo((): R5NutritionAdjustmentContract => {
+    const pathwayIds = r5Pathways?.selected_pathways || [];
+    const contraindications: R5NutritionAdjustmentContract['absolute_contraindications'] = [];
+    const cautions: R5NutritionAdjustmentContract['conditional_cautions'] = [];
+
+    // 1. DNI Hard Stops & High-Risk Interventions
+    const dni = evaluateMedicationNutritionInteractions(r5Medications || []);
+    for (const d of dni) {
+      if (d.severity === 'critical_hard_stop') {
+        contraindications.push({
+          food_name_bn: d.affected_nutrients.join(', ') || d.title_bn,
+          food_name_en: d.affected_nutrients.join(', ') || d.title_en,
+          reason_bn: d.required_action_bn,
+          reason_en: d.required_action_en,
+          priority_level: 1
+        });
+      } else if (d.severity === 'high_clinical_review' || d.severity === 'moderate_caution') {
+        cautions.push({
+          food_name_bn: d.affected_nutrients.join(', ') || d.title_bn,
+          food_name_en: d.affected_nutrients.join(', ') || d.title_en,
+          guideline_bn: d.required_action_bn,
+          guideline_en: d.required_action_en
+        });
+      }
+    }
+
+    let potassiumLimit: number | undefined = undefined;
+    let proteinGPerKg: number | undefined = undefined;
+    let sodiumLimit: number | undefined = undefined;
+
+    const labsAny = (patient.labs || {}) as any;
+    const serumK = typeof labsAny.serum_potassium === 'number' 
+      ? labsAny.serum_potassium 
+      : parseFloat(labsAny.serum_potassium || '0');
+    const egfr = typeof labsAny.egfr === 'number' 
+      ? labsAny.egfr 
+      : parseFloat(labsAny.egfr || '100');
+
+    if (serumK >= 5.0 || (egfr > 0 && egfr < 30)) {
+      potassiumLimit = 2000;
+    }
+    if (pathwayIds.includes('renal_electrolyte') && egfr > 0 && egfr < 60) {
+      proteinGPerKg = 0.8;
+    }
+    if (pathwayIds.includes('cardiovascular')) {
+      sodiumLimit = 2000;
+    }
+
+    const insulin = analyzeInsulinRegimen(r5Medications || []);
+    const fluidLimit = patient.fluid_prescription?.total_fluid_limit_ml || patient.clinical_safety?.fluid_restriction?.limit_ml;
+
+    return {
+      patient_id: patient.id,
+      clinical_pathway_ids: pathwayIds,
+      nutrient_constraints: {
+        potassium_mg_max: potassiumLimit,
+        sodium_mg_max: sodiumLimit,
+        protein_g_per_kg: proteinGPerKg,
+        fluid_ml_max: fluidLimit,
+        carbohydrate_consistency_required: insulin.regimen_context.active
+      },
+      absolute_contraindications: contraindications,
+      conditional_cautions: cautions,
+      meal_schedule_rules: {
+        timing_buffers: [],
+        fasting_eligible: !insulin.regimen_context.active,
+        fasting_contraindication_reasons: insulin.regimen_context.active ? ['Insulin therapy active; prolonged fasting requires endocrinologist supervision'] : [],
+        default_fasting_schedule: insulin.regimen_context.active ? 'none' : '12_12'
+      },
+      provenance: {
+        generated_at: new Date().toISOString(),
+        engine_version: 'R5.1.0-INTEGRATED'
+      }
+    };
+  }, [patient.id, patient.labs, patient.fluid_prescription?.total_fluid_limit_ml, patient.clinical_safety?.fluid_restriction?.limit_ml, r5Pathways, r5Medications]);
+
   // 1. Reactive Traffic Light Conflict Resolver
   const trafficLight = useMemo(() => {
     const activeMeds = allMedicines.filter(m => 
@@ -1153,22 +1232,33 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       )
     );
 
+    const pathwayConditions = mapPathwaysToConditionIds(r5Pathways?.selected_pathways || []);
+    const combinedConditions = Array.from(new Set([
+      ...(patient.selected_conditions || []),
+      ...pathwayConditions
+    ])) as ClinicalConditionId[];
+
     return resolveConflicts(
       allFoods,
-      patient.selected_conditions,
+      combinedConditions,
       activeMeds,
       patient.confirmed_allergies,
       patient.clinician_disallowed_foods,
       patient.clinician_disallowed_tags,
-      patient.current_phase
+      patient.current_phase,
+      r5NutritionContract,
+      patient.labs
     );
   }, [
     patient.selected_conditions,
+    r5Pathways?.selected_pathways,
     patient.active_medications,
     patient.confirmed_allergies,
     patient.clinician_disallowed_foods,
     patient.clinician_disallowed_tags,
-    patient.current_phase
+    patient.current_phase,
+    r5NutritionContract,
+    patient.labs
   ]);
 
   // 2. Reactive DNI & Timeline
@@ -1553,11 +1643,15 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       return weeklyDietPlan;
     }
 
+    const effectiveP3Context = p2AnalysisResult?.p3PlanningContext
+      ? { ...p2AnalysisResult.p3PlanningContext, r5NutritionConstraints: r5NutritionContract }
+      : undefined;
+
     const plan = generateWeeklyDietPlan(
       patient,
       allFoods,
       trafficLight,
-      p2AnalysisResult?.p3PlanningContext,
+      effectiveP3Context,
       forceRegenerate ? (weeklyDietPlan || null) : null,
       { preserveLocks: true, forceRegenerate }
     );
@@ -1568,17 +1662,20 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     persistWeeklyPlan(plan);
     return plan;
-  }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult?.p3PlanningContext, trafficLight, allFoods, persistWeeklyPlan]);
+  }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult?.p3PlanningContext, trafficLight, allFoods, persistWeeklyPlan, r5NutritionContract]);
 
   const regenerateDay = useCallback((dayNumber: number, preserveLocks: boolean = true): WeeklyDietPlan | null => {
     if (!weeklyDietPlan || !patient?.id) return null;
+    const effectiveP3Context = p2AnalysisResult?.p3PlanningContext
+      ? { ...p2AnalysisResult.p3PlanningContext, r5NutritionConstraints: r5NutritionContract }
+      : undefined;
     const updated = regenerateDayInWeeklyPlan(
       dayNumber,
       weeklyDietPlan,
       patient,
       allFoods,
       trafficLight,
-      p2AnalysisResult?.p3PlanningContext,
+      effectiveP3Context,
       preserveLocks
     );
     setWeeklyDietPlan(updated);
@@ -2196,12 +2293,22 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const legacyPathways = isExplicitlyNoPathways || selectedIds.length === 0
       ? []
       : mapExpandedPathwaysToLegacy(selectedIds);
-    setPatient(prev => ({
-      ...prev,
-      clinical_pathways: legacyPathways,
-      r5_pathways: newState,
-      assessment_last_updated_at: new Date().toISOString()
-    }));
+    const derivedConditions = isExplicitlyNoPathways || selectedIds.length === 0
+      ? []
+      : mapPathwaysToConditionIds(selectedIds);
+    setPatient(prev => {
+      const mergedConditions = Array.from(new Set([
+        ...(prev.selected_conditions || []),
+        ...derivedConditions
+      ])) as ClinicalConditionId[];
+      return {
+        ...prev,
+        clinical_pathways: legacyPathways,
+        selected_conditions: mergedConditions,
+        r5_pathways: newState,
+        assessment_last_updated_at: new Date().toISOString()
+      };
+    });
   }, []);
 
   const updateR5Medications = useCallback((meds: R5MedicationRecord[]) => {
