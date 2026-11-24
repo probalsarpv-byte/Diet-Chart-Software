@@ -326,8 +326,9 @@ export function validateReportReleaseEligibility(options: {
   expectedVisitId?: string;
   safetyEvaluation?: any;
   isDietPlanDirty?: boolean;
+  r5NutritionContract?: any;
 }): ReleaseEligibilityResult {
-  const { patient, plan, weeklyDietPlan, visit, expectedVisitId, safetyEvaluation, isDietPlanDirty } = options;
+  const { patient, plan, weeklyDietPlan, visit, expectedVisitId, safetyEvaluation, isDietPlanDirty, r5NutritionContract } = options;
   const blockingReasons: string[] = [];
   const blockingReasons_bn: string[] = [];
 
@@ -429,7 +430,7 @@ export function validateReportReleaseEligibility(options: {
     }
   } else if (Array.isArray(plan)) {
     for (const m of plan) {
-      for (const itm of m.items) {
+      for (const itm of (m.items || [])) {
         if (itm.traffic_status === 'RED') redItemsFound++;
       }
     }
@@ -444,6 +445,15 @@ export function validateReportReleaseEligibility(options: {
   if (isApproved && (!clinicianName || clinicianName.trim() === '' || clinicianName === 'Unassigned Clinician' || clinicianName.toLowerCase() === 'doctor')) {
     blockingReasons.push('Approval signature metadata is incomplete or contains placeholder clinician name.');
     blockingReasons_bn.push('অনুমোদনের স্বাক্ষর সংক্রান্ত মেটাডাটা অসম্পূর্ণ বা স্থানধারক চিকিৎসকের নাম রয়েছে।');
+  }
+
+  // Check 10: R5 Nutrition Adjustment Contract / Acute Escalation Block
+  const effectiveContract = r5NutritionContract || (patient as any)?.r5_nutrition_contract;
+  if (effectiveContract?.acute_escalation?.block_release === true) {
+    const escMsgEn = effectiveContract.acute_escalation.message_en || 'Acute clinical safety escalation active. Immediate medical intervention required.';
+    const escMsgBn = effectiveContract.acute_escalation.message_bn || 'জরুরি ক্লিনিক্যাল ঝুঁকি বিদ্যমান। তাৎক্ষণিক মেডিকেল মূল্যায়ন আবশ্যক।';
+    blockingReasons.push(`Acute Clinical Safety Escalation: ${escMsgEn}`);
+    blockingReasons_bn.push(`জরুরি ক্লিনিক্যাল ঝুঁকি: ${escMsgBn}`);
   }
 
   return {
@@ -947,6 +957,7 @@ export function buildPatientReportProjection(options: {
   safetyEvaluation?: any;
   isDietPlanDirty?: boolean;
   releaseEligibility?: ReleaseEligibilityResult;
+  r5NutritionContract?: any;
 }): PatientReportPayload {
   const { 
     patient, 
@@ -959,7 +970,8 @@ export function buildPatientReportProjection(options: {
     includeAllDays = true,
     safetyEvaluation,
     isDietPlanDirty,
-    releaseEligibility: explicitEligibility
+    releaseEligibility: explicitEligibility,
+    r5NutritionContract
   } = options;
 
   const phaseInfo = CLINICAL_PHASES[patient.current_phase || 1];
@@ -973,7 +985,8 @@ export function buildPatientReportProjection(options: {
     weeklyDietPlan,
     visit,
     safetyEvaluation,
-    isDietPlanDirty: isDietPlanDirty ?? patient.is_diet_plan_dirty
+    isDietPlanDirty: isDietPlanDirty ?? patient.is_diet_plan_dirty,
+    r5NutritionContract: r5NutritionContract || options.r5NutritionContract
   });
 
   // Build patient days using an EXPLICIT ALLOWLIST

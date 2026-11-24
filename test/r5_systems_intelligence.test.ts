@@ -46,7 +46,8 @@ import {
 import {
   evaluateFunctionalMatrix,
   buildSystemsNetworkGraph,
-  FUNCTIONAL_DOMAINS_META
+  FUNCTIONAL_DOMAINS_META,
+  adaptAssessmentEvidenceToMatrixInput
 } from '../src/engine/r5SystemsNetworkEngine';
 
 import {
@@ -56,6 +57,10 @@ import {
 import {
   adaptR5ContextToR4
 } from '../src/engine/r5ToR4Adapter';
+
+import {
+  validateReportReleaseEligibility
+} from '../src/engine/reports/dualReportEngine';
 
 import { R5MedicationRecord, R5ClinicalContextPayload } from '../src/types/r5Systems';
 
@@ -452,6 +457,70 @@ describe('Phase R5 — Systems Intelligence & Clinical Engines', () => {
       assert.strictEqual(matrix.atm.antecedents[0].atm_type, 'antecedent');
       assert.ok(matrix.atm.antecedents[0].title_en.includes('Familial'));
     });
+
+    it('consumes 14-domain assessment answers and maps them dynamically to 7 functional matrix domains with ATM classification', () => {
+      const matrix = evaluateFunctionalMatrix({
+        pathway_ids: [],
+        assessment_answers: {
+          bloating_frequency: 'frequent',
+          joint_stiffness_pain: 'morning_stiffness',
+          morning_fatigue_level: 'severe',
+          regular_ppi_antacid_use: 'daily',
+          blood_pressure_history: 'hypertension',
+          sugar_carbohydrate_cravings: 'intense',
+          unintentional_weight_loss: 'yes'
+        }
+      });
+
+      // Assimilation: Bloating -> Mediator, Patient Reported
+      assert.ok(matrix.domains.assimilation.some(o => o.confidence_status === 'PATIENT_REPORTED' && o.atm_type === 'mediator'));
+      // Defense & Repair: Joint stiffness -> Mediator, Patient Reported
+      assert.ok(matrix.domains.defense_repair.some(o => o.confidence_status === 'PATIENT_REPORTED' && o.atm_type === 'mediator'));
+      // Energy: Morning fatigue -> Mediator, Patient Reported (Hypothesis, NOT confirmed disease)
+      assert.ok(matrix.domains.energy.some(o => o.confidence_status === 'PATIENT_REPORTED' && o.atm_type === 'mediator'));
+      // Biotransformation: Regular PPI use -> Trigger, Patient Reported
+      assert.ok(matrix.domains.biotransformation.some(o => o.confidence_status === 'PATIENT_REPORTED' && o.atm_type === 'trigger'));
+      // Transport: Hypertension history -> Mediator, Patient Reported
+      assert.ok(matrix.domains.transport.some(o => o.confidence_status === 'PATIENT_REPORTED' && o.atm_type === 'mediator'));
+      // Communication: Sugar cravings / glycemic volatility -> Mediator, Patient Reported
+      assert.ok(matrix.domains.communication.some(o => o.confidence_status === 'PATIENT_REPORTED' && o.atm_type === 'mediator'));
+      // Structural Integrity: Unintentional weight loss -> Mediator, Patient Reported
+      assert.ok(matrix.domains.structural_integrity.some(o => o.confidence_status === 'PATIENT_REPORTED' && o.atm_type === 'mediator'));
+    });
+
+    it('never fabricates abnormalities when assessment answers are negative, normal, or absent', () => {
+      const matrix = evaluateFunctionalMatrix({
+        pathway_ids: [],
+        assessment_answers: {
+          bloating_frequency: 'none',
+          joint_stiffness_pain: 'none',
+          morning_fatigue_level: 'none',
+          regular_ppi_antacid_use: 'no',
+          unintentional_weight_loss: 'no'
+        }
+      });
+
+      assert.strictEqual(matrix.domains.assimilation.length, 0);
+      assert.strictEqual(matrix.domains.defense_repair.length, 0);
+      assert.strictEqual(matrix.domains.energy.length, 0);
+      assert.strictEqual(matrix.domains.biotransformation.length, 0);
+      assert.strictEqual(matrix.domains.structural_integrity.length, 0);
+    });
+
+    it('maps objective lab biomarkers into corresponding functional domains with LAB_SUPPORTED confidence', () => {
+      const matrix = evaluateFunctionalMatrix({
+        pathway_ids: [],
+        lab_entries: {
+          hba1c: 7.8,
+          alt: 65,
+          hs_crp: 4.2
+        }
+      });
+
+      assert.ok(matrix.domains.communication.some(o => o.confidence_status === 'LAB_SUPPORTED'));
+      assert.ok(matrix.domains.biotransformation.some(o => o.confidence_status === 'LAB_SUPPORTED'));
+      assert.ok(matrix.domains.defense_repair.some(o => o.confidence_status === 'LAB_SUPPORTED'));
+    });
   });
 
   // ── 7. Deterministic Systems Network Graph ──────────────────────────
@@ -501,6 +570,67 @@ describe('Phase R5 — Systems Intelligence & Clinical Engines', () => {
       assert.ok(pharmaNode);
       const pharmaEdge = graph.edges.find(e => e.id === 'EDGE_PHARMA_BIOTRANS');
       assert.ok(pharmaEdge);
+    });
+
+    it('derives node confidence from verified evidence level rather than mere observation count', () => {
+      const matrix = evaluateFunctionalMatrix({
+        pathway_ids: [],
+        assessment_answers: { morning_fatigue_level: 'severe' }
+      });
+      const graph = buildSystemsNetworkGraph(matrix, [], []);
+      const energyNode = graph.nodes.find(n => n.id === 'NODE_DOM_energy');
+      assert.ok(energyNode);
+      // Fatigue is a patient symptom report, NOT a verified factual pathology
+      assert.strictEqual(energyNode.confidence, 'patient_reported');
+
+      const assimNode = graph.nodes.find(n => n.id === 'NODE_DOM_assimilation');
+      assert.ok(assimNode);
+      assert.strictEqual(assimNode.confidence, 'unconfirmed');
+    });
+
+    it('sets uncertainty_flag true on cross-system edges when underlying nodes are unconfirmed or hypothetical', () => {
+      const matrix = evaluateFunctionalMatrix({
+        pathway_ids: ['gastrointestinal_hepatobiliary']
+      });
+      const graph = buildSystemsNetworkGraph(matrix, ['gastrointestinal_hepatobiliary'], []);
+      const edge = graph.edges.find(e => e.id === 'EDGE_ASSIM_DEFENSE');
+      assert.ok(edge);
+      // Since defense_repair has no confirmed lab/biomarker, edge must carry uncertainty
+      assert.strictEqual(edge.uncertainty_flag, true);
+    });
+  });
+
+  // ── Acute Clinical Safety & Report Release Gate ─────────────────────
+  describe('Acute Clinical Safety Report Release Gate', () => {
+    it('blocks patient report release and PDF generation when acute_escalation.block_release is true', () => {
+      const eligibility = validateReportReleaseEligibility({
+        patient: { id: 'p_acute_01', name: 'Critical Patient', current_visit_id: 'v_01' } as any,
+        plan: [{ id: 'm_01', items: [] }] as any,
+        weeklyDietPlan: {
+          status: 'approved',
+          is_approved: true,
+          patient_id: 'p_acute_01',
+          visit_id: 'v_01',
+          version: 1,
+          approval_metadata: { plan_version: 1, clinician_name: 'Dr. Clinical Nutritionist Specialist' }
+        } as any,
+        visit: { visit_id: 'v_01' } as any,
+        r5NutritionContract: {
+          patient_id: 'p_acute_01',
+          clinical_pathway_ids: ['renal_electrolyte'],
+          nutrient_constraints: { carbohydrate_consistency_required: false },
+          acute_escalation: {
+            required: true,
+            priority: 'CRITICAL_URGENT',
+            block_release: true,
+            message_en: 'Critical Hyperkalemia Alert: Serum Potassium >= 6.0 mEq/L',
+            message_bn: 'মারাত্মক হাইপারক্যালেমিয়া'
+          }
+        }
+      });
+
+      assert.strictEqual(eligibility.isEligible, false);
+      assert.ok(eligibility.blockingReasons.some(r => r.includes('Critical Hyperkalemia Alert') || r.includes('Acute Clinical Safety')));
     });
   });
 
@@ -811,6 +941,82 @@ describe('Phase R5 — Systems Intelligence & Clinical Engines', () => {
       const coq10 = result.updated_draft.supplements.find(s => s.id === 'SUPP_COQ10_STATIN');
       assert.ok(coq10);
       assert.strictEqual(coq10.approval_status, 'draft_candidate');
+    });
+
+    it('generates distinct chronotherapy timeline items for each administration of multi-dose medications', () => {
+      const payload: R5ClinicalContextPayload = {
+        population: buildR5PopulationProfile({ age: 50 }),
+        pathways: evaluatePathwaySelectionState(['metabolic_endocrine']),
+        functional_findings: [],
+        medications: [
+          {
+            id: 'med_metformin',
+            generic_name: 'Metformin Hydrochloride',
+            brand_name: 'Comet',
+            prescribed_dose: '500 mg',
+            dose_unit: 'mg',
+            frequency: 'Twice daily',
+            route: 'Oral',
+            administration_times: ['08:00', '20:00'],
+            is_timing_unknown: false,
+            relationship_to_meals: 'with_meal',
+            is_prn: false,
+            status: 'active',
+            verification_status: 'clinician_verified',
+            rule_coverage: 'fully_covered',
+            source: 'clinician_entry'
+          }
+        ],
+        insulin_context: {
+          active: false,
+          regimen_type: 'basal_only',
+          formulation_name: 'None',
+          is_fixed_meal_dosing: false,
+          cgm_smbg_available: false,
+          hypoglycemia_history_past_month: false,
+          fast_acting_carbs_mandate: false,
+          required_action_summary_en: '',
+          required_action_summary_bn: ''
+        },
+        dni_findings: [],
+        multimorbidity_resolutions: [],
+        systems_graph: {
+          nodes: [],
+          edges: [],
+          evaluated_at: new Date().toISOString(),
+          active_conflicts_count: 0,
+          unresolved_hypotheses_count: 0
+        },
+        stale_r4_sections: [],
+        generated_at: new Date().toISOString()
+      };
+
+      const result = adaptR5ContextToR4(payload);
+      assert.ok(result.updated_draft.chronotherapy_timeline);
+      const metItems = result.updated_draft.chronotherapy_timeline.filter(t => t.entity_id === 'med_metformin');
+      assert.strictEqual(metItems.length, 2);
+      assert.strictEqual(metItems[0].time, '08:00');
+      assert.strictEqual(metItems[1].time, '20:00');
+    });
+
+    it('adapts real 14-domain assessment evidence so R4 protocol builder receives identical functional findings', () => {
+      const patient = {
+        id: 'p_real_01',
+        current_visit_id: 'v_01',
+        gut_profile: { bloating: 'moderate', bristol_stool_score: 2 }
+      };
+      const matrixInput = adaptAssessmentEvidenceToMatrixInput(
+        patient,
+        { bloating_frequency: 'frequent', morning_fatigue_level: 'severe' },
+        { alt: 55 },
+        null,
+        ['gastrointestinal_hepatobiliary'],
+        []
+      );
+      const matrix = evaluateFunctionalMatrix(matrixInput);
+      assert.ok(matrix.domains.assimilation.length > 0);
+      assert.ok(matrix.domains.energy.length > 0);
+      assert.ok(matrix.domains.biotransformation.length > 0);
     });
   });
 

@@ -64,8 +64,9 @@ export function adaptR5ContextToR4(
     if (med.status !== 'active') continue;
 
     const generic = (med.generic_name || '').toLowerCase();
-    const isTimingUnknown = med.is_timing_unknown || !med.administration_times || med.administration_times.length === 0 || med.administration_times.includes('UNKNOWN');
-    const displayTime = isTimingUnknown ? 'UNKNOWN' : (med.administration_times[0] || 'UNKNOWN');
+    const rawTimes = med.administration_times || [];
+    const isTimingUnknown = med.is_timing_unknown || rawTimes.length === 0 || rawTimes.includes('UNKNOWN');
+    const timesToSchedule = isTimingUnknown ? ['UNKNOWN'] : rawTimes;
 
     let instructionsEn = 'Take as prescribed';
     let instructionsBn = 'নির্দেশনা অনুযায়ী সেবন করুন';
@@ -87,28 +88,31 @@ export function adaptR5ContextToR4(
       instructionsBn = 'রাতে শোবার আগে সেবন করুন, কারণ রাতে যকৃতে কোলেস্টেরল বেশি তৈরি হয়।';
     }
 
-    let period: 'morning' | 'afternoon' | 'evening' | 'night' = 'morning';
-    if (displayTime !== 'UNKNOWN') {
-      const hour = parseInt(displayTime.split(':')[0] || '8', 10);
-      if (hour >= 12 && hour < 17) period = 'afternoon';
-      else if (hour >= 17 && hour < 21) period = 'evening';
-      else if (hour >= 21 || hour < 5) period = 'night';
-    }
+    for (let tIdx = 0; tIdx < timesToSchedule.length; tIdx++) {
+      const displayTime = timesToSchedule[tIdx];
+      let period: 'morning' | 'afternoon' | 'evening' | 'night' = 'morning';
+      if (displayTime !== 'UNKNOWN') {
+        const hour = parseInt(displayTime.split(':')[0] || '8', 10);
+        if (hour >= 12 && hour < 17) period = 'afternoon';
+        else if (hour >= 17 && hour < 21) period = 'evening';
+        else if (hour >= 21 || hour < 5) period = 'night';
+      }
 
-    updatedTimeline.push({
-      id: `CHRONO_${med.id || Math.random().toString(36).substring(2, 9)}`,
-      time: displayTime,
-      period,
-      category: 'medication',
-      title_en: med.brand_name ? `${med.brand_name} (${med.generic_name})` : med.generic_name,
-      title_bn: med.brand_name ? `${med.brand_name} (${med.generic_name})` : med.generic_name,
-      instructions_en: instructionsEn,
-      instructions_bn: instructionsBn,
-      entity_id: med.id,
-      is_prescription_medication: true,
-      is_timing_unknown: isTimingUnknown,
-      is_editable: true
-    });
+      updatedTimeline.push({
+        id: `CHRONO_${med.id || Math.random().toString(36).substring(2, 9)}_${tIdx}`,
+        time: displayTime,
+        period,
+        category: 'medication',
+        title_en: med.brand_name ? `${med.brand_name} (${med.generic_name})` : med.generic_name,
+        title_bn: med.brand_name ? `${med.brand_name} (${med.generic_name})` : med.generic_name,
+        instructions_en: instructionsEn,
+        instructions_bn: instructionsBn,
+        entity_id: med.id,
+        is_prescription_medication: true,
+        is_timing_unknown: displayTime === 'UNKNOWN',
+        is_editable: true
+      });
+    }
   }
 
   staleNotifications.push({

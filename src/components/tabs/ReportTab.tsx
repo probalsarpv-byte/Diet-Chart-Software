@@ -65,7 +65,8 @@ export const ReportTab: React.FC = () => {
     visitSnapshots,
     weeklyDietPlan,
     generateWeeklyPlan,
-    isDietPlanDirty
+    isDietPlanDirty,
+    r5NutritionContract
   } = usePractice();
 
   // Primary studio mode: Clinician (U20) or Patient (U21)
@@ -145,9 +146,10 @@ export const ReportTab: React.FC = () => {
       visit: activeReportVisit,
       expectedVisitId: activeReportVisit?.visit_id || activeReportVisit?.id,
       safetyEvaluation: isCurrentActiveVisit ? clinicalSafetyEvaluation : undefined,
-      isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false
+      isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false,
+      r5NutritionContract: isCurrentActiveVisit ? r5NutritionContract : undefined
     });
-  }, [effectivePatientForReport, effectiveWeeklyDietPlan, effectiveDietChart, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty]);
+  }, [effectivePatientForReport, effectiveWeeklyDietPlan, effectiveDietChart, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, r5NutritionContract]);
 
   // Subtab Single-Day vs 7-Day distinction
   const isSingleDayClinicianMode = clinicianSubTab === 'diet_prescription';
@@ -179,9 +181,10 @@ export const ReportTab: React.FC = () => {
       includeAllDays: true,
       safetyEvaluation: isCurrentActiveVisit ? clinicalSafetyEvaluation : undefined,
       isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false,
-      releaseEligibility
+      releaseEligibility,
+      r5NutritionContract: isCurrentActiveVisit ? r5NutritionContract : undefined
     });
-  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, releaseEligibility]);
+  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, releaseEligibility, r5NutritionContract]);
 
   const handlePrint = () => {
     if (reportMode === 'patient') {

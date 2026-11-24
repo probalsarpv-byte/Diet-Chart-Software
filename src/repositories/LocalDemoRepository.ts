@@ -305,6 +305,17 @@ export class LocalDemoRepository implements IPracticeRepository {
 
     await this.saveLifestylePlan(approved);
 
+    // Immutable Historical Snapshot Archiving (P0-009)
+    try {
+      const historyKey = `shuddho_lifestyle_plan_history_${approved.patient_id}`;
+      const existingHistoryJson = localStorage.getItem(historyKey);
+      const historyArr: R4ProtocolStudioData[] = existingHistoryJson ? JSON.parse(existingHistoryJson) : [];
+      historyArr.push(approved);
+      localStorage.setItem(historyKey, JSON.stringify(historyArr));
+    } catch (e) {
+      console.warn('Failed to archive historical lifestyle protocol snapshot:', e);
+    }
+
     await this.logAuditEvent({
       event_type: 'PLAN_APPROVED',
       entity_type: 'approval_record',

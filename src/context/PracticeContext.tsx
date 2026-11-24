@@ -117,7 +117,7 @@ import {
   evaluateMedicationReconciliationStatus
 } from '@/engine/r5MedicationSearchEngine';
 import { deriveR5PopulationProfile } from '@/engine/r5PopulationEngine';
-import { evaluateFunctionalMatrix, buildSystemsNetworkGraph } from '@/engine/r5SystemsNetworkEngine';
+import { evaluateFunctionalMatrix, buildSystemsNetworkGraph, adaptAssessmentEvidenceToMatrixInput } from '@/engine/r5SystemsNetworkEngine';
 import { resolveMultimorbidityConflicts } from '@/engine/r5MultimorbidityEngine';
 import { analyzeInsulinRegimen } from '@/engine/r5InsulinEngine';
 import { evaluateMedicationNutritionInteractions } from '@/engine/r5MedicationNutritionEngine';
@@ -163,6 +163,7 @@ export interface PracticeContextType {
   updateR5Pathways: (selectedIds: ExpandedClinicalPathwayId[], isExplicitlyNoPathways: boolean) => void;
   updateR5Medications: (meds: R5MedicationRecord[]) => void;
   syncR5ToR4Protocol: () => void;
+  r5NutritionContract: R5NutritionAdjustmentContract;
 
   r4Protocol: R4ProtocolStudioData | null;
   isR4ProtocolDirty: boolean;
@@ -1922,8 +1923,8 @@ function createTypedPlanningContextFallback(
       patient.selected_conditions?.includes('ckd_dialysis' as any) ||
       patient.selected_conditions?.includes('hypertension_ckd' as any)
     ),
-    energyTargetCalories: patient.calculated?.target_calories || 1800,
-    proteinTargetGrams: patient.calculated?.target_protein_g || 60,
+    energyTargetCalories: patient.calculated?.target_calories || 0,
+    proteinTargetGrams: patient.calculated?.target_protein_g || 0,
     nutritionalTargets: [],
     carbohydrateConsiderations: [],
     medicationPrecautions: [],
@@ -1938,14 +1939,14 @@ function createTypedPlanningContextFallback(
       protectiveFactors: []
     } as any,
     ayurvedicContext: {
-      primaryPrakriti: 'Kapha',
+      primaryPrakriti: ((patient as any).ayurvedic_profile?.prakriti as any) || 'unassessed',
       currentVikritiImbalances: [],
       recommendedTastes: [],
       tastesToModerate: []
     } as any,
     approvedInterventionGoals: [],
     generatedAt: new Date().toISOString(),
-    lifeStage: patient.population_group || 'adult_standard',
+    lifeStage: patient.population_group || 'not_yet_assessed',
     medicationConstraints: [],
     foodPreferences: {},
     currentCarePhase: patient.current_phase || 1,
@@ -2678,9 +2679,29 @@ function createTypedPlanningContextFallback(
 
   const syncR5ToR4Protocol = useCallback(() => {
     const pop = deriveR5PopulationProfile(patient);
-    const matrix = evaluateFunctionalMatrix({ pathway_ids: r5Pathways.selected_pathways, medications: r5Medications });
+    const targetVisitId = patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id || 'default_visit';
+    const storageKey = `shuddho_assessment_${patient.id}_${targetVisitId}`;
+    const persistedAssessment = safeStorage.getItem<any>(storageKey);
+    const assessmentAnswers = persistedAssessment?.answers || (patient as any)?.assessment_answers || {};
+    const labEntries = persistedAssessment?.labEntries || patient.labs || {};
+    const ffqHabits = persistedAssessment?.ffqHabits;
+
+    const matrixInput = adaptAssessmentEvidenceToMatrixInput(
+      patient,
+      assessmentAnswers,
+      labEntries,
+      ffqHabits,
+      r5Pathways.selected_pathways,
+      r5Medications
+    );
+    const matrix = evaluateFunctionalMatrix(matrixInput);
     const graph = buildSystemsNetworkGraph(matrix, r5Pathways.selected_pathways, r5Medications);
-    const conflicts = resolveMultimorbidityConflicts({ pathway_ids: r5Pathways.selected_pathways, medications: r5Medications });
+    const conflicts = resolveMultimorbidityConflicts({
+      pathway_ids: r5Pathways.selected_pathways,
+      medications: r5Medications,
+      has_fluid_restriction: Boolean(patient.fluid_prescription?.total_fluid_limit_ml || patient.clinical_safety?.fluid_restriction?.limit_ml),
+      is_on_dialysis: Boolean((patient as any).is_on_dialysis)
+    });
     const insulin = analyzeInsulinRegimen(r5Medications);
     const dni = evaluateMedicationNutritionInteractions(r5Medications);
 
@@ -2704,7 +2725,7 @@ function createTypedPlanningContextFallback(
         ...res.updated_draft
       });
     }
-  }, [patient, r5Pathways, r5Medications, r4Protocol, updateR4Protocol]);
+  }, [patient, currentVisit, r5Pathways, r5Medications, r4Protocol, updateR4Protocol]);
 
   // Rehydrate or lazily initialize R4 protocol on patient/visit changes
   useEffect(() => {
@@ -4518,7 +4539,8 @@ function createTypedPlanningContextFallback(
         r5Medications,
         updateR5Pathways,
         updateR5Medications,
-        syncR5ToR4Protocol
+        syncR5ToR4Protocol,
+        r5NutritionContract
       }}
     >
       {children}
