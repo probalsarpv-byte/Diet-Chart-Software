@@ -109,7 +109,11 @@ import {
   mapLegacyPathwaysToExpanded,
   mapExpandedPathwaysToLegacy
 } from '@/engine/r5PathwayRegistry';
-import { normalizeMedicationRecord } from '@/engine/r5MedicationSearchEngine';
+import {
+  normalizeMedicationRecord,
+  canonicalToLegacyMedication,
+  evaluateMedicationReconciliationStatus
+} from '@/engine/r5MedicationSearchEngine';
 import { deriveR5PopulationProfile } from '@/engine/r5PopulationEngine';
 import { evaluateFunctionalMatrix, buildSystemsNetworkGraph } from '@/engine/r5SystemsNetworkEngine';
 import { resolveMultimorbidityConflicts } from '@/engine/r5MultimorbidityEngine';
@@ -2203,20 +2207,49 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const updateR5Medications = useCallback((meds: R5MedicationRecord[]) => {
     const normalized = meds.map(normalizeMedicationRecord);
     setR5Medications(normalized);
+    const legacyRecords = normalized.map(canonicalToLegacyMedication);
+
     const activeNames = Array.from(new Set(
       normalized
         .filter(m => (m.status || 'active') === 'active')
         .map(m => m.brand_name || m.generic_name || (m as any).medication_name || '')
         .filter(Boolean)
     ));
-    setPatient(prev => ({
-      ...prev,
-      medication_records: normalized as any,
-      active_medications: activeNames,
-      medication_reconciliation_status: normalized.length > 0 ? 'fully_reconciled' : prev.medication_reconciliation?.verified_no_medications ? 'no_medications' : 'not_assessed',
-      assessment_last_updated_at: new Date().toISOString()
-    }));
-  }, []);
+
+    setPatient(prev => {
+      const verifiedNoMeds = Boolean(prev.medication_reconciliation?.verified_no_medications && normalized.length === 0);
+      const reconEval = evaluateMedicationReconciliationStatus(normalized, verifiedNoMeds);
+
+      return {
+        ...prev,
+        medication_records: legacyRecords,
+        active_medications: activeNames,
+        medication_reconciliation_status: reconEval.status,
+        medication_reconciliation: {
+          status: reconEval.status,
+          reconciled_records: legacyRecords,
+          verified_no_medications: verifiedNoMeds,
+          reconciled_by: currentClinician?.name || prev.medication_reconciliation?.reconciled_by || 'Dr. Clinical Nutritionist',
+          reconciled_at: reconEval.status === 'fully_reconciled' ? new Date().toISOString() : prev.medication_reconciliation?.reconciled_at,
+          missing_elements: reconEval.missing_elements
+        },
+        assessment_last_updated_at: new Date().toISOString()
+      };
+    });
+
+    // Invalidate previously approved R4 protocol if medications change
+    setR4Protocol(prevProto => {
+      if (prevProto && (prevProto.is_approved || prevProto.status === 'active')) {
+        return {
+          ...prevProto,
+          is_approved: false,
+          status: 'draft',
+          approval_metadata: undefined
+        };
+      }
+      return prevProto;
+    });
+  }, [currentClinician]);
 
   const syncR5ToR4Protocol = useCallback(() => {
     const pop = deriveR5PopulationProfile(patient);
@@ -2703,6 +2736,7 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: newId,
       name: adminData.name || "New Patient",
       age: adminData.age ?? 0,
+      is_age_unentered: adminData.age === undefined || adminData.age === null || adminData.age === 0,
       gender: adminData.gender || 'female',
       phone: adminData.phone || "",
       email: adminData.email || "",

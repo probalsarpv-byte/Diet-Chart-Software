@@ -13,6 +13,7 @@
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const compactData = require('../data/medicine_index_compact.json');
 import { R5RuleCoverageStatus, R5MedicationRecord } from '@/types/r5Systems';
+import { ReconciledMedicationRecord, MedicationReconciliationOverallStatus } from '@/types';
 
 export interface R5MedicationSearchResult {
   id: string;
@@ -383,6 +384,7 @@ export function searchSmartMedications(query: string, maxResults = 30): R5Medica
 
 /**
  * Creates a structured R5MedicationRecord from manual clinician entry when a drug is not found in corpus.
+ * Note: Manual entries start strictly as 'unverified' to prevent unauthorized status promotion.
  */
 export function createManualMedicationRecord(
   genericOrBrandName: string,
@@ -395,16 +397,16 @@ export function createManualMedicationRecord(
   return {
     id: `med_manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     generic_name: genericOrBrandName,
-    prescribed_dose: dose || 'As prescribed',
+    prescribed_dose: dose || '',
     dose_unit: dose.replace(/[\d\s.]/g, '') || 'mg',
-    frequency: frequency || 'Daily',
+    frequency: frequency || '',
     route: route || 'Oral',
     administration_times: [],
     is_timing_unknown: true,
     relationship_to_meals: 'unknown',
     is_prn: false,
     prescriber_instructions: prescriberInstructions,
-    verification_status: 'clinician_verified',
+    verification_status: 'unverified',
     status: 'active',
     rule_coverage: cov.coverage,
     source: 'clinician_entry',
@@ -461,6 +463,167 @@ export function normalizeMedicationRecord(rec: any): R5MedicationRecord {
     verified_by: rec.verified_by,
     verified_at: rec.verified_at,
     notes: rec.notes
+  };
+}
+
+/**
+ * Converts a Canonical/R5 medication record to a Legacy ReconciledMedicationRecord.
+ * Ensures legacy assessment fields (medication_name, dose, timing) are fully populated
+ * while preserving all structured R5 fields without loss.
+ */
+export function canonicalToLegacyMedication(rec: any): ReconciledMedicationRecord {
+  const generic = rec.generic_name || rec.medication_name || 'Unknown Medication';
+  const brand = rec.brand_name;
+  const displayName = brand ? `${brand} (${generic})` : (rec.medication_name || generic);
+  const prescribedDose = rec.prescribed_dose || rec.dose || '';
+  const mealRel = rec.relationship_to_meals || rec.timing || 'unknown';
+  const isTimingUnknown = rec.is_timing_unknown ?? (!rec.administration_times || rec.administration_times.length === 0 || rec.administration_times.includes('UNKNOWN'));
+
+  return {
+    id: rec.id || `med_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    medication_name: displayName,
+    generic_name: generic,
+    brand_name: brand,
+    manufacturer: rec.manufacturer,
+    formulation: rec.formulation || 'Tablet',
+    product_strength: rec.product_strength,
+    prescribed_dose: prescribedDose,
+    dose: prescribedDose || 'UNKNOWN',
+    dose_unit: rec.dose_unit || 'mg',
+    frequency: rec.frequency || 'UNKNOWN',
+    timing: mealRel,
+    relationship_to_meals: mealRel as any,
+    route: rec.route || 'Oral',
+    administration_times: isTimingUnknown ? [] : (rec.administration_times || []),
+    is_timing_unknown: isTimingUnknown,
+    indication: rec.indication,
+    start_date: rec.start_date,
+    stop_date: rec.stop_date,
+    status: rec.status || 'active',
+    is_prn: Boolean(rec.is_prn),
+    prescriber_instructions: rec.prescriber_instructions,
+    dose_titration_history: rec.dose_titration_history,
+    adherence_status: rec.adherence_status || 'unknown',
+    adverse_effects_reported: rec.adverse_effects_reported,
+    verification_status: rec.verification_status || 'patient_reported',
+    rule_coverage: rec.rule_coverage || 'rules_unavailable',
+    source: rec.source || 'clinician_entry',
+    verified_by: rec.verified_by,
+    verified_at: rec.verified_at,
+    notes: rec.notes,
+    insulin_regimen_type: rec.insulin_regimen_type,
+    prescribed_units: rec.prescribed_units
+  };
+}
+
+/**
+ * Converts a Legacy ReconciledMedicationRecord to an R5MedicationRecord.
+ */
+export function canonicalToR5Medication(rec: any): R5MedicationRecord {
+  return normalizeMedicationRecord(rec);
+}
+
+export const reconciledFromR5Medication = canonicalToLegacyMedication;
+
+/**
+ * Centralized Clinical Medication Reconciliation Evaluator
+ * Evaluates records against strict clinical reconciliation criteria:
+ * - A medication list is FULLY_RECONCILED only when:
+ *   1. Identity is established.
+ *   2. Actual prescribed dose is verified (not empty or UNKNOWN).
+ *   3. Administration frequency is recorded.
+ *   4. Meal relationship or timing is documented.
+ *   5. Clinician verification is genuinely performed (not unverified/patient-reported).
+ * - Distinguishes explicit 'no_medications' from missing data ('not_assessed').
+ */
+export function evaluateMedicationReconciliationStatus(
+  records: Array<ReconciledMedicationRecord | R5MedicationRecord>,
+  verifiedNoMeds: boolean
+): {
+  status: MedicationReconciliationOverallStatus;
+  missing_elements: string[];
+  reconciled_count: number;
+  total_count: number;
+} {
+  if (verifiedNoMeds) {
+    return {
+      status: 'no_medications',
+      missing_elements: [],
+      reconciled_count: 0,
+      total_count: 0
+    };
+  }
+
+  if (!records || records.length === 0) {
+    return {
+      status: 'not_assessed',
+      missing_elements: ['Medication assessment pending: records empty and "No Current Medications" not verified'],
+      reconciled_count: 0,
+      total_count: 0
+    };
+  }
+
+  const activeRecords = records.filter(r => (r.status || 'active') === 'active');
+  if (activeRecords.length === 0) {
+    return {
+      status: 'partially_reconciled',
+      missing_elements: ['All recorded medications are discontinued, held, or draft candidates'],
+      reconciled_count: 0,
+      total_count: records.length
+    };
+  }
+
+  const missing: string[] = [];
+  let fullyReconciledMedsCount = 0;
+
+  for (const r of activeRecords) {
+    const medName = (r as any).brand_name || (r as any).generic_name || (r as any).medication_name || 'Medication';
+    const doseVal = (r as any).prescribed_dose || (r as any).dose || '';
+    const freqVal = r.frequency || '';
+    const timingVal = (r as any).relationship_to_meals || (r as any).timing || '';
+    const isVerified = r.verification_status === 'clinician_verified' || r.verification_status === 'prescription_documented';
+
+    let itemComplete = true;
+
+    if (!doseVal || doseVal === 'UNKNOWN' || !doseVal.trim()) {
+      missing.push(`${medName}: Actual prescribed dose is unknown/unentered`);
+      itemComplete = false;
+    }
+
+    if (!freqVal || freqVal === 'UNKNOWN' || !freqVal.trim()) {
+      missing.push(`${medName}: Administration frequency is unknown/unentered`);
+      itemComplete = false;
+    }
+
+    if (!timingVal || timingVal === 'unknown' || !timingVal.trim()) {
+      missing.push(`${medName}: Relationship to meals/timing instructions unrecorded`);
+      itemComplete = false;
+    }
+
+    if (!isVerified) {
+      missing.push(`${medName}: Pending clinician verification (${r.verification_status || 'unverified'})`);
+      itemComplete = false;
+    }
+
+    if (itemComplete) {
+      fullyReconciledMedsCount++;
+    }
+  }
+
+  let status: MedicationReconciliationOverallStatus = 'unreconciled';
+  if (missing.length === 0 && fullyReconciledMedsCount === activeRecords.length) {
+    status = 'fully_reconciled';
+  } else if (fullyReconciledMedsCount > 0 || activeRecords.some(r => (r as any).prescribed_dose && (r as any).prescribed_dose !== 'UNKNOWN')) {
+    status = 'partially_reconciled';
+  } else {
+    status = 'unreconciled';
+  }
+
+  return {
+    status,
+    missing_elements: missing,
+    reconciled_count: fullyReconciledMedsCount,
+    total_count: activeRecords.length
   };
 }
 

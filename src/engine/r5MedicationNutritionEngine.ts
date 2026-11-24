@@ -390,17 +390,17 @@ export const MEDICATION_NUTRITION_RULES: MedicationNutritionRule[] = [
   {
     rule_id: 'RULE_BISPHOSPHONATE_POSTURE',
     drug_category: 'cardiovascular_renal',
-    generic_patterns: ['alendronate', 'alendronic acid', 'risedronate', 'ibandronate', 'zoledronic'],
+    generic_patterns: ['alendronate', 'alendronic acid', 'risedronate', 'ibandronate', 'ibandronic acid'],
     severity: 'critical_hard_stop',
     title_en: 'Oral Bisphosphonate Esophageal Erosion & Upright Fasting Rule',
     title_bn: 'বাইসফসফোনেট (হাড় ক্ষয় রোধের ওষুধ): খাদ্যনালী সুরক্ষা ও ৬০ মিনিট সোজা বসার নিয়ম',
-    trigger_criteria_en: 'Active oral bisphosphonate therapy.',
-    trigger_criteria_bn: 'হাড় ক্ষয় রোধে মুখে খাওয়ার বাইসফসফোনেট সেবন।',
+    trigger_criteria_en: 'Active oral bisphosphonate therapy (does not apply to IV zoledronic acid).',
+    trigger_criteria_bn: 'হাড় ক্ষয় রোধে মুখে খাওয়ার বাইসফসফোনেট সেবন (আইভি ইনজেকশনের ক্ষেত্রে প্রযোজ্য নয়)।',
     nutritional_consequence_en: 'Severe corrosive chemical esophagitis, esophageal ulceration, perforation, and near-zero drug absorption if taken with food or beverages.',
     nutritional_consequence_bn: 'খাবারের সাথে বা শোয়া অবস্থায় খেলে খাদ্যনালীতে তীব্র ক্ষত (আলসার) হতে পারে এবং ওষুধের কার্যকারিতা শূন্যে নেমে আসে।',
     evidence_source: 'Endocrine Society Guidelines on Pharmacological Management of Osteoporosis.',
     revision_date: '2026-11-24',
-    mechanism_rationale_en: 'Bisphosphonates are poorly bioavailable (<1%) and highly irritating to non-keratinized esophageal squamous epithelium.',
+    mechanism_rationale_en: 'Oral bisphosphonates are poorly bioavailable (<1%) and highly irritating to non-keratinized esophageal squamous epithelium.',
     mechanism_rationale_bn: 'ওষুধটি খাদ্যনালীর মিউকোসায় তীব্র রাসায়নিক প্রদাহ সৃষ্টি করতে পারে।',
     required_action_en: 'Take upon waking with a full glass of plain water only. Remain strictly upright (sitting or standing) for at least 30-60 minutes. Do not eat, drink, or take supplements for 60 minutes.',
     required_action_bn: 'সকালে ঘুম থেকে উঠে এক পূর্ণ গ্লাস সাধারণ পানি দিয়ে সেবন করুন। পরবর্তী ৬০ মিনিট সম্পূর্ণ সোজা হয়ে বসে বা দাঁড়িয়ে থাকুন (শোয়া যাবে না) এবং অন্য কোনো খাবার বা পানি গ্রহণ করবেন না।'
@@ -423,6 +423,14 @@ export function evaluateMedicationNutritionInteractions(
     const medNameLower = (med.generic_name || med.brand_name || '').toLowerCase();
 
     MEDICATION_NUTRITION_RULES.forEach(rule => {
+      // Safety filter: Oral bisphosphonate rules do not apply to IV/injection formulations
+      if (rule.rule_id === 'RULE_BISPHOSPHONATE_POSTURE') {
+        const routeLower = (med.route || '').toLowerCase();
+        if (routeLower.includes('iv') || routeLower.includes('intravenous') || routeLower.includes('injection')) {
+          return;
+        }
+      }
+
       const matches = rule.generic_patterns.some(pattern => medNameLower.includes(pattern));
 
       if (matches) {

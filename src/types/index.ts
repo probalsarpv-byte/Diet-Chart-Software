@@ -365,6 +365,7 @@ export type MedicationReconciliationOverallStatus =
   | 'partially_reconciled'
   | 'unreconciled'
   | 'no_medications'
+  | 'no_medications_verified'
   | 'not_assessed';
 
 export interface MedicationReconciliationSummary {
@@ -381,6 +382,7 @@ export interface PatientProfile {
   id: string;
   name: string;
   age: number;
+  is_age_unentered?: boolean;
   gender: 'male' | 'female';
   phone: string;
   email?: string;

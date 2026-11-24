@@ -9,7 +9,6 @@ import {
   ExpandedClinicalPathwayId,
   DrugNutrientFinding
 } from '../../types/r5Systems';
-import { PathwaySelector } from './PathwaySelector';
 import { RunningMedicationList } from './RunningMedicationList';
 import { FunctionalMatrixSection } from './FunctionalMatrixSection';
 import { SystemsNetworkViewer } from './SystemsNetworkViewer';
@@ -21,6 +20,7 @@ import { resolveMultimorbidityConflicts } from '../../engine/r5MultimorbidityEng
 import { adaptR5ContextToR4 } from '../../engine/r5ToR4Adapter';
 import { usePractice } from '@/context/PracticeContext';
 import { useAssessment } from '@/context/AssessmentContext';
+import { CLINICAL_PATHWAY_REGISTRY } from '../../engine/r5PathwayRegistry';
 import {
   Activity,
   Layers,
@@ -34,7 +34,8 @@ import {
   CheckCircle2,
   Syringe,
   Sparkles,
-  Baby
+  Baby,
+  ArrowRight
 } from 'lucide-react';
 
 interface R5SystemsDashboardProps {
@@ -65,6 +66,11 @@ export const R5SystemsDashboard: React.FC<R5SystemsDashboardProps> = ({
     setActiveTab('assessment');
     setCurrentStep('step_functional');
     setActiveDomain('medication_supplements');
+  };
+
+  const handleNavigateToPathwayAssessment = () => {
+    setActiveTab('assessment');
+    setCurrentStep('step_category');
   };
 
   // 1. Evaluate Drug-Nutrient Interactions
@@ -228,13 +234,95 @@ export const R5SystemsDashboard: React.FC<R5SystemsDashboardProps> = ({
         </div>
       </div>
 
-      {/* 2. Clinical Pathways Registry */}
-      <PathwaySelector
-        selectedPathwayIds={pathwayState.selected_pathways}
-        isExplicitlyNoPathways={isExplicitlyNoPathways}
-        onChange={onUpdatePathways}
-        readOnly={readOnly}
-      />
+      {/* 2. Clinical Pathways Summary (Authoritative Editing in Assessment Step 1) */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4" data-testid="r5-pathways-summary-card">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100 mb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-5 h-5 text-indigo-600" />
+            <div>
+              <h3 className="font-semibold text-slate-800 text-sm">
+                Active Clinical Pathways Summary (ক্লিনিক্যাল পাথওয়ে সারসংক্ষেপ)
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Authoritative pathway selection managed in Assessment Step 1
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span
+              className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase ${
+                pathwayState.status === 'PATHWAYS_SELECTED'
+                  ? 'bg-indigo-100 text-indigo-900'
+                  : pathwayState.status === 'NO_KNOWN_PATHWAY'
+                  ? 'bg-emerald-100 text-emerald-900'
+                  : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              {pathwayState.status.replace(/_/g, ' ')}
+            </span>
+            <button
+              type="button"
+              onClick={handleNavigateToPathwayAssessment}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition"
+              data-testid="navigate-to-pathway-assessment-btn"
+            >
+              <span>Edit in Step 1</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {pathwayState.status === 'NO_KNOWN_PATHWAY' ? (
+          <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>
+              <strong>No Known Clinical Disease:</strong> Patient is undergoing general preventive health, longevity, or metabolic wellness assessment. No chronic disease restrictions applied.
+            </span>
+          </div>
+        ) : pathwayState.selected_pathways.length === 0 ? (
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs text-amber-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>No clinical disease pathways currently selected (Not Assessed / Pending).</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleNavigateToPathwayAssessment}
+              className="font-bold underline text-amber-900 hover:text-amber-950"
+            >
+              Select Pathways in Step 1 →
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {pathwayState.selected_pathways.map(pId => {
+                const meta = CLINICAL_PATHWAY_REGISTRY.find(p => p.id === pId);
+                return (
+                  <div
+                    key={pId}
+                    className="p-2 bg-indigo-50/70 border border-indigo-200 rounded-lg flex items-center gap-2 text-xs"
+                    data-testid={`active-pathway-badge-${pId}`}
+                  >
+                    <span className="font-bold text-indigo-950">
+                      {meta?.title_en || pId}
+                    </span>
+                    {meta?.title_bn && (
+                      <span className="text-[10px] text-indigo-600 font-medium">
+                        ({meta.title_bn})
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="text-[11px] text-slate-500 pt-1">
+              {pathwayState.selected_pathways.length} active chronic pathway(s) informing cross-system functional matrix and drug-nutrient interactions.
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 3. Running Medications & Reconciliation (Authoritative Read-Only Reference) */}
       <RunningMedicationList

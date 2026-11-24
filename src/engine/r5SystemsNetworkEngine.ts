@@ -129,18 +129,19 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
 
   // 1. Assimilation Domain Observations
   if (pathways.includes('gastrointestinal_hepatobiliary') || symptoms.some(s => s.includes('bloat') || s.includes('reflux') || s.includes('constip') || s.includes('diarrhea'))) {
+    const hasReportedSymptoms = symptoms.some(s => s.includes('bloat') || s.includes('reflux') || s.includes('constip') || s.includes('diarrhea'));
     const obs: FunctionalObservation = {
       id: 'OBS_ASSIM_01',
       domain: 'assimilation',
       atm_type: 'mediator',
-      title_en: 'Gastrointestinal Barrier & Microbiota Disruption',
-      title_bn: 'পরিপাকতন্ত্রের প্রাচীর ও মাইক্রোবায়োমের ভারসাম্যহীনতা',
-      description_en: 'Reported digestive symptoms or GI pathway indicate impaired barrier integrity and potential dysbiosis driving downstream immune reactivity.',
-      description_bn: 'পরিপাকজনিত লক্ষণ বা গ্যাস্ট্রোইনটেস্টাইনাল উপসর্গ অন্ত্রের প্রাচীরের প্রদাহ ও উপকারী জীবাণুর ভারসাম্যহীনতার ইঙ্গিত দেয়।',
-      confidence_status: 'confirmed_clinical',
-      evidence_source: 'gastrointestinal_hepatobiliary_pathway',
-      source_type: 'clinical_history',
-      clinician_verified: true,
+      title_en: 'Gastrointestinal Barrier & Microbiota Disruption (Plausible Hypothesis)',
+      title_bn: 'পরিপাকতন্ত্রের প্রাচীর ও মাইক্রোবায়োমের ভারসাম্যহীনতা (সম্ভাব্য হাইপোথিসিস)',
+      description_en: 'Reported digestive symptoms or GI pathway context suggest potential barrier permeability and dysbiosis. Clinical verification required before confirming mucosal barrier pathology.',
+      description_bn: 'পরিপাকজনিত লক্ষণ বা গ্যাস্ট্রোইনটেস্টাইনাল উপসর্গ অন্ত্রের প্রাচীরের প্রদাহ ও উপকারী জীবাণুর ভারসাম্যহীনতার ইঙ্গিত দেয়। নিশ্চিতকরণের জন্য ক্লিনিক্যাল নিরীক্ষা প্রয়োজন।',
+      confidence_status: hasReportedSymptoms ? 'patient_reported' : 'plausible_hypothesis',
+      evidence_source: hasReportedSymptoms ? 'patient_symptom_report' : 'gastrointestinal_hepatobiliary_pathway_context',
+      source_type: hasReportedSymptoms ? 'intake_self_report' : 'clinical_history',
+      clinician_verified: false,
       recorded_at: now
     };
     domains.assimilation.push(obs);
@@ -149,18 +150,19 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
 
   // 2. Defense and Repair Observations
   if (pathways.includes('autoimmune_inflammatory') || symptoms.some(s => s.includes('joint') || s.includes('inflamm'))) {
+    const hasSymptoms = symptoms.some(s => s.includes('joint') || s.includes('inflamm'));
     const obs: FunctionalObservation = {
       id: 'OBS_DEFENSE_01',
       domain: 'defense_repair',
       atm_type: 'mediator',
-      title_en: 'Systemic Immune Activation & Inflammatory Tone',
-      title_bn: 'দীর্ঘস্থায়ী রোগপ্রতিরোধ সক্রিয়তা ও প্রদাহ',
-      description_en: 'Autoimmune or hyper-inflammatory pathway activation with circulating inflammatory cytokines.',
-      description_bn: 'অটোইমিউন বা অ্যালার্জিক প্রতিক্রিয়ায় শরীরের প্রদাহ বৃদ্ধি পেয়েছে।',
-      confidence_status: 'confirmed_clinical',
-      evidence_source: 'autoimmune_inflammatory_pathway',
-      source_type: 'clinical_history',
-      clinician_verified: true,
+      title_en: 'Systemic Immune Activation & Inflammatory Tone (Plausible Hypothesis)',
+      title_bn: 'রোগপ্রতিরোধ সক্রিয়তা ও প্রদাহজনিত প্রতিক্রিয়া (সম্ভাব্য হাইপোথিসিস)',
+      description_en: 'Immune/inflammatory pathway context suggests systemic inflammatory burden. Elevated hs-CRP/ESR lab confirmation required for clinical confirmation.',
+      description_bn: 'ইমিউন বা অ্যালার্জিক প্রতিক্রিয়ার প্রেক্ষাপট প্রদাহ বৃদ্ধির ইঙ্গিত দেয়। রক্তে সিআরপি পরীক্ষার মাধ্যমে নিশ্চিতকরণ প্রয়োজন।',
+      confidence_status: hasSymptoms ? 'patient_reported' : 'plausible_hypothesis',
+      evidence_source: hasSymptoms ? 'reported_joint_inflammatory_symptoms' : 'autoimmune_inflammatory_pathway_context',
+      source_type: hasSymptoms ? 'intake_self_report' : 'clinical_history',
+      clinician_verified: false,
       recorded_at: now
     };
     domains.defense_repair.push(obs);
@@ -173,10 +175,10 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
       id: 'OBS_ENERGY_01',
       domain: 'energy',
       atm_type: 'mediator',
-      title_en: 'Cellular ATP Insufficiency & Oxidative Vulnerability',
-      title_bn: 'কোষীয় এটিপি শক্তির ঘাটতি ও অক্সিডেটিভ চাপ',
-      description_en: 'Impaired mitochondrial phosphorylation, potential micronutrient cofactor deficit (CoQ10, B-complex, magnesium).',
-      description_bn: 'মাইটোকন্ড্রিয়ায় শক্তি উৎপাদনের ঘাটতি এবং বি-কমপ্লেক্স বা ম্যাগনেসিয়ামের ঘাটতির ঝুঁকি।',
+      title_en: 'Cellular ATP Insufficiency & Oxidative Vulnerability (Reported)',
+      title_bn: 'কোষীয় এটিপি শক্তির ঘাটতি ও অবসাদ (রোগীর বক্তব্য)',
+      description_en: 'Patient-reported fatigue and low stamina. Investigates potential mitochondrial phosphorylation or micronutrient cofactor deficit (CoQ10, B-complex, magnesium).',
+      description_bn: 'মাইটোকন্ড্রিয়ায় শক্তি উৎপাদনের ঘাটতি এবং বি-কমপ্লেক্স বা ম্যাগনেসিয়ামের ঘাটতির ঝুঁকি পর্যবেক্ষণাধীন।',
       confidence_status: 'patient_reported',
       evidence_source: 'symptom_report',
       source_type: 'intake_self_report',
@@ -195,12 +197,12 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
       atm_type: 'trigger',
       title_en: 'Polypharmacy Hepatorenal Biotransformation Burden',
       title_bn: 'বহুবিধ ওষুধের কারণে যকৃত ও বৃক্কের বিপাকীয় চাপ',
-      description_en: 'Multiple xenobiotic exposures increasing Phase I/II detoxification demand and renal clearance strain.',
+      description_en: 'Multiple xenobiotic exposures increasing Phase I/II detoxification demand and renal clearance strain. Requires clinical monitoring rather than assumed hepatic/renal failure.',
       description_bn: 'একাধিক ওষুধের যুগপৎ সেবন অথবা যকৃতের সমস্যার কারণে লিভার ও কিডনির বিষমুক্তকরণ প্রক্রিয়ায় অতিরিক্ত চাপ।',
-      confidence_status: 'confirmed_clinical',
-      evidence_source: 'medication_reconciliation',
+      confidence_status: 'plausible_hypothesis',
+      evidence_source: 'medication_exposure_count',
       source_type: 'clinical_history',
-      clinician_verified: true,
+      clinician_verified: false,
       recorded_at: now
     };
     domains.biotransformation.push(obs);
@@ -213,14 +215,14 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
       id: 'OBS_TRANSPORT_01',
       domain: 'transport',
       atm_type: 'mediator',
-      title_en: 'Endothelial Shear Stress & Microvascular Impairment',
-      title_bn: 'রক্তনালীর অন্তর্বর্তী প্রাচীরের চাপ ও রক্তপ্রবাহের বাধা',
-      description_en: 'Elevated arterial stiffness, vascular resistance, or atherogenic lipid particles altering circulatory nutrient delivery.',
-      description_bn: 'উচ্চ রক্তচাপ বা চর্বির অসামঞ্জস্যের কারণে রক্তনালীর স্থিতিস্থাপকতা হ্রাস এবং স্বাভাবিক সংবহনে বিঘ্ন।',
-      confidence_status: 'confirmed_clinical',
-      evidence_source: 'cardiovascular_pathway',
+      title_en: 'Endothelial Shear Stress & Microvascular Impairment (Plausible Hypothesis)',
+      title_bn: 'রক্তনালীর অন্তর্বর্তী প্রাচীরের চাপ ও রক্তপ্রবাহের বাধা (সম্ভাব্য হাইপোথিসিস)',
+      description_en: 'Cardiovascular risk context suggests potential arterial stiffness or lipid transit alterations. Requires objective blood pressure and lipid monitoring.',
+      description_bn: 'উচ্চ রক্তচাপ বা চর্বির অসামঞ্জস্যের কারণে রক্তনালীর স্থিতিস্থাপকতা হ্রাস এবং সংবহনে বিঘ্নের ক্লিনিক্যাল হাইপোথিসিস।',
+      confidence_status: 'plausible_hypothesis',
+      evidence_source: 'cardiovascular_pathway_context',
       source_type: 'clinical_history',
-      clinician_verified: true,
+      clinician_verified: false,
       recorded_at: now
     };
     domains.transport.push(obs);
@@ -233,14 +235,14 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
       id: 'OBS_COMM_01',
       domain: 'communication',
       atm_type: 'mediator',
-      title_en: 'Dysregulated Endocrine & Neuro-Metabolic Signaling',
-      title_bn: 'হরমোনীয় এবং বিপাকীয় বার্তা প্রেরণের ভারসাম্যহীনতা',
-      description_en: 'Peripheral insulin resistance, altered incretin kinetics, or neurotransmitter modulation disrupting metabolic homeodynamics.',
-      description_bn: 'ইনসুলিন রেজিস্ট্যান্স, অগ্ন্যাশয়ের হরমোনীয় অসামঞ্জস্য বা থাইরয়েডের ভারসাম্যে বিচ্যুতি।',
-      confidence_status: 'confirmed_clinical',
-      evidence_source: 'metabolic_endocrine_pathway',
+      title_en: 'Dysregulated Endocrine & Neuro-Metabolic Signaling (Plausible Hypothesis)',
+      title_bn: 'হরমোনীয় এবং বিপাকীয় বার্তা প্রেরণের ভারসাম্যহীনতা (সম্ভাব্য হাইপোথিসিস)',
+      description_en: 'Endocrine or neuro-metabolic pathway context suggests potential peripheral insulin resistance or neurochemical dysregulation. Fasting insulin/HOMA-IR or clinical assessment required to confirm.',
+      description_bn: 'ইনসুলিন রেজিস্ট্যান্স, অগ্ন্যাশয়ের হরমোনীয় অসামঞ্জস্য বা থাইরয়েডের ভারসাম্যে বিচ্যুতির হাইপোথিসিস।',
+      confidence_status: 'plausible_hypothesis',
+      evidence_source: 'metabolic_endocrine_pathway_context',
       source_type: 'clinical_history',
-      clinician_verified: true,
+      clinician_verified: false,
       recorded_at: now
     };
     domains.communication.push(obs);
@@ -253,14 +255,14 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
       id: 'OBS_STRUCT_01',
       domain: 'structural_integrity',
       atm_type: 'mediator',
-      title_en: 'Musculoskeletal Demineralization & Sarcopenic Risk',
-      title_bn: 'পেশীর ক্ষয় ও অস্থির খনিজ ঘনত্বের ঘাটতির ঝুঁকি',
-      description_en: 'Reduced skeletal muscle mass or compromised bone mineral density requiring targeted osteogenic and anabolic nutritional stimuli.',
-      description_bn: 'পেশীর শক্তি হ্রাস বা হাড়ের দুর্বলতা, যার জন্য পর্যাপ্ত প্রোটিন ও অস্টিওজেনিক পুষ্টি উপাদানের প্রয়োজন।',
-      confidence_status: 'confirmed_clinical',
-      evidence_source: 'musculoskeletal_bone_pathway',
+      title_en: 'Musculoskeletal Demineralization & Sarcopenic Risk (Plausible Hypothesis)',
+      title_bn: 'পেশীর ক্ষয় ও অস্থির খনিজ ঘনত্বের ঘাটতির ঝুঁকি (সম্ভাব্য হাইপোথিসিস)',
+      description_en: 'Clinical pathway context indicates risk of reduced skeletal muscle mass or compromised bone mineral density. DEXA scan or handgrip dynamometry recommended for diagnostic confirmation.',
+      description_bn: 'পেশীর শক্তি হ্রাস বা হাড়ের দুর্বলতার সম্ভাব্য ঝুঁকি, যার জন্য সুনির্দিষ্ট ক্লিনিক্যাল মূল্যায়ন প্রয়োজন।',
+      confidence_status: 'plausible_hypothesis',
+      evidence_source: 'musculoskeletal_bone_pathway_context',
       source_type: 'clinical_history',
-      clinician_verified: true,
+      clinician_verified: false,
       recorded_at: now
     };
     domains.structural_integrity.push(obs);

@@ -44,7 +44,11 @@ export function calculateAnthropometrics(
 
   // 1. Population Suitability Gate
   let population_warning: string | undefined;
-  if (age < 18 || population_group === 'pediatric') {
+  const isDemographicsUnentered = (!weight_kg || weight_kg <= 0) && (!height_cm || height_cm <= 0) && (!age || age <= 0);
+
+  if (isDemographicsUnentered) {
+    population_warning = undefined; // Defer population warnings when demographics are unentered
+  } else if ((age > 0 && age < 18) || population_group === 'pediatric') {
     population_warning = "সতর্কতা: ১৮ বছরের কম বয়সীদের ক্ষেত্রে প্রাপ্তবয়স্কদের Mifflin-St Jeor ও BMI কাট-অফ প্রযোজ্য নয়; পেডিয়াট্রিক গ্রোথ চার্ট (WHO Z-Score) অনুসরণ আবশ্যক। / Warning: Adult Mifflin-St Jeor & BMI thresholds are not validated for pediatric populations (<18y); utilize WHO growth percentiles.";
   } else if (population_group === 'pregnancy') {
     population_warning = `সতর্কতা: গর্ভকালীন পুষ্টিতে ওজন কমানোর উদ্দেশ্যে ক্যালোরি ঘাটতি সম্পূর্ণ নিষিদ্ধ। গর্ভকালীন ট্রাইমেস্টার (${trimester ? `ট্রাইমেস্টার ${trimester}` : 'অনুল্লিখিত'}) অনুযায়ী অতিরিক্ত শক্তির চাহিদা যোগ করা প্রয়োজন। / Warning: Hypocaloric weight-loss diets are contraindicated in pregnancy. Additional gestational energy accretion is required.`;

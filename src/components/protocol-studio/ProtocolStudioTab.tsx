@@ -63,7 +63,7 @@ export const ProtocolStudioTab: React.FC = () => {
   // If no protocol is yet loaded in state, offer immediate auto-generation
   if (!r4Protocol) {
     return (
-      <div className="p-8 sm:p-12 text-center bg-card border border-border rounded-3xl max-w-xl mx-auto space-y-4 my-12 shadow-sm">
+      <div className="p-8 sm:p-12 text-center bg-card border border-border rounded-3xl max-w-xl mx-auto space-y-4 my-12 shadow-sm" data-testid="protocol-studio-root">
         <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center mx-auto mb-2">
           <Sparkles className="h-8 w-8" />
         </div>
@@ -168,7 +168,7 @@ export const ProtocolStudioTab: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="protocol-studio-root">
       {/* ── Studio Header Bar ── */}
       <div className="bg-card border border-border rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>

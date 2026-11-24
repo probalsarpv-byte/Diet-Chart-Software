@@ -136,7 +136,7 @@ export interface FunctionalObservation {
   title_bn: string;
   description_en: string;
   description_bn: string;
-  confidence_status: 'confirmed_clinical' | 'patient_reported' | 'plausible_hypothesis' | 'insufficient_evidence';
+  confidence_status: 'confirmed_clinical' | 'patient_reported' | 'lab_supported' | 'clinician_verified' | 'plausible_hypothesis' | 'insufficient_evidence';
   evidence_source: string;
   source_type: 'intake_self_report' | 'clinical_history' | 'biomarker_lab' | 'functional_assessment' | 'clinician_evaluation';
   clinician_verified: boolean;

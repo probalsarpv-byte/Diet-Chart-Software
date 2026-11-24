@@ -31,8 +31,19 @@ import {
 import {
   searchSmartMedications,
   normalizeMedicationRecord,
-  identifyCombinationDrug
+  identifyCombinationDrug,
+  canonicalToLegacyMedication,
+  canonicalToR5Medication,
+  evaluateMedicationReconciliationStatus
 } from '../src/engine/r5MedicationSearchEngine';
+
+import {
+  calculateAnthropometrics
+} from '../src/engine/anthropometrics';
+
+import {
+  buildR5PopulationProfile
+} from '../src/engine/r5PopulationEngine';
 
 import {
   analyzeInsulinRegimen
@@ -487,6 +498,307 @@ describe('SHUDDHO R5 — Targeted Assessment Consolidation & Safety Acceptance',
       'UNKNOWN',
       `Expected time to be 'UNKNOWN', got '${timelineItem.time}'. Must not invent 08:00 for unrecorded dosing times.`
     );
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // TEST K: Canonical medication adapter bidirectional round-trip
+  // ─────────────────────────────────────────────────────────────────
+  it('Test K: Canonical medication adapter preserves all fields across Legacy and R5 round-trip', () => {
+    const rawR5: R5MedicationRecord = {
+      id: 'med_test_roundtrip_01',
+      brand_name: 'Lipitor',
+      generic_name: 'Atorvastatin Calcium',
+      manufacturer: 'Pfizer',
+      formulation: 'Film-coated tablet',
+      product_strength: '20 mg',
+      prescribed_dose: '20 mg',
+      dose_unit: 'mg',
+      frequency: 'Once daily at bedtime',
+      route: 'Oral',
+      administration_times: ['22:00'],
+      is_timing_unknown: false,
+      relationship_to_meals: 'bedtime',
+      status: 'active',
+      is_prn: false,
+      verification_status: 'clinician_verified',
+      rule_coverage: 'fully_covered',
+      source: 'clinician_entry',
+      notes: 'Evaluate LFTs annually',
+      prescriber_instructions: 'Take 1 tab (20mg) at 22:00'
+    };
+
+    // Convert to legacy
+    const legacy = canonicalToLegacyMedication(rawR5);
+    assert.strictEqual(legacy.id, rawR5.id);
+    assert.strictEqual(legacy.medication_name, 'Lipitor (Atorvastatin Calcium)');
+    assert.strictEqual(legacy.dose, '20 mg');
+    assert.strictEqual(legacy.timing, 'bedtime');
+    assert.strictEqual(legacy.frequency, 'Once daily at bedtime');
+    assert.strictEqual(legacy.prescribed_dose, '20 mg');
+    assert.strictEqual(legacy.product_strength, '20 mg');
+    assert.deepStrictEqual(legacy.administration_times, ['22:00']);
+
+    // Convert back to R5
+    const roundTripR5 = canonicalToR5Medication(legacy);
+    assert.strictEqual(roundTripR5.id, rawR5.id);
+    assert.strictEqual(roundTripR5.generic_name, 'Atorvastatin Calcium');
+    assert.strictEqual(roundTripR5.brand_name, 'Lipitor');
+    assert.strictEqual(roundTripR5.prescribed_dose, '20 mg');
+    assert.strictEqual(roundTripR5.frequency, 'Once daily at bedtime');
+    assert.deepStrictEqual(roundTripR5.administration_times, ['22:00']);
+    assert.strictEqual(roundTripR5.relationship_to_meals, 'bedtime');
+    assert.strictEqual(roundTripR5.verification_status, 'clinician_verified');
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // TEST L: Reconciliation evaluator prevents premature full reconciliation
+  // ─────────────────────────────────────────────────────────────────
+  it('Test L: Centralized reconciliation status evaluator prevents premature "fully reconciled"', () => {
+    // Case 1: Empty list without verified_no_meds -> not_assessed
+    const emptyUnconfirmed = evaluateMedicationReconciliationStatus([], false);
+    assert.strictEqual(emptyUnconfirmed.status, 'not_assessed');
+    assert.ok(emptyUnconfirmed.missing_elements.length > 0);
+
+    // Case 2: Explicit verified no medications -> no_medications
+    const emptyConfirmed = evaluateMedicationReconciliationStatus([], true);
+    assert.strictEqual(emptyConfirmed.status, 'no_medications');
+    assert.strictEqual(emptyConfirmed.missing_elements.length, 0);
+
+    // Case 3: Medication with UNKNOWN dose -> must NOT be fully reconciled
+    const unkDoseMed: R5MedicationRecord = {
+      id: 'm_unk_dose',
+      generic_name: 'Metformin',
+      prescribed_dose: 'UNKNOWN',
+      dose_unit: 'mg',
+      frequency: 'Daily',
+      route: 'Oral',
+      administration_times: ['08:00'],
+      is_timing_unknown: false,
+      relationship_to_meals: 'with_meal',
+      status: 'active',
+      is_prn: false,
+      verification_status: 'clinician_verified',
+      rule_coverage: 'fully_covered',
+      source: 'clinician_entry'
+    };
+    const resUnkDose = evaluateMedicationReconciliationStatus([unkDoseMed], false);
+    assert.notStrictEqual(resUnkDose.status, 'fully_reconciled');
+    assert.ok(resUnkDose.missing_elements.some(m => m.includes('dose')));
+
+    // Case 4: Medication patient-reported (unverified by clinician) -> must NOT be fully reconciled
+    const patientReportedMed: R5MedicationRecord = {
+      id: 'm_pt_reported',
+      generic_name: 'Metformin',
+      prescribed_dose: '500 mg',
+      dose_unit: 'mg',
+      frequency: 'Twice daily',
+      route: 'Oral',
+      administration_times: ['08:00', '20:00'],
+      is_timing_unknown: false,
+      relationship_to_meals: 'with_meal',
+      status: 'active',
+      is_prn: false,
+      verification_status: 'patient_reported',
+      rule_coverage: 'fully_covered',
+      source: 'intake_staged'
+    };
+    const resPtReported = evaluateMedicationReconciliationStatus([patientReportedMed], false);
+    assert.notStrictEqual(resPtReported.status, 'fully_reconciled');
+    assert.ok(resPtReported.missing_elements.some(m => m.includes('Pending clinician verification')));
+
+    // Case 5: Fully documented and clinician verified -> fully_reconciled
+    const verifiedMed: R5MedicationRecord = {
+      ...patientReportedMed,
+      id: 'm_verified',
+      verification_status: 'clinician_verified'
+    };
+    const resVerified = evaluateMedicationReconciliationStatus([verifiedMed], false);
+    assert.strictEqual(resVerified.status, 'fully_reconciled');
+    assert.strictEqual(resVerified.missing_elements.length, 0);
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // TEST M: Functional Matrix clinical certainty enforces plausible hypothesis
+  // ─────────────────────────────────────────────────────────────────
+  it('Test M: Functional Matrix inferences from pathways are marked plausible_hypothesis, never confirmed_clinical', () => {
+    const matrix = evaluateFunctionalMatrix({
+      pathway_ids: [
+        'gastrointestinal_hepatobiliary',
+        'cardiovascular',
+        'metabolic_endocrine',
+        'musculoskeletal_bone',
+        'autoimmune_inflammatory'
+      ],
+      symptoms: []
+    });
+
+    const allObservations = Object.values(matrix.domains).flat();
+    assert.ok(allObservations.length >= 5, 'Expected at least 5 functional observations');
+
+    // CRITICAL CLINICAL CERTAINTY GATE:
+    // Automatically inferred mechanisms must NEVER be marked confirmed_clinical or clinician_verified: true
+    for (const obs of allObservations) {
+      assert.notStrictEqual(
+        obs.confidence_status,
+        'confirmed_clinical',
+        `Observation ${obs.id} must not be marked confirmed_clinical from pathway context alone without objective evidence.`
+      );
+      assert.strictEqual(
+        obs.clinician_verified,
+        false,
+        `Observation ${obs.id} must not be marked clinician_verified: true without formal clinician action.`
+      );
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // TEST N: Multimorbidity clinical requirements for potassium and protein
+  // ─────────────────────────────────────────────────────────────────
+  it('Test N: Multimorbidity conflict resolution requires clinical data for potassium and protein targets', () => {
+    // 1. CKD + CVD without serum potassium lab data -> requires clinician review
+    const kConflictWithoutLabs = resolveMultimorbidityConflicts({
+      pathway_ids: ['renal_electrolyte', 'cardiovascular'],
+      medications: [] // No potassium sparing meds
+    });
+    const kConflict = kConflictWithoutLabs.find(c => c.conflict_id === 'CONFLICT_RENAL_CVD_POTASSIUM');
+    assert.ok(kConflict);
+    assert.ok(
+      kConflict.resolved_priority_recommendation_en.includes('INDIVIDUALIZED POTASSIUM TARGET REQUIRES CLINICIAN REVIEW'),
+      'Must require clinical review when serum potassium is unmeasured'
+    );
+
+    // 2. CKD + CVD WITH documented hyperkalemia (K = 5.4 mEq/L) -> triggers strict restriction
+    const kConflictWithHighK = resolveMultimorbidityConflicts({
+      pathway_ids: ['renal_electrolyte', 'cardiovascular'],
+      medications: [],
+      lab_markers: { potassium: 5.4 }
+    });
+    const kConflictHigh = kConflictWithHighK.find(c => c.conflict_id === 'CONFLICT_RENAL_CVD_POTASSIUM');
+    assert.ok(kConflictHigh);
+    assert.ok(
+      kConflictHigh.resolved_priority_recommendation_en.includes('STRICT POTASSIUM RESTRICTION'),
+      'Must enforce strict potassium restriction when hyperkalemia is documented'
+    );
+
+    // 3. CKD + Sarcopenia without dialysis status -> requires clinician review
+    const proteinConflictWithoutDialysis = resolveMultimorbidityConflicts({
+      pathway_ids: ['renal_electrolyte', 'underweight_malnutrition'],
+      medications: []
+    });
+    const protConflict = proteinConflictWithoutDialysis.find(c => c.conflict_id === 'CONFLICT_RENAL_SARCOPENIA_PROTEIN');
+    assert.ok(protConflict);
+    assert.ok(
+      protConflict.resolved_priority_recommendation_en.includes('INDIVIDUALIZED PROTEIN TARGET REQUIRES CLINICIAN REVIEW'),
+      'Must require clinical review when dialysis status is unrecorded'
+    );
+
+    // 4. CKD + Sarcopenia WITH documented maintenance hemodialysis -> elevated protein
+    const proteinConflictOnDialysis = resolveMultimorbidityConflicts({
+      pathway_ids: ['renal_electrolyte', 'underweight_malnutrition'],
+      medications: [],
+      is_on_dialysis: true
+    });
+    const protConflictDialysis = proteinConflictOnDialysis.find(c => c.conflict_id === 'CONFLICT_RENAL_SARCOPENIA_PROTEIN');
+    assert.ok(protConflictDialysis);
+    assert.ok(
+      protConflictDialysis.resolved_priority_recommendation_en.includes('ELEVATED PROTEIN FOR DIALYSIS'),
+      'Must prescribe elevated protein (1.2-1.4 g/kg) for hemodialysis patients'
+    );
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // TEST O: Drug-nutrient rules differentiate IV bisphosphonate & RIMA
+  // ─────────────────────────────────────────────────────────────────
+  it('Test O: Drug-nutrient rules differentiate IV vs oral bisphosphonates and reversible MAOIs', () => {
+    // 1. IV Bisphosphonate (e.g. Zoledronic Acid IV) -> oral upright rule must NOT trigger
+    const ivBisphosphonate: R5MedicationRecord = {
+      id: 'med_iv_zoledronic',
+      generic_name: 'Zoledronic Acid',
+      brand_name: 'Aclasta',
+      prescribed_dose: '5 mg',
+      dose_unit: 'mg',
+      frequency: 'Once yearly',
+      route: 'Intravenous',
+      administration_times: [],
+      is_timing_unknown: true,
+      relationship_to_meals: 'independent_of_meals',
+      status: 'active',
+      is_prn: false,
+      verification_status: 'clinician_verified',
+      rule_coverage: 'fully_covered',
+      source: 'clinician_entry'
+    };
+    const dniIvBisphosphonate = evaluateMedicationNutritionInteractions([ivBisphosphonate]);
+    const oralPostureFinding = dniIvBisphosphonate.find(f => f.rule_id === 'RULE_BISPHOSPHONATE_POSTURE');
+    assert.strictEqual(
+      oralPostureFinding,
+      undefined,
+      'IV bisphosphonate must not trigger oral esophageal erosion upright fasting rule'
+    );
+
+    // 2. Oral Bisphosphonate (Alendronate Oral) -> oral upright rule MUST trigger
+    const oralAlendronate: R5MedicationRecord = {
+      ...ivBisphosphonate,
+      id: 'med_oral_alendronate',
+      generic_name: 'Alendronate Sodium',
+      brand_name: 'Fosamax',
+      route: 'Oral'
+    };
+    const dniOralBisphosphonate = evaluateMedicationNutritionInteractions([oralAlendronate]);
+    const oralRuleTriggered = dniOralBisphosphonate.find(f => f.rule_id === 'RULE_BISPHOSPHONATE_POSTURE');
+    assert.ok(oralRuleTriggered, 'Oral alendronate must trigger oral upright fasting rule');
+
+    // 3. Reversible MAO-A (Moclobemide) -> does not trigger irreversible hard stop
+    const rimaMeds: R5MedicationRecord[] = [{
+      id: 'med_rima',
+      generic_name: 'Moclobemide',
+      prescribed_dose: '150 mg',
+      dose_unit: 'mg',
+      frequency: 'BD',
+      route: 'Oral',
+      administration_times: ['08:00', '20:00'],
+      is_timing_unknown: false,
+      relationship_to_meals: 'after_meal',
+      status: 'active',
+      is_prn: false,
+      verification_status: 'clinician_verified',
+      rule_coverage: 'partially_covered',
+      source: 'clinician_entry'
+    }];
+    const rimaConflicts = resolveMultimorbidityConflicts({
+      pathway_ids: ['mental_health_neuropsychiatric'],
+      medications: rimaMeds
+    });
+    const irreversibleStop = rimaConflicts.find(c => c.conflict_id === 'CONFLICT_MAOI_TYRAMINE');
+    assert.strictEqual(irreversibleStop, undefined, 'Moclobemide must not trigger irreversible MAOI tyramine hard stop');
+    const rimaCaution = rimaConflicts.find(c => c.conflict_id === 'CONFLICT_RIMA_MOCLOBEMIDE');
+    assert.ok(rimaCaution, 'Moclobemide must trigger reversible RIMA mild caution');
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // TEST P: Unentered demographics handling
+  // ─────────────────────────────────────────────────────────────────
+  it('Test P: Unentered demographics handling prevents false pediatric or adult assumptions', () => {
+    // When demographics are unmeasured / unentered during registration
+    const unmeasured = calculateAnthropometrics(
+      0, // age unentered
+      'female',
+      0, // height unentered
+      0, // weight unentered
+      0
+    );
+
+    assert.strictEqual(unmeasured.is_unmeasured, true);
+    assert.strictEqual(unmeasured.bmi, 0);
+    assert.strictEqual(unmeasured.bmr, 0);
+    assert.strictEqual(unmeasured.target_calories, 0);
+    // Population warning must NOT falsely accuse unentered demographics of being pediatric
+    assert.strictEqual(unmeasured.population_warning, undefined);
+
+    // Life stage profile with unentered age
+    const popProfile = buildR5PopulationProfile({ age: undefined, gender: 'female' });
+    assert.strictEqual(popProfile.is_age_unentered, true);
+    assert.strictEqual(popProfile.life_stage, 'not_yet_assessed');
   });
 
 });

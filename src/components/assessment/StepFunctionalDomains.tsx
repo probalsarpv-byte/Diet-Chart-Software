@@ -99,6 +99,7 @@ export const StepFunctionalDomains: React.FC = () => {
           return (
             <button
               key={domain.id}
+              data-testid={`domain-nav-pill-${domain.id}`}
               type="button"
               onClick={() => setActiveDomain(domain.id)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
