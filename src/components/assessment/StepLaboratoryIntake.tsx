@@ -9,7 +9,13 @@ import {
   LabSourceType,
   LabVerificationStatus
 } from '@/types/r7Laboratory';
-import { R7_CANONICAL_MARKERS, getCanonicalMarkerId } from '@/engine/r7/labFoundation';
+import {
+  R7_CANONICAL_MARKERS,
+  R7_CANONICAL_TO_LEGACY_LAB_KEY,
+  getCanonicalMarkerId,
+  isEligibleCanonicalScalarObservation,
+  reconcilePatientLaboratories
+} from '@/engine/r7/labFoundation';
 import { evaluateR7LaboratoryIntelligence } from '@/engine/r7/biomarkerIntelligence';
 import {
   FlaskConical,
@@ -155,14 +161,40 @@ export const StepLaboratoryIntake: React.FC = () => {
     return map;
   }, [r7Summary]);
 
-  const syncMarkerToPatientLabs = (entry: StructuredLabEntry, normalizedVal?: number) => {
+  const syncMarkerToPatientLabs = (
+    entry: StructuredLabEntry,
+    nextEntriesMap: Record<string, StructuredLabEntry>
+  ) => {
     const cid = getCanonicalMarkerId(entry.canonical_marker_id || entry.marker_id);
-    const labKey = LEGACY_TO_PATIENT_LAB_KEY[entry.marker_id] || LEGACY_TO_PATIENT_LAB_KEY[cid];
-    if (!labKey) return;
-    const isTested = entry.status === 'previously_tested';
-    updateLabs({
-      [labKey]: isTested ? (normalizedVal ?? entry.numeric_value) : undefined
-    } as any);
+    const labKey =
+      LEGACY_TO_PATIENT_LAB_KEY[entry.marker_id] ||
+      LEGACY_TO_PATIENT_LAB_KEY[cid] ||
+      R7_CANONICAL_TO_LEGACY_LAB_KEY[cid];
+    const effectiveVisitId = visitId || currentVisit?.visit_id || patient?.current_visit_id;
+
+    if (!labKey) {
+      // Unmapped / custom structured lab modifications must still invalidate stale R4 & Diet/P2 state (E4)
+      updateLabs({} as any);
+      return;
+    }
+
+    const recon = reconcilePatientLaboratories({
+      patient: { ...patient, labs: undefined },
+      visitId: effectiveVisitId,
+      structuredEntries: nextEntriesMap
+    });
+    const obs = recon.latestByCanonical[cid];
+    const projectedValue = isEligibleCanonicalScalarObservation(obs, recon.conflicts)
+      ? obs.normalized_value
+      : undefined;
+
+    // Never fall back to raw unnormalized entry.numeric_value when normalized_value is absent/rejected;
+    // also keep legacy alias keys consistent (e.g. clear stale potassium/serum_potassium).
+    const patch: Record<string, any> = { [labKey]: projectedValue };
+    if (cid === 'potassium') {
+      patch.potassium = projectedValue;
+    }
+    updateLabs(patch as any);
   };
 
   const upsertLabEntry = (marker: StructuredLabEntry, patch: Partial<StructuredLabEntry>) => {
@@ -175,13 +207,8 @@ export const StepLaboratoryIntake: React.FC = () => {
       original_unit: patch.unit || marker.unit
     };
     setLabEntry(marker.marker_id, next);
-    const previewEval = evaluateR7LaboratoryIntelligence({
-      patient,
-      visitId: next.visit_id,
-      structuredEntries: { [marker.marker_id]: next }
-    });
-    const normVal = previewEval.observations[getCanonicalMarkerId(marker.marker_id)]?.normalized_value;
-    syncMarkerToPatientLabs(next, normVal);
+    const nextEntriesMap = { ...labEntries, [marker.marker_id]: next };
+    syncMarkerToPatientLabs(next, nextEntriesMap);
   };
 
   const handleAddCustomMarker = (e: React.FormEvent) => {
@@ -191,6 +218,7 @@ export const StepLaboratoryIntake: React.FC = () => {
     const numVal = parseFloat(customValue);
     const lowVal = parseFloat(customLow);
     const highVal = parseFloat(customHigh);
+    const isValidNum = Number.isFinite(numVal) && numVal >= 0;
     const entry: StructuredLabEntry = {
       marker_id: id,
       canonical_marker_id: id,
@@ -198,12 +226,12 @@ export const StepLaboratoryIntake: React.FC = () => {
       name_en: customName.trim(),
       name_bn: customName.trim(),
       unit: customUnit.trim() || 'unit',
-      status: !isNaN(numVal) ? 'previously_tested' : 'not_tested',
-      numeric_value: !isNaN(numVal) ? numVal : undefined,
+      status: isValidNum ? 'previously_tested' : 'not_tested',
+      numeric_value: isValidNum ? numVal : undefined,
       original_value: !isNaN(numVal) ? numVal : undefined,
       original_unit: customUnit.trim() || 'unit',
-      lab_ref_low: !isNaN(lowVal) ? lowVal : undefined,
-      lab_ref_high: !isNaN(highVal) ? highVal : undefined,
+      lab_ref_low: Number.isFinite(lowVal) ? lowVal : undefined,
+      lab_ref_high: Number.isFinite(highVal) ? highVal : undefined,
       test_date: new Date().toISOString().split('T')[0],
       verification_status: 'clinician_verified',
       source_type: 'manual_clinician_entry',
@@ -211,6 +239,7 @@ export const StepLaboratoryIntake: React.FC = () => {
       visit_id: visitId || currentVisit?.visit_id || patient?.current_visit_id
     };
     setLabEntry(id, entry);
+    syncMarkerToPatientLabs(entry, { ...labEntries, [id]: entry });
     setCustomName('');
     setCustomValue('');
     setCustomLow('');
@@ -444,7 +473,7 @@ export const StepLaboratoryIntake: React.FC = () => {
                     <option value="not_tested">{bn ? 'পরীক্ষা করা হয়নি' : 'Not Tested'}</option>
                     <option value="previously_tested">{bn ? 'ফলাফল আছে' : 'Tested / Available'}</option>
                     <option value="pending_result">{bn ? 'রিপোর্ট অপেক্ষমাণ' : 'Pending Result'}</option>
-                    <option value="declined_or_cost">{bn ? 'সম্ভব হয়নি / প্রত্যাখ্যান' : 'Declined / Unavailable'}</option>
+                    <option value="declined_unavailable">{bn ? 'সম্ভব হয়নি / প্রত্যাখ্যান' : 'Declined / Unavailable'}</option>
                     <option value="invalid">{bn ? 'অকার্যকর নমুনা' : 'Invalid / Hemolyzed'}</option>
                   </select>
 

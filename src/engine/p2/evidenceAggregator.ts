@@ -186,15 +186,41 @@ export function aggregateEvidence(
   // ── Lab values ─────────────────────────────────────────────────
   const labs = patient.labs;
 
-  const homaCalc = labs.homa_ir !== undefined 
-    ? labs.homa_ir 
-    : (labs.fasting_glucose !== undefined && labs.fasting_insulin !== undefined && labs.fasting_insulin > 0)
-    ? Math.round(((labs.fasting_glucose * labs.fasting_insulin) / 405) * 100) / 100
-    : undefined;
+  const onExogenousInsulin =
+    (patient.medication_records || []).some(
+      m => m.status === 'active' && (m.generic_name || '').toLowerCase().includes('insulin')
+    ) ||
+    (patient.active_medications || []).some(m => m.toLowerCase().includes('insulin'));
 
-  if (homaCalc !== undefined) {
-    const elevated = homaCalc > 1.9;
+  if (labs.homa_ir !== undefined) {
+    const elevated = labs.homa_ir > 1.9;
     const tags = elevated ? ['elevated_homa_ir', 'obs_homa_ir_elevated', 'central_adiposity'] : ['normal_homa_ir', 'obs_normal_homa_ir'];
+    add({
+      id: makeId(patient.id, 'lab', 'homa_ir'),
+      patientId: patient.id,
+      visitId,
+      category: 'lab',
+      sourceLabMarker: 'homa_ir',
+      observedValue: labs.homa_ir,
+      unit: 'index',
+      date,
+      dataSource: 'measured',
+      verificationStatus: 'lab_confirmed',
+      associatedDomains: domainsForTags(tags),
+      tags,
+    });
+  } else if (
+    !onExogenousInsulin &&
+    labs.fasting_glucose !== undefined &&
+    labs.fasting_insulin !== undefined &&
+    labs.fasting_insulin > 0
+  ) {
+    // Legacy fallback without paired draw/fasting provenance: NEVER mark 'lab_confirmed'
+    const homaCalc = Math.round(((labs.fasting_glucose * labs.fasting_insulin) / 405) * 100) / 100;
+    const elevated = homaCalc > 1.9;
+    const tags = elevated
+      ? ['elevated_homa_ir', 'obs_homa_ir_elevated', 'unverified_derived_homa_ir']
+      : ['normal_homa_ir', 'obs_normal_homa_ir', 'unverified_derived_homa_ir'];
     add({
       id: makeId(patient.id, 'lab', 'homa_ir'),
       patientId: patient.id,
@@ -204,10 +230,11 @@ export function aggregateEvidence(
       observedValue: homaCalc,
       unit: 'index',
       date,
-      dataSource: 'measured',
-      verificationStatus: 'lab_confirmed',
+      dataSource: 'calculated',
+      verificationStatus: 'unverified',
       associatedDomains: domainsForTags(tags),
       tags,
+      provenance: 'legacy_unprovenanced_homa_ir_screen',
     });
   }
 

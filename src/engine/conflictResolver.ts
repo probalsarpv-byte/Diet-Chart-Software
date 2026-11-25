@@ -52,18 +52,37 @@ export function resolveConflicts(
   const normalizedClinicianFoods = clinicianDisallowedFoods.map(norm).filter(Boolean);
   const normalizedClinicianTags = clinicianDisallowedTags.map(norm).filter(Boolean);
 
-  // Check objective lab thresholds for renal and electrolyte safety (P0-002)
-  const rawSerumK = patientLabs?.serum_potassium;
-  const hasSerumK = rawSerumK !== undefined && rawSerumK !== null && rawSerumK !== '';
-  const serumK = hasSerumK 
-    ? (typeof rawSerumK === 'number' ? rawSerumK : parseFloat(rawSerumK))
-    : undefined;
+  // Check objective lab thresholds for renal and electrolyte safety (Checkpoint D: support both canonical potassium/reported_egfr and legacy aliases, reject negative/NaN, and honor R5 contract lab_safety_context)
+  const rawSerumK =
+    r5NutritionContract?.lab_safety_context?.serum_potassium_mmol_l ??
+    patientLabs?.potassium ??
+    patientLabs?.serum_potassium;
+  const parsedSerumK =
+    typeof rawSerumK === 'number'
+      ? rawSerumK
+      : rawSerumK !== undefined && rawSerumK !== null && rawSerumK !== ''
+      ? parseFloat(rawSerumK)
+      : undefined;
+  const serumK =
+    parsedSerumK !== undefined && Number.isFinite(parsedSerumK) && parsedSerumK >= 0
+      ? parsedSerumK
+      : undefined;
 
-  const rawEgfr = patientLabs?.egfr;
-  const hasEgfr = rawEgfr !== undefined && rawEgfr !== null && rawEgfr !== '';
-  const egfr = hasEgfr 
-    ? (typeof rawEgfr === 'number' ? rawEgfr : parseFloat(rawEgfr))
-    : undefined;
+  const rawEgfr =
+    r5NutritionContract?.lab_safety_context?.reported_egfr_ml_min ??
+    r5NutritionContract?.lab_safety_context?.calculated_egfr_ml_min ??
+    patientLabs?.reported_egfr ??
+    patientLabs?.egfr;
+  const parsedEgfr =
+    typeof rawEgfr === 'number'
+      ? rawEgfr
+      : rawEgfr !== undefined && rawEgfr !== null && rawEgfr !== ''
+      ? parseFloat(rawEgfr)
+      : undefined;
+  const egfr =
+    parsedEgfr !== undefined && Number.isFinite(parsedEgfr) && parsedEgfr > 0
+      ? parsedEgfr
+      : undefined;
 
   // Clinician confirmed strict limit:
   const confirmedPotassiumLimit = r5NutritionContract?.nutrient_constraints?.potassium_mg_max;

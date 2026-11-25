@@ -27,6 +27,7 @@ import { PatientProfile, StructuredLabEntry } from '@/types';
 import {
   resolveCanonicalMarker,
   convertLabUnitValue,
+  isEligibleCanonicalScalarObservation,
   reconcilePatientLaboratories
 } from './labFoundation';
 
@@ -35,11 +36,38 @@ function roundDisplay(val: number, decimals = 2): number {
   return Math.round(val * factor) / factor;
 }
 
-function datesCompatibleForRatio(d1?: string, d2?: string, maxDaysDiff = 14): boolean {
-  if (!d1 || !d2) return true; // If one or both lack recorded collection dates, allow with limitation note unless one is clearly different year
-  const t1 = Date.parse(d1);
-  const t2 = Date.parse(d2);
-  if (isNaN(t1) || isNaN(t2)) return d1 === d2;
+function datesCompatibleForRatio(
+  d1?: string,
+  d2?: string,
+  maxDaysDiff = 14,
+  options?: { requireDates?: boolean; reportId1?: string; reportId2?: string }
+): boolean {
+  const r1 = (options?.reportId1 || '').trim();
+  const r2 = (options?.reportId2 || '').trim();
+  if (r1 && r2 && r1 !== r2) {
+    return false;
+  }
+
+  const s1 = (d1 || '').trim();
+  const s2 = (d2 || '').trim();
+  if (!s1 || !s2) {
+    // Shared non-empty lab report accession can confirm same episode if dates were omitted;
+    // otherwise missing dates are NEVER assumed compatible.
+    if (r1 && r1 === r2) return true;
+    return options?.requireDates === false;
+  }
+
+  if (maxDaysDiff === 0) {
+    const day1 = s1.slice(0, 10);
+    const day2 = s2.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day1) && /^\d{4}-\d{2}-\d{2}$/.test(day2)) {
+      return day1 === day2;
+    }
+  }
+
+  const t1 = Date.parse(s1);
+  const t2 = Date.parse(s2);
+  if (isNaN(t1) || isNaN(t2)) return s1 === s2;
   const days = Math.abs(t1 - t2) / (1000 * 60 * 60 * 24);
   return days <= maxDaysDiff;
 }
@@ -589,22 +617,32 @@ export function computeR7DerivedBiomarkers(options: {
 
   const getUsable = (id: string) => {
     const o = obs[id];
-    if (!o || !o.is_interpretable || !o.is_exact_measurement || o.normalized_value === undefined) return undefined;
+    if (!o || !isEligibleCanonicalScalarObservation(o)) return undefined;
     return o;
   };
 
-  // 1. HOMA-IR
+  // 1. HOMA-IR (Checkpoint C: strictly requires paired same-day fasting blood draw, documented fasting_status='fasting' on BOTH, confirmed verification, and no exogenous insulin)
   {
     const fbg = getUsable('fasting_glucose');
     const ins = getUsable('fasting_insulin');
-    const onExogenousInsulin = (patient.medication_records || []).some(
-      m => m.status === 'active' && (m.generic_name || '').toLowerCase().includes('insulin')
-    );
+    const onExogenousInsulin =
+      (patient.medication_records || []).some(
+        m => m.status === 'active' && (m.generic_name || '').toLowerCase().includes('insulin')
+      ) ||
+      (patient.active_medications || []).some(m => m.toLowerCase().includes('insulin'));
 
     if (fbg && ins) {
-      const sameDate = datesCompatibleForRatio(fbg.collection_datetime, ins.collection_datetime, 7);
+      const sameEpisode = datesCompatibleForRatio(fbg.collection_datetime, ins.collection_datetime, 0, {
+        requireDates: true,
+        reportId1: fbg.lab_report_id,
+        reportId2: ins.lab_report_id
+      });
       const specOk = specimensCompatibleForRatio(fbg.specimen_type, ins.specimen_type);
-      const notNonFasting = fbg.fasting_status !== 'nonfasting' && ins.fasting_status !== 'nonfasting';
+      const bothDocumentedFasting = fbg.fasting_status === 'fasting' && ins.fasting_status === 'fasting';
+      const bothVerified =
+        (fbg.verification_status === 'clinician_verified' || fbg.verification_status === 'lab_document_reviewed') &&
+        (ins.verification_status === 'clinician_verified' || ins.verification_status === 'lab_document_reviewed');
+
       if (onExogenousInsulin) {
         results.push({
           derived_id: 'homa_ir',
@@ -625,7 +663,7 @@ export function computeR7DerivedBiomarkers(options: {
           limitations_en: 'Unreliable under exogenous insulin or beta-cell failure.',
           limitations_bn: 'ইনসুলিন থেরাপিতে অকার্যকর।'
         });
-      } else if (!notNonFasting) {
+      } else if (!bothDocumentedFasting) {
         results.push({
           derived_id: 'homa_ir',
           name_en: 'HOMA-IR Insulin Resistance Index',
@@ -636,13 +674,16 @@ export function computeR7DerivedBiomarkers(options: {
           input_observation_ids: [fbg.observation_id, ins.observation_id],
           input_summary: [],
           eligibility_met: false,
-          ineligibility_reason_en: 'Fasting compatibility failed (sample documented as non-fasting).',
-          ineligibility_reason_bn: 'নন-ফাস্টিং স্যাম্পলে HOMA-IR হিসাবযোগ্য নয়।',
+          ineligibility_reason_en:
+            fbg.fasting_status === 'nonfasting' || ins.fasting_status === 'nonfasting'
+              ? 'Fasting compatibility failed (sample documented as non-fasting).'
+              : 'HOMA-IR requires documented fasting status on both glucose and insulin (unknown fasting state is ineligible).',
+          ineligibility_reason_bn: 'খালি পেটের নমুনা নিশ্চিত না হলে বা নন-ফাস্টিং হলে HOMA-IR হিসাবযোগ্য নয়।',
           evidence_source_id: 'EVID_MATTHEWS_1985_HOMAIR',
-          limitations_en: 'Requires documented fasting state.',
-          limitations_bn: 'ফাস্টিং অবস্থা আবশ্যক।'
+          limitations_en: 'Requires documented fasting state on both paired draws.',
+          limitations_bn: 'উভয় পরীক্ষায় ফাস্টিং অবস্থা নথিভুক্ত থাকা আবশ্যক।'
         });
-      } else if (!sameDate || !specOk) {
+      } else if (!bothVerified) {
         results.push({
           derived_id: 'homa_ir',
           name_en: 'HOMA-IR Insulin Resistance Index',
@@ -653,15 +694,33 @@ export function computeR7DerivedBiomarkers(options: {
           input_observation_ids: [fbg.observation_id, ins.observation_id],
           input_summary: [],
           eligibility_met: false,
-          ineligibility_reason_en: !sameDate ? 'Glucose and insulin collection dates differ by >7 days.' : 'Incompatible specimen types for paired HOMA-IR.',
-          ineligibility_reason_bn: 'গ্লুকোজ ও ইনসুলিন পরীক্ষার তারিখ বা স্যাম্পল সামঞ্জস্যপূর্ণ নয়।',
+          ineligibility_reason_en: 'Unverified glucose or insulin entries cannot produce a verified derived HOMA-IR calculation.',
+          ineligibility_reason_bn: 'অযাচাইকৃত ফলাফল থেকে নির্ভরযোগ্য HOMA-IR হিসাব করা যায় না।',
           evidence_source_id: 'EVID_MATTHEWS_1985_HOMAIR',
-          limitations_en: 'Paired draw required.',
-          limitations_bn: 'একই সময়ের পরীক্ষা প্রয়োজন।'
+          limitations_en: 'Requires clinician-verified or lab-reviewed glucose and insulin.',
+          limitations_bn: 'যাচাইকৃত ফলাফল প্রয়োজন।'
+        });
+      } else if (!sameEpisode || !specOk) {
+        results.push({
+          derived_id: 'homa_ir',
+          name_en: 'HOMA-IR Insulin Resistance Index',
+          name_bn: 'হোমা-আইআর (HOMA-IR)',
+          formula_id: 'MATTHEWS_HOMAIR_1985',
+          formula_version: 'v1.0',
+          status: 'unavailable',
+          input_observation_ids: [fbg.observation_id, ins.observation_id],
+          input_summary: [],
+          eligibility_met: false,
+          ineligibility_reason_en: !sameEpisode
+            ? 'HOMA-IR requires same-day paired collection dates (or shared laboratory report ID); missing or multi-day mismatched draws excluded.'
+            : 'Incompatible specimen types for paired HOMA-IR.',
+          ineligibility_reason_bn: 'একই দিনের নমুনা বা অভিন্ন ল্যাব রিপোর্ট আইডি ছাড়া HOMA-IR হিসাবযোগ্য নয়।',
+          evidence_source_id: 'EVID_MATTHEWS_1985_HOMAIR',
+          limitations_en: 'Paired same-day fasting blood draw required.',
+          limitations_bn: 'একই দিনের ফাস্টিং নমুনা প্রয়োজন।'
         });
       } else {
         const val = (fbg.normalized_value! * ins.normalized_value!) / 405;
-        const fastingUnconfirmed = fbg.fasting_status === 'unknown' || ins.fasting_status === 'unknown';
         results.push({
           derived_id: 'homa_ir',
           name_en: 'HOMA-IR Insulin Resistance Index',
@@ -679,8 +738,8 @@ export function computeR7DerivedBiomarkers(options: {
           ],
           eligibility_met: true,
           evidence_source_id: 'EVID_MATTHEWS_1985_HOMAIR',
-          limitations_en: `${fastingUnconfirmed ? 'Fasting status not explicitly recorded — confirm 8–12h fast. ' : ''}No single universal HOMA-IR diagnostic threshold applies across all populations.`,
-          limitations_bn: 'ফাস্টিং অবস্থা নিশ্চিত করুন; সর্বজনীন একক ডায়াগনস্টিক সীমা প্রযোজ্য নয়।',
+          limitations_en: 'Same-day paired fasting inputs verified. No single universal HOMA-IR diagnostic threshold applies across all populations.',
+          limitations_bn: 'একই দিনের ফাস্টিং নমুনা থেকে গণনাকৃত; সর্বজনীন একক ডায়াগনস্টিক সীমা প্রযোজ্য নয়।',
           interpretation_en: val >= 2.5 ? 'Elevated HOMA-IR (>=2.5); interpret in metabolic context.' : 'Lower/normal HOMA-IR index.',
           interpretation_bn: val >= 2.5 ? 'উচ্চ হোমা-আইআর প্রবণতা।' : 'স্বাভাবিক সীমার হোমা-আইআর।'
         });

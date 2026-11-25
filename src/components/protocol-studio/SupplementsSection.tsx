@@ -460,6 +460,19 @@ export const SupplementsSection: React.FC<SupplementsSectionProps> = ({
                 <option value="independent_of_meals">{bn ? 'যেকোনো সময়' : 'Independent of Meals'}</option>
               </select>
             </div>
+
+            <div>
+              <label className="text-muted-foreground font-semibold mb-1 block">{bn ? 'মেয়াদ (সপ্তাহ):' : 'Duration (Weeks):'}</label>
+              <input
+                type="number"
+                min="1"
+                data-testid="r7-input-duration-weeks"
+                placeholder="e.g. 8"
+                value={newDurationWeeks}
+                onChange={e => setNewDurationWeeks(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground font-mono"
+              />
+            </div>
           </div>
 
           {/* Multi-Ingredient Composer */}

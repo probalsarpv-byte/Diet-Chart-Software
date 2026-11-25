@@ -16,7 +16,16 @@ import {
   PopulationSpecificData,
   LabAssessmentData
 } from '../../types/assessment';
-import { normalizeSingleLabEntry } from '../r7/labFoundation';
+import {
+  getCanonicalMarkerId,
+  isEligibleCanonicalScalarObservation,
+  normalizeSingleLabEntry,
+  reconcilePatientLaboratories
+} from '../r7/labFoundation';
+import {
+  computeR7DerivedBiomarkers,
+  evaluateBiomarkerObservation
+} from '../r7/biomarkerIntelligence';
 
 export interface P2HandoffPackage {
   patient: PatientProfile;
@@ -484,22 +493,49 @@ export function buildP2ClinicalObservations(
     });
   }
 
-  // 6. Structured Laboratory Observations (Step 8 Intake)
+  // 6. Structured Laboratory Observations (Step 8 Intake) — Canonical Normalization & Reconciliation FIRST!
   if (assessment.labs?.entries) {
+    const effectivePatientId = patient.id || assessment.patient_id || '';
+    const effectiveVisitId = assessment.visit_id || patient.current_visit_id || '';
+    const recon = reconcilePatientLaboratories({
+      patient: { ...patient, id: effectivePatientId, labs: undefined },
+      visitId: effectiveVisitId,
+      structuredEntries: assessment.labs.entries
+    });
+
     for (const entry of Object.values(assessment.labs.entries)) {
-      // Strictly process ONLY tested biomarkers with a valid numeric value!
-      // Untested, pending, or unmeasured biomarkers are never hallucinated or converted.
-      if (entry.status !== 'previously_tested' || entry.numeric_value === undefined || isNaN(entry.numeric_value)) {
+      // Strictly process ONLY tested biomarkers; pending/not_tested/declined/superseded are never evaluated
+      if (entry.status !== 'previously_tested') {
         continue;
       }
 
-      const val = entry.numeric_value;
-      const markerId = entry.marker_id;
-      const tags: string[] = ['lab_marker', markerId];
-      let severity: 'mild' | 'moderate' | 'severe' | 'none' = 'none';
-      let domains: FunctionalDomain[] = ['energy'];
+      const normObs = normalizeSingleLabEntry(entry as any, {
+        patientId: effectivePatientId,
+        visitId: effectiveVisitId
+      });
 
-      // Domain mapping
+      // Strictly isolate foreign patient / foreign visit entries
+      if (
+        normObs.data_quality_flags.includes('patient_identity_mismatch') ||
+        normObs.data_quality_flags.includes('visit_identity_mismatch')
+      ) {
+        continue;
+      }
+
+      const markerId = entry.marker_id;
+      const cid = getCanonicalMarkerId(normObs.canonical_marker_id || markerId);
+      const collectionDate = normObs.collection_datetime || '';
+      const resolvedStatus: ClinicalObservation['verificationStatus'] =
+        normObs.verification_status === 'clinician_verified' ||
+        normObs.verification_status === 'lab_document_reviewed'
+          ? 'lab_confirmed'
+          : 'unverified';
+      const resolvedDataSource: ClinicalObservation['dataSource'] =
+        normObs.verification_status === 'patient_reported' || entry.source_type === 'patient_intake'
+          ? 'patient_reported'
+          : 'measured';
+
+      let domains: FunctionalDomain[] = ['energy'];
       if (entry.category === 'glycemic') domains = ['energy'];
       else if (entry.category === 'lipid') domains = ['transport'];
       else if (entry.category === 'renal') domains = ['biotransformation', 'transport'];
@@ -510,8 +546,80 @@ export function buildP2ClinicalObservations(
       else if (entry.category === 'vitamins_minerals') domains = ['communication', 'energy', 'defense_repair'];
       else if (entry.category === 'inflammatory_markers') domains = ['defense_repair'];
 
-      // Specific clinical rules and tags
-      if (markerId === 'hba1c') {
+      // Checkpoint A/B Gate: Reject unsupported/implausible/malformed/conflicting/non-exact entries BEFORE any threshold rule!
+      if (!isEligibleCanonicalScalarObservation(normObs, recon.conflicts)) {
+        const reviewTags: string[] = ['lab_marker', markerId, 'lab_review_required'];
+        if (!collectionDate) reviewTags.push('missing_collection_date');
+        if (
+          normObs.data_quality_flags.includes('unsupported_unit') ||
+          normObs.data_quality_flags.includes('missing_unit')
+        ) {
+          reviewTags.push('unsupported_unit');
+        } else if (normObs.data_quality_flags.includes('conflicting_duplicate_results') || recon.conflicts.some(c => c.canonical_marker_id === cid)) {
+          reviewTags.push('conflicting_results');
+        } else if (cid === 'fasting_glucose' || cid === 'postprandial_glucose') {
+          reviewTags.push('uninterpretable_glucose_value');
+        }
+
+        observations.push({
+          id: `obs_lab_${markerId}`,
+          patientId: effectivePatientId,
+          visitId: effectiveVisitId,
+          category: 'lab',
+          sourceLabMarker: markerId,
+          observedValue: 'UNINTERPRETABLE',
+          unit: entry.unit || normObs.original_unit || normObs.canonical_unit || '',
+          title_en: `${entry.name_en}: Uninterpretable / Review Required (${entry.original_value ?? entry.numeric_value ?? entry.text_value ?? '—'} ${entry.unit || ''})`.trim(),
+          title_bn: `${entry.name_bn}: পর্যালোচনা প্রয়োজন`,
+          date: collectionDate,
+          associatedDomains: domains,
+          severity: 'none',
+          tags: reviewTags,
+          dataSource: resolvedDataSource,
+          verificationStatus: 'unverified',
+          provenance: entry.source_type || 'p1_laboratory_assessment'
+        });
+        continue;
+      }
+
+      // Canonical value, unit & 3-layer R7 evaluation computed BEFORE P2 clinical classification!
+      const val = normObs.normalized_value!;
+      const evalItem = evaluateBiomarkerObservation(normObs, recon.population, recon.latestByCanonical);
+      if (evalItem.related_systems && evalItem.related_systems.length > 0) {
+        domains = evalItem.related_systems as FunctionalDomain[];
+      }
+
+      const tags: string[] = ['lab_marker', markerId];
+      if (cid !== markerId) tags.push(cid);
+      if (!collectionDate) tags.push('missing_collection_date');
+      let severity: 'mild' | 'moderate' | 'severe' | 'none' = 'none';
+
+      // Pediatric adult-interval guard: do not trigger adult disease thresholds for pediatric patients without pediatric ref interval
+      if (evalItem.reference_status === 'not_applicable') {
+        tags.push('adult_interval_not_applicable_pediatric');
+        observations.push({
+          id: `obs_lab_${markerId}`,
+          patientId: effectivePatientId,
+          visitId: effectiveVisitId,
+          category: 'lab',
+          sourceLabMarker: markerId,
+          observedValue: val,
+          unit: normObs.canonical_unit,
+          title_en: `${entry.name_en}: ${val} ${normObs.canonical_unit}`,
+          title_bn: `${entry.name_bn}: ${val} ${normObs.canonical_unit}`,
+          date: collectionDate,
+          associatedDomains: domains,
+          severity: 'none',
+          tags,
+          dataSource: resolvedDataSource,
+          verificationStatus: resolvedStatus,
+          provenance: entry.source_type || 'p1_laboratory_assessment'
+        });
+        continue;
+      }
+
+      // Specific clinical rules evaluated strictly against CANONICAL normalized values & R7 evidence layers
+      if (cid === 'hba1c') {
         if (val >= 6.5) {
           tags.push('elevated_hba1c', 'diabetes_range_hba1c', 'glycemic_dysregulation', 'obs_hba1c_borderline_or_above');
           severity = 'moderate';
@@ -522,121 +630,163 @@ export function buildP2ClinicalObservations(
           tags.push('normal_hba1c', 'obs_normal_hba1c');
           severity = 'none';
         }
-      } else if (markerId === 'fbs' || markerId === 'ppbs') {
-        const interp = interpretGlucoseMarker(markerId, val, entry.unit);
+      } else if (cid === 'fasting_glucose' || cid === 'postprandial_glucose') {
+        const gMarker: 'fbs' | 'ppbs' = cid === 'postprandial_glucose' ? 'ppbs' : 'fbs';
+        const interp = interpretGlucoseMarker(gMarker, val, normObs.canonical_unit || 'mg/dL');
         for (const t of interp.tags) {
           if (!tags.includes(t)) tags.push(t);
         }
         severity = interp.severity;
-      } else if (markerId === 'fasting_insulin') {
-        if (val > 10) {
+      } else if (cid === 'fasting_insulin') {
+        if (evalItem.reference_status === 'above_reference_interval' || val > 25) {
           tags.push('elevated_fasting_insulin', 'hyperinsulinemia', 'insulin_resistance_sign');
           severity = 'moderate';
         }
-      } else if (markerId === 'serum_creatinine') {
-        if (val > (patient.gender === 'female' ? 1.1 : 1.2)) {
+      } else if (cid === 'creatinine') {
+        const femaleLimit = 1.1;
+        const maleOrNeutralLimit = 1.2;
+        const limit = recon.population.sex === 'female' ? femaleLimit : maleOrNeutralLimit;
+        if (evalItem.reference_status === 'above_reference_interval' || val > limit) {
           tags.push('elevated_creatinine', 'renal_impairment_sign');
           severity = 'moderate';
         }
-      } else if (markerId === 'serum_potassium') {
-        if (val > 5.0) {
+      } else if (cid === 'potassium') {
+        if (val >= 6.0) {
+          tags.push('hyperkalemia', 'critical_hyperkalemia', 'electrolyte_imbalance');
+          severity = 'severe';
+        } else if (val > 5.0) {
           tags.push('hyperkalemia', 'electrolyte_imbalance');
           severity = 'moderate';
         } else if (val < 3.5) {
           tags.push('hypokalemia', 'electrolyte_imbalance');
-          severity = 'moderate';
+          severity = val < 2.5 ? 'severe' : 'moderate';
         }
-      } else if (markerId === 'serum_uric_acid') {
-        if (val > (patient.gender === 'female' ? 6.0 : 7.0)) {
+      } else if (cid === 'uric_acid') {
+        const limit = recon.population.sex === 'female' ? 6.0 : 7.0;
+        if (evalItem.reference_status === 'above_reference_interval' || val > limit) {
           tags.push('elevated_uric_acid', 'hyperuricemia');
           severity = 'moderate';
         }
-      } else if (markerId === 'sgpt_alt') {
-        if (val > 35) {
+      } else if (cid === 'alt') {
+        if (evalItem.reference_status === 'above_reference_interval' || val > 40) {
           tags.push('elevated_alt', 'hepatic_stress');
           severity = 'moderate';
         }
-      } else if (markerId === 'total_cholesterol') {
+      } else if (cid === 'total_cholesterol') {
         if (val > 200) {
           tags.push('elevated_cholesterol', 'dyslipidemia');
           severity = 'mild';
         }
-      } else if (markerId === 'triglycerides') {
-        if (val > 150) {
+      } else if (cid === 'triglycerides') {
+        if (val >= 500) {
+          tags.push('elevated_triglycerides', 'dyslipidemia', 'severe_hypertriglyceridemia');
+          severity = 'severe';
+        } else if (val > 150) {
           tags.push('elevated_triglycerides', 'dyslipidemia');
           severity = 'moderate';
         }
-      } else if (markerId === 'ldl') {
+      } else if (cid === 'ldl') {
         if (val > 100) {
           tags.push('elevated_ldl', 'dyslipidemia');
           severity = 'moderate';
         }
-      } else if (markerId === 'hdl') {
-        if (val < (patient.gender === 'female' ? 50 : 40)) {
+      } else if (cid === 'hdl') {
+        const hdlFloor = recon.population.sex === 'female' ? 50 : 40;
+        if (val < hdlFloor) {
           tags.push('low_hdl', 'dyslipidemia');
           severity = 'mild';
         }
-      } else if (markerId === 'tsh') {
-        if (val > 4.5) {
+      } else if (cid === 'tsh') {
+        if (evalItem.reference_status === 'above_reference_interval' || val > 4.5) {
           tags.push('elevated_tsh', 'abnormal_tsh', 'hypothyroid_pattern');
           severity = 'moderate';
-        } else if (val < 0.4) {
+        } else if (evalItem.reference_status === 'below_reference_interval' || evalItem.reference_status === 'critical_low' || val < 0.4) {
           tags.push('low_tsh', 'abnormal_tsh', 'hyperthyroid_pattern');
-          severity = 'moderate';
+          severity = val < 0.05 ? 'severe' : 'moderate';
         }
-      } else if (markerId === 'hemoglobin') {
-        if (val < (patient.gender === 'female' ? 12.0 : 13.0)) {
+      } else if (cid === 'hemoglobin') {
+        const hbFloor = recon.population.sex === 'female' ? 12.0 : 13.0;
+        if (val < 7.0 || evalItem.reference_status === 'critical_low') {
+          tags.push('low_hemoglobin', 'anemia_sign', 'critical_anemia');
+          severity = 'severe';
+        } else if (evalItem.reference_status === 'below_reference_interval' || val < hbFloor) {
           tags.push('low_hemoglobin', 'anemia_sign');
           severity = 'moderate';
         }
-      } else if (markerId === 'serum_ferritin') {
-        if (val < 30) {
+      } else if (cid === 'ferritin') {
+        if (evalItem.layer2_decision_threshold?.met || evalItem.reference_status === 'below_reference_interval') {
           tags.push('low_ferritin', 'iron_depletion');
           severity = 'moderate';
         }
-      } else if (markerId === 'vitamin_d3') {
-        if (val < 30) {
+      } else if (cid === 'vitamin_d3') {
+        if (evalItem.layer2_decision_threshold?.met || val < 20) {
           tags.push('low_vitamin_d3', 'vitamin_d_deficiency');
           severity = 'moderate';
         }
-      } else if (markerId === 'vitamin_b12') {
-        if (val < 300) {
+      } else if (cid === 'vitamin_b12') {
+        if (evalItem.reference_status === 'below_reference_interval' || val < 200) {
           tags.push('low_vitamin_b12', 'vitamin_b12_deficiency');
           severity = 'moderate';
         }
-      } else if (markerId === 'hs_crp') {
-        if (val > 1.0) {
+      } else if (cid === 'hs_crp') {
+        // Exploratory zone (1.0–3.0 mg/L) does NOT falsely emit disease diagnosis tags
+        if (evalItem.reference_status === 'above_reference_interval' || val > 3.0) {
           tags.push('elevated_crp', 'systemic_inflammation');
-          severity = val > 3.0 ? 'severe' : 'moderate';
+          severity = val >= 10.0 ? 'severe' : 'moderate';
         }
       }
 
-      const normObs = normalizeSingleLabEntry(entry as any, {
-        patientId: assessment.patient_id,
-        visitId: assessment.visit_id
-      });
-      const resolvedStatus: ClinicalObservation['verificationStatus'] =
-        entry.verification_status === 'clinician_verified' || entry.verification_status === 'lab_document_reviewed'
-          ? 'lab_confirmed'
-          : 'unverified';
+      if (evalItem.is_urgent_verification_required) {
+        tags.push('urgent_verification_required');
+        if (severity === 'none') severity = 'severe';
+      }
 
       observations.push({
         id: `obs_lab_${markerId}`,
-        patientId: assessment.patient_id,
-        visitId: assessment.visit_id,
+        patientId: effectivePatientId,
+        visitId: effectiveVisitId,
         category: 'lab',
         sourceLabMarker: markerId,
-        observedValue: normObs.normalized_value ?? val,
-        unit: normObs.canonical_unit || entry.unit,
-        title_en: `${entry.name_en}: ${normObs.normalized_value ?? val} ${normObs.canonical_unit || entry.unit}`,
-        title_bn: `${entry.name_bn}: ${normObs.normalized_value ?? val} ${normObs.canonical_unit || entry.unit}`,
-        date: entry.test_date || now,
+        observedValue: val,
+        unit: normObs.canonical_unit,
+        title_en: `${entry.name_en}: ${normObs.display_normalized_value ?? val} ${normObs.canonical_unit}`,
+        title_bn: `${entry.name_bn}: ${normObs.display_normalized_value ?? val} ${normObs.canonical_unit}`,
+        date: collectionDate,
         associatedDomains: domains,
         severity: severity as any,
         tags,
-        dataSource: entry.verification_status === 'patient_reported' ? 'patient_reported' : 'measured',
+        dataSource: resolvedDataSource,
         verificationStatus: resolvedStatus,
-        provenance: entry.source_type || 'p1_laboratory_assessment',
+        provenance: entry.source_type || 'p1_laboratory_assessment'
+      });
+    }
+
+    // Derived HOMA-IR handoff strictly gated by R7 eligibility (never fall back to unverified/ineligible legacy arithmetic)
+    const r7Derived = computeR7DerivedBiomarkers({
+      observations: recon.latestByCanonical,
+      patient,
+      population: recon.population
+    });
+    const eligibleHoma = r7Derived.find(d => d.derived_id === 'homa_ir' && d.status === 'calculated' && d.eligibility_met);
+    if (eligibleHoma && typeof eligibleHoma.value === 'number') {
+      const elevated = eligibleHoma.value > 1.9;
+      observations.push({
+        id: 'obs_lab_homa_ir',
+        patientId: effectivePatientId,
+        visitId: effectiveVisitId,
+        category: 'lab',
+        sourceLabMarker: 'homa_ir',
+        observedValue: Number(eligibleHoma.value.toFixed(2)),
+        unit: 'Index',
+        title_en: `HOMA-IR: ${eligibleHoma.display_value}`,
+        title_bn: `হোমা-আইআর: ${eligibleHoma.display_value}`,
+        date: recon.latestByCanonical.fasting_glucose?.collection_datetime || '',
+        associatedDomains: ['energy', 'communication'],
+        severity: eligibleHoma.value >= 2.5 ? 'moderate' : elevated ? 'mild' : 'none',
+        tags: elevated ? ['elevated_homa_ir', 'obs_homa_ir_elevated'] : ['normal_homa_ir', 'obs_normal_homa_ir'],
+        dataSource: 'calculated',
+        verificationStatus: 'lab_confirmed',
+        provenance: 'r7_derived_eligible'
       });
     }
   }
@@ -647,7 +797,10 @@ export function buildP2ClinicalObservations(
 /**
  * Creates flattened answers record suitable for P2 evidence aggregator.
  */
-export function buildFlattenedAnswersForP2(assessment: ClinicalAssessment): Record<string, any> {
+export function buildFlattenedAnswersForP2(
+  assessment: ClinicalAssessment,
+  patient?: Partial<PatientProfile>
+): Record<string, any> {
   const flat: Record<string, any> = { ...assessment.functional_answers };
 
   // Overlay FFQ summary findings
@@ -674,21 +827,31 @@ export function buildFlattenedAnswersForP2(assessment: ClinicalAssessment): Reco
     flat['pregnancy_month'] = assessment.population_data.pregnancy.pregnancy_month;
   }
 
-  // Overlay Structured Tested Labs (R7 normalized canonical units!)
+  // Overlay Structured Tested Labs ONLY when eligible in canonical form (never fall back to invalid/raw values!)
   if (assessment.labs?.entries) {
+    const effectivePatientId = patient?.id || assessment.patient_id;
+    const effectiveVisitId = assessment.visit_id || patient?.current_visit_id;
+    const recon = reconcilePatientLaboratories({
+      patient: { ...patient, id: effectivePatientId, labs: undefined },
+      visitId: effectiveVisitId,
+      structuredEntries: assessment.labs.entries
+    });
+
     for (const [markerId, entry] of Object.entries(assessment.labs.entries)) {
-      if (entry.status === 'previously_tested' && entry.numeric_value !== undefined) {
-        const normObs = normalizeSingleLabEntry(entry as any, {
-          patientId: assessment.patient_id,
-          visitId: assessment.visit_id
-        });
-        const effVal = normObs.normalized_value ?? entry.numeric_value;
-        const cid = normObs.canonical_marker_id || markerId;
-        flat[`lab_${markerId}`] = effVal;
-        flat[`lab_${cid}`] = effVal;
-        if (markerId === 'fbs' || cid === 'fasting_glucose') flat['fasting_glucose'] = effVal;
-        if (markerId === 'hba1c' || cid === 'hba1c') flat['hba1c'] = effVal;
+      if (entry.status !== 'previously_tested') continue;
+      const normObs = normalizeSingleLabEntry(entry as any, {
+        patientId: effectivePatientId,
+        visitId: effectiveVisitId
+      });
+      if (!isEligibleCanonicalScalarObservation(normObs, recon.conflicts)) {
+        continue;
       }
+      const effVal = normObs.normalized_value!;
+      const cid = normObs.canonical_marker_id || getCanonicalMarkerId(markerId);
+      flat[`lab_${markerId}`] = effVal;
+      flat[`lab_${cid}`] = effVal;
+      if (markerId === 'fbs' || cid === 'fasting_glucose') flat['fasting_glucose'] = effVal;
+      if (markerId === 'hba1c' || cid === 'hba1c') flat['hba1c'] = effVal;
     }
   }
 
@@ -703,7 +866,7 @@ export function prepareP2Handoff(
   patient: PatientProfile
 ): P2HandoffPackage {
   const derivedObservations = buildP2ClinicalObservations(assessment, patient);
-  const flattenedAnswersForP2 = buildFlattenedAnswersForP2(assessment);
+  const flattenedAnswersForP2 = buildFlattenedAnswersForP2(assessment, patient);
 
   return {
     patient,

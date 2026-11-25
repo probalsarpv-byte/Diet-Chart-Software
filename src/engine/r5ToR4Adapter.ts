@@ -134,7 +134,7 @@ export function adaptR5ContextToR4(
   const fluidConflict = r5Context.multimorbidity_resolutions.find(c => c.parameter === 'fluid');
   const hasFluidRestriction = Boolean(fluidConflict);
 
-  // Holliday-Segar estimation for pediatrics or standard adult baseline
+  // Holliday-Segar estimation for pediatrics or standard adult baseline; never fabricate 1500 mL quantitative fluid limit without clinician order
   let baselineFluid = 2200;
   if (isPediatric) {
     const age = r5Context.population.age ?? 7;
@@ -142,13 +142,16 @@ export function adaptR5ContextToR4(
     if (estWeight <= 10) baselineFluid = estWeight * 100;
     else if (estWeight <= 20) baselineFluid = 1000 + (estWeight - 10) * 50;
     else baselineFluid = 1500 + (estWeight - 20) * 20;
-  } else if (hasFluidRestriction) {
-    baselineFluid = 1500;
+  }
+
+  const prescribedFluidLimit = (r5Context as any).nutrition_contract?.nutrient_constraints?.fluid_ml_max;
+  if (prescribedFluidLimit && prescribedFluidLimit > 0) {
+    baselineFluid = prescribedFluidLimit;
   }
 
   const updatedHydration: HydrationProtocol = {
     baseline_fluid_target_ml: baselineFluid,
-    clinician_fluid_limit_ml: hasFluidRestriction ? 1500 : undefined,
+    clinician_fluid_limit_ml: prescribedFluidLimit && prescribedFluidLimit > 0 ? prescribedFluidLimit : undefined,
     is_restricted: hasFluidRestriction,
     restriction_reason_en: hasFluidRestriction ? 'Cardiopulmonary / Renal fluid balance limit.' : undefined,
     restriction_reason_bn: hasFluidRestriction ? 'হৃদযন্ত্র ও কিডনির সুরক্ষায় তরল নিয়ন্ত্রণ।' : undefined,

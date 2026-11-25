@@ -1,22 +1,25 @@
 /**
  * SHUDDHO CLINICAL FUNCTIONAL NUTRITION PLATFORM
- * PHASE R7: BROWSER END-TO-END PLAYWRIGHT & CHROMIUM A4 PDF ACCEPTANCE SUITE
+ * PHASE R7: BROWSER END-TO-END PLAYWRIGHT & CHROMIUM A4 PDF ACCEPTANCE SUITE (CHECKPOINT E)
  *
- * Tests real user workflows across:
- * 1. Step 8 R7 Laboratory Intelligence Workspace (9 panels, search, unit conversion,
- *    3-layer evaluation cards, derived indices, patterns, critical finding banner)
- * 2. Critical lab escalation non-bypassably blocking Patient Report release & Print/PDF export
- * 3. R4 Protocol Studio Supplements Engine (Current Approved vs Proposed Candidate breakdown,
- *    multi-ingredient builder, brand verification provenance badges, UL screening)
- * 4. Clinician Report (Section E R7 Intelligence) vs U21 Patient Report (strict 0 kcal/macro/biomarker privacy)
- * 5. Real Chromium A4 PDF export (%PDF- header, Bangla script rendering, zero overflow)
- * 6. Responsive mobile viewport check & strict cross-patient isolation
+ * Strictly tests real user UI workflows (zero bypasses, zero conditional skips):
+ *  E1: Alternative-unit lab entry in UI (7.2 mmol/L FBS) -> canonical normalization & save/reload persistence
+ *  E2: Multi-ingredient/UL overload in Protocol Studio -> Safety Review HARD_STOP blocks approval
+ *  E3: Correction -> Valid R4 supplement approval -> R6 Master Prescription includes approved dose/timing/duration
+ *      and excludes unapproved draft candidate supplements
+ *  E4: Structured UI lab edit invalidates approved R4 & Weekly Diet Plan
+ *  E5: Critical laboratory finding blocks R6 release & disables ALL 3 print entry points
+ *  E6: Strict visit isolation & cross-patient isolation
+ *  E7: Approved Chromium A4 PDF export verifying rendered print-media text (Bangla, approved supplement,
+ *      dose/timing/duration, 0 overflow, 0 U21 kcal/biomarker/draft leaks) & PDF structure
+ *  E8: Blocked-state Chromium A4 PDF export verifying printable block banner & draft watermark
  */
 
 import http from 'http';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import zlib from 'zlib';
 import { chromium, Browser } from 'playwright';
 
 const PORT = 4597;
@@ -36,6 +39,42 @@ function assert(condition: any, message: string) {
     passedAssertions++;
     console.log(`  ✓ PASS: ${message}`);
   }
+}
+
+function inspectPdfDocument(pdfBuffer: Buffer): {
+  validHeader: boolean;
+  byteLength: number;
+  pageCount: number;
+  streamCount: number;
+  decompressedStreamCount: number;
+  hasFontResources: boolean;
+} {
+  const raw = pdfBuffer.toString('latin1');
+  const validHeader = pdfBuffer.subarray(0, 5).toString('utf8') === '%PDF-';
+  const pageMatches = raw.match(/\/Type\s*\/Page\b/g) || [];
+  const hasFontResources = /\/Font\b/.test(raw) || /\/BaseFont\b/.test(raw);
+  const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  let match: RegExpExecArray | null;
+  let streamCount = 0;
+  let decompressedStreamCount = 0;
+  while ((match = streamRegex.exec(raw)) !== null) {
+    streamCount++;
+    try {
+      const slice = Buffer.from(match[1], 'latin1');
+      const inflated = zlib.inflateSync(slice);
+      if (inflated.length > 0) decompressedStreamCount++;
+    } catch {
+      // Non-Flate stream or partial match
+    }
+  }
+  return {
+    validHeader,
+    byteLength: pdfBuffer.length,
+    pageCount: pageMatches.length,
+    streamCount,
+    decompressedStreamCount,
+    hasFontResources
+  };
 }
 
 function startStaticServer(): Promise<{ server: http.Server; port: number }> {
@@ -76,7 +115,7 @@ function startStaticServer(): Promise<{ server: http.Server; port: number }> {
 
 async function runR7BrowserE2E() {
   console.log('\n================================================================');
-  console.log('SHUDDHO PHASE R7: BROWSER E2E & CHROMIUM PDF ACCEPTANCE SUITE');
+  console.log('SHUDDHO PHASE R7 CHECKPOINT E: BROWSER E2E & PDF ACCEPTANCE');
   console.log('================================================================\n');
 
   const { server } = await startStaticServer();
@@ -92,17 +131,16 @@ async function runR7BrowserE2E() {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
 
-    console.log('--- J01-J05: App Boot, Demo Case & Step 8 R7 Laboratory Intelligence ---');
+    console.log('--- E1: App Boot, Alternative-Unit Lab Entry & Save/Reload Persistence ---');
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(700);
 
     const loadDemoBtn = page
       .locator('button:has-text("ডেমো কেস লোড করুন"), button:has-text("Load Demo Case"), button:has-text("Load Demo Patient")')
       .first();
-    if ((await loadDemoBtn.count()) > 0) {
-      await loadDemoBtn.click();
-      await page.waitForTimeout(700);
-    }
+    assert((await loadDemoBtn.count()) > 0, 'Demo Case button visible on landing dashboard');
+    await loadDemoBtn.click();
+    await page.waitForTimeout(700);
 
     await page.locator('[data-testid="nav-tab-assessment"]').first().click();
     await page.waitForTimeout(500);
@@ -110,135 +148,291 @@ async function runR7BrowserE2E() {
     await page.waitForTimeout(500);
 
     const labWorkspace = page.locator('[data-testid="r7-laboratory-workspace"]');
-    assert((await labWorkspace.count()) > 0, 'Step 8 R7 Laboratory Workspace mounted cleanly');
+    assert((await labWorkspace.count()) > 0, 'Step 8 R7 Laboratory Workspace mounted');
 
-    // Search for Potassium and enter critical value 6.4 mmol/L
-    await page.locator('[data-testid="r7-lab-search-input"]').fill('Potassium');
-    await page.waitForTimeout(250);
-
-    const kRow = page.locator('[data-testid="r7-lab-row-serum_potassium"], [data-testid="r7-lab-row-potassium"]').first();
-    assert((await kRow.count()) > 0, 'Serum Potassium canonical biomarker row found via search');
-
-    await kRow.locator('select[aria-label="Result availability"]').selectOption('previously_tested');
-    await page.waitForTimeout(200);
-    await kRow.locator('input[type="number"]').first().fill('6.4');
-    await kRow.locator('select[aria-label="Verification status"]').selectOption('clinician_verified');
-    await page.waitForTimeout(400);
-
-    const critBanner = page.locator('[data-testid="r7-critical-lab-banner"]');
-    assert((await critBanner.count()) > 0, 'Critical Lab Escalation Banner rendered immediately for K+ 6.4 mmol/L');
-    assert((await labWorkspace.locator('[data-testid="r7-derived-indices-panel"]').count()) > 0, 'Derived Biomarker Indices Panel rendered');
-
-    // Clear search and test mixed-unit FBS + Insulin HOMA-IR + Pattern card
     await page.locator('[data-testid="r7-lab-search-input"]').fill('Fasting Blood Sugar');
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(250);
     const fbsRow = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
-    if ((await fbsRow.count()) > 0) {
-      await fbsRow.locator('select[aria-label="Result availability"]').selectOption('previously_tested');
-      await page.waitForTimeout(150);
-      await fbsRow.locator('input[type="number"]').first().fill('7.2');
-      await fbsRow.locator('select[aria-label="Verification status"]').selectOption('lab_document_reviewed');
-      await page.waitForTimeout(300);
-      assert((await fbsRow.innerText()).includes('Canonical:'), 'FBS in mmol/L displays canonical mg/dL equivalence');
-    }
+    assert((await fbsRow.count()) > 0, 'FBS biomarker row present in Step 8');
 
-    await page.locator('[data-testid="r7-lab-search-input"]').fill('');
-    await page.waitForTimeout(300);
-    assert((await page.locator('[data-testid="r7-pattern-findings-panel"]').count()) > 0, 'Evidence-qualified Biomarker Patterns rendered without confidence %');
+    await fbsRow.locator('select[aria-label="Result availability"]').selectOption('previously_tested');
+    await page.waitForTimeout(150);
+    await fbsRow.locator('input[type="number"]').first().fill('7.2');
+    await fbsRow.locator('select[aria-label="Unit"]').selectOption('mmol/L');
+    await fbsRow.locator('select[aria-label="Verification status"]').selectOption('lab_document_reviewed');
+    // Wait for debounced auto-save (> 800ms) before reload
+    await page.waitForTimeout(1100);
 
-    console.log('--- J06-J10: Critical Lab Release Block -> Clinician Dossier -> U21 Privacy ---');
-    await page.locator('[data-testid="nav-tab-report"]').first().click();
-    await page.waitForTimeout(600);
+    const fbsTextBeforeReload = await fbsRow.innerText();
+    assert(fbsTextBeforeReload.includes('Canonical:') && fbsTextBeforeReload.includes('mg/dL'), 'E1: 7.2 mmol/L FBS normalizes to canonical mg/dL in UI');
 
-    // Check Clinician Report includes Section E R7 Intelligence
-    await page.locator('[data-testid="btn-mode-clinician"]').first().click();
-    await page.waitForTimeout(400);
-    const r7ClinSection = page.locator('[data-testid="r7-clinician-lab-intelligence-section"]');
-    assert((await r7ClinSection.count()) > 0, 'Clinician Dossier renders Section 5 R7 Biomarker Intelligence & Supplement Exposure');
+    // Hard reload and confirm persistence
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(700);
+    await page.locator('[data-testid="nav-tab-assessment"]').first().click();
+    await page.waitForTimeout(450);
+    await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
+    await page.waitForTimeout(450);
+    await page.locator('[data-testid="r7-lab-search-input"]').fill('Fasting Blood Sugar');
+    await page.waitForTimeout(250);
+    const fbsRowReloaded = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
+    const persistedVal = await fbsRowReloaded.locator('input[type="number"]').first().inputValue();
+    assert(persistedVal === '7.2', `E1 Persistence: 7.2 mmol/L persisted across page reload (got "${persistedVal}")`);
+    assert((await fbsRowReloaded.innerText()).includes('mg/dL'), 'E1 Persistence: Canonical mg/dL normalization preserved after reload');
 
-    // Switch to Patient Report -> Critical K+ 6.4 blocks release even if clicked
-    await page.locator('[data-testid="btn-mode-patient"]').first().click();
-    await page.waitForTimeout(500);
-    const patientView = page.locator('[data-testid="patient-projection-view"]');
-    assert((await patientView.count()) > 0, 'Patient Projection View mounted');
-    const releaseAlert = patientView.locator('[data-testid="patient-release-blocked-alert"]');
-    assert((await releaseAlert.count()) > 0, 'Critical K+ 6.4 mmol/L triggers non-bypassable Patient Report Release Block');
-    assert(await patientView.locator('[data-testid="btn-print-patient-report"]').isDisabled(), 'Print button locked under critical K+ blocker');
-
-    // Verify U21 zero numerical calories / internal biomarkers leak into patient view
-    const patText = await patientView.innerText();
-    assert(!/\b\d+\s*kcal\b/i.test(patText), 'U21 Privacy: zero kcal leaks into Patient Prescription');
-    assert(!patText.includes('HOMA-IR') && !patText.includes('FIB-4'), 'U21 Privacy: internal diagnostic indices omitted from Patient Prescription');
-
-    console.log('--- J11-J18: Protocol Studio R7 Individualized Supplement Intelligence ---');
+    console.log('--- E2: Protocol Studio UL Overload Blocks Safety Sign-Off ---');
     await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
     await page.waitForTimeout(500);
     await page.locator('button:has-text("Supplements"), button:has-text("সাপ্লিমেন্ট")').first().click();
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(350);
 
+    // Add an unsafe 420 mg Magnesium multi-ingredient item
     await page.locator('[data-testid="r7-btn-add-supplement"]').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(250);
     const suppForm = page.locator('form').last();
-    await suppForm.locator('input[placeholder*="Magnesium Bisglycinate"]').fill('Magnesium + Zinc Complex');
-    await suppForm.locator('input[placeholder*="Optional brand"]').fill('TestMarketBrand');
+    await suppForm.locator('input[placeholder*="Magnesium Bisglycinate"]').fill('Magnesium Overload Complex');
+    await suppForm.locator('input[placeholder*="Optional brand"]').fill('UnverifiedTestBrand');
     await suppForm.locator('input[placeholder="e.g. 200 mg elemental"]').fill('420 mg elemental');
     await suppForm.locator('button:has-text("Add Ingredient")').click();
-    await page.waitForTimeout(200);
-    const ingNumInput = suppForm.locator('input[placeholder="Elemental"]').last();
-    await ingNumInput.fill('420');
+    await page.waitForTimeout(150);
+    await suppForm.locator('input[placeholder="Elemental"]').last().fill('420');
     await suppForm.locator('button[type="submit"]').click();
     await page.waitForTimeout(400);
 
     const exposurePanel = page.locator('[data-testid="r7-supplement-exposure-panel"]');
-    assert((await exposurePanel.count()) > 0, 'R7 Live Cumulative Nutrient Exposure Panel mounted cleanly');
-    assert((await exposurePanel.innerText()).includes('Exceeds Tolerable Upper Limit'), '420 mg Magnesium draft flags Tolerable Upper Limit exceedance');
-    assert((await page.innerText('body')).includes('Unverified Brand'), 'Manual unverified brand displays honest Unverified Brand provenance badge');
+    assert((await exposurePanel.innerText()).includes('Exceeds Tolerable Upper Limit'), 'E2: 420 mg Magnesium flags UL exceedance');
+    assert((await page.innerText('body')).includes('Unverified Brand'), 'E2: Honest Unverified Brand provenance shown');
 
-    console.log('--- J19-J25: Chromium A4 PDF Verification, Responsive Viewport & Patient Isolation ---');
-    await page.locator('[data-testid="nav-tab-report"]').first().click();
+    // Approve that unsafe supplement into candidate list, then navigate to Safety Review tab
+    const unsafeApproveBtn = page.locator('button[title="Approve Supplement"], button[title="অনুমোদন করুন"]').last();
+    await unsafeApproveBtn.click();
+    await page.waitForTimeout(300);
+
+    const safetyTabBtn = page.locator('button:has-text("Safety Review"), button:has-text("নিরাপত্তা ও অনুমোদন")').first();
+    await safetyTabBtn.click();
     await page.waitForTimeout(400);
+
+    const safetyText = await page.innerText('body');
+    assert(safetyText.includes('HARD_STOP'), 'E2: UL breach triggers Safety Review HARD_STOP');
+    const approveLockBtn = page.locator('button:has-text("Approve & Lock Protocol"), button:has-text("Re-Approve & Bump Version"), button:has-text("প্রোটোকল অনুমোদন করুন")').first();
+    assert(await approveLockBtn.isDisabled(), 'E2: Safety Review gate disables formal protocol approval while HARD_STOP is active');
+
+    console.log('--- E3: Remove Overdose -> Approve Safe Supplement -> R6 Inclusion + Draft Exclusion ---');
+    await page.locator('button:has-text("Supplements"), button:has-text("সাপ্লিমেন্ট")').first().click();
+    await page.waitForTimeout(350);
+
+    // Delete Magnesium Overload Complex (find its card and click Delete)
+    const mgCard = page.locator('div.rounded-2xl', { hasText: 'Magnesium Overload Complex' }).first();
+    await mgCard.locator('button[title="Delete"], button[title="মুছে ফেলুন"]').first().click();
+    await page.waitForTimeout(350);
+
+    // Add Safe Approved Supplement: Vitamin D3 Support (1000 IU = 25 mcg, timing 13:30, duration 8 weeks)
+    await page.locator('[data-testid="r7-btn-add-supplement"]').click();
+    await page.waitForTimeout(250);
+    const safeForm = page.locator('form').last();
+    await safeForm.locator('input[placeholder*="Magnesium Bisglycinate"]').fill('Vitamin D3 Clinical Formula');
+    await safeForm.locator('input[placeholder="e.g. 200 mg elemental"]').fill('1000 IU');
+    await safeForm.locator('input[type="time"]').first().fill('13:30');
+    await safeForm.locator('[data-testid="r7-input-duration-weeks"]').fill('8');
+    await safeForm.locator('button[type="submit"]').click();
+    await page.waitForTimeout(400);
+
+    // Approve ONLY Vitamin D3 Clinical Formula
+    const vitDCard = page.locator('div.rounded-2xl', { hasText: 'Vitamin D3 Clinical Formula' }).first();
+    await vitDCard.locator('button[title="Approve Supplement"], button[title="অনুমোদন করুন"]').first().click();
+    await page.waitForTimeout(350);
+
+    // Add a second UNAPPROVED draft candidate supplement that MUST stay excluded from R6
+    await page.locator('[data-testid="r7-btn-add-supplement"]').click();
+    await page.waitForTimeout(200);
+    const draftForm = page.locator('form').last();
+    await draftForm.locator('input[placeholder*="Magnesium Bisglycinate"]').fill('Selenium Unapproved Candidate');
+    await draftForm.locator('input[placeholder="e.g. 200 mg elemental"]').fill('100 mcg');
+    await draftForm.locator('button[type="submit"]').click();
+    await page.waitForTimeout(350);
+
+    // Sign off R4 Safety Review
+    await safetyTabBtn.click();
+    await page.waitForTimeout(350);
+    assert(!(await approveLockBtn.isDisabled()), 'E3: Resolving UL overload unlocks R4 protocol sign-off');
+    await approveLockBtn.click();
+    await page.waitForTimeout(700);
+
+    // Approve Pre-Intervention Health Report (Tab 7 Clinician Mode) & Weekly Diet Plan (Tab 5)
+    await page.locator('[data-testid="nav-tab-report"]').first().click();
+    await page.waitForTimeout(500);
+    await page.locator('[data-testid="btn-mode-clinician"]').first().click();
+    await page.waitForTimeout(350);
+    await page.locator('button:has-text("2. Pre-Intervention Health Report"), button:has-text("২. প্রাক-হস্তক্ষেপ পূর্ণাঙ্গ স্বাস্থ্য প্রতিবেদন")').first().click();
+    await page.waitForTimeout(450);
+    await page.locator('input[placeholder*="Farhana Ahmed"], input[placeholder*="ডা. ফারহানা"]').first().fill('Dr. Farhana Rahman, MBBS, MD');
+    await page.locator('input[type="checkbox"]').first().check();
+    await page.locator('button:has-text("Approve Clinical Assessment"), button:has-text("Sign Off")').first().click();
+    await page.waitForTimeout(600);
+
+    await page.locator('[data-testid="nav-tab-diet"]').first().click();
+    await page.waitForTimeout(500);
+    await page.locator('[data-testid="btn-approve-weekly-plan"]').first().click();
+    await page.waitForTimeout(300);
+    await page.locator('[data-testid="input-clinician-id"]').fill('DR_R7_CLOSURE_MD');
+    await page.locator('[data-testid="btn-submit-approval"]').click();
+    await page.waitForTimeout(1200);
+    assert((await page.locator('[data-testid="badge-approved-plan"]').count()) > 0, 'E3: Weekly Diet Plan formally approved');
+
+    // Open R6 Patient Diet Prescription (Released State)
+    await page.locator('[data-testid="nav-tab-report"]').first().click();
+    await page.waitForTimeout(500);
     await page.locator('[data-testid="btn-mode-patient"]').first().click();
     await page.waitForTimeout(500);
 
+    const patientView = page.locator('[data-testid="patient-projection-view"]');
+    assert((await patientView.locator('[data-testid="patient-release-approved-banner"]').count()) > 0, 'E3/E7: Approved clinical path reaches RELEASED R6 Prescription');
+    assert((await patientView.locator('[data-testid="draft-watermark"]').count()) === 0, 'E7: Draft watermark removed on released prescription');
+
+    const medProtocol = patientView.locator('[data-testid="six-column-medication-protocol"]');
+    const medProtocolText = await medProtocol.innerText();
+    assert(medProtocolText.includes('Vitamin D3 Clinical Formula'), 'E3: Approved supplement name rendered in R6 6-column protocol');
+    assert(medProtocolText.includes('1000 IU'), 'E3: Exact approved supplement dose (1000 IU) rendered in R6');
+    assert(medProtocolText.includes('13:30'), 'E3: Exact approved supplement timing (13:30) rendered in R6');
+    assert(/8\s*(Weeks|সপ্তাহ)/i.test(medProtocolText), 'E3: Exact approved supplement duration (8 Weeks) rendered in R6');
+    assert(!medProtocolText.includes('Selenium Unapproved Candidate'), 'E3: Unapproved draft candidate excluded from R6 6-column protocol');
+
+    console.log('--- E7: Approved Chromium A4 PDF Generation & Print-Media Content Audit ---');
     const pdfOutDir = process.env.R7_PDF_DIR || path.join(os.tmpdir(), 'shuddho-r7-pdf');
     fs.mkdirSync(pdfOutDir, { recursive: true });
-    const r7PdfPath = path.join(pdfOutDir, 'r7_clinical_verification.pdf');
+    const approvedPdfPath = path.join(pdfOutDir, 'r7_patient_prescription_approved.pdf');
 
     await page.emulateMedia({ media: 'print' });
-    await page.waitForTimeout(200);
-    const printStats = await page.evaluate(() => {
+    await page.waitForTimeout(250);
+    const approvedPrintAudit = await page.evaluate(() => {
+      const noPrintEls = Array.from(document.querySelectorAll('.no-print'));
+      const noPrintHidden = noPrintEls.every(el => getComputedStyle(el).display === 'none');
       const view = document.querySelector('[data-testid="patient-diet-report-view"]') as HTMLElement | null;
-      const hasBangla = view ? /[\u0980-\u09FF]+/.test(view.innerText) : false;
-      const overflow = document.documentElement.scrollWidth > document.documentElement.clientWidth + 4;
-      return { hasBangla, overflow };
+      const text = view ? view.innerText : '';
+      return {
+        noPrintHidden,
+        hasBangla: /[\u0980-\u09FF]+/.test(text),
+        hasVitD: text.includes('Vitamin D3 Clinical Formula') && text.includes('1000 IU') && text.includes('13:30'),
+        hasNoCandidateLeak: !text.includes('Selenium Unapproved Candidate'),
+        hasNoKcal: !/\b\d+\s*kcal\b/i.test(text),
+        hasNoBiomarkers: !text.includes('HOMA-IR') && !text.includes('FIB-4'),
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 4
+      };
     });
-    assert(printStats.hasBangla, 'Bangla clinical output renders crisply in Chromium print CSS');
-    assert(!printStats.overflow, 'A4 print layout exhibits zero horizontal overflow');
-    await page.pdf({ path: r7PdfPath, format: 'A4', printBackground: true });
+    assert(approvedPrintAudit.noPrintHidden, 'E7: @media print hides all .no-print UI & draft candidate containers');
+    assert(approvedPrintAudit.hasBangla, 'E7: Bangla Unicode clinical output renders under @media print');
+    assert(approvedPrintAudit.hasVitD, 'E7: Print-media DOM contains approved supplement name, dose & timing');
+    assert(approvedPrintAudit.hasNoCandidateLeak, 'E7: Print-media DOM excludes unapproved draft candidates');
+    assert(approvedPrintAudit.hasNoKcal && approvedPrintAudit.hasNoBiomarkers, 'E7: Print-media U21 privacy holds (0 kcal, 0 HOMA-IR/FIB-4)');
+    assert(!approvedPrintAudit.overflow, 'E7: Approved A4 print layout exhibits 0 horizontal overflow');
+
+    await page.pdf({
+      path: approvedPdfPath,
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '12mm', right: '10mm', bottom: '12mm', left: '10mm' }
+    });
     await page.emulateMedia({ media: 'screen' });
 
-    const pdfBytes = fs.readFileSync(r7PdfPath);
-    assert(pdfBytes.length > 10000 && pdfBytes.subarray(0, 5).toString('utf8') === '%PDF-', `Chromium exported valid A4 PDF (${pdfBytes.length} bytes)`);
+    const approvedPdfMeta = inspectPdfDocument(fs.readFileSync(approvedPdfPath));
+    assert(
+      approvedPdfMeta.validHeader && approvedPdfMeta.byteLength > 10000 && approvedPdfMeta.pageCount >= 1 && approvedPdfMeta.decompressedStreamCount >= 1 && approvedPdfMeta.hasFontResources,
+      `E7: Approved A4 PDF verified (${approvedPdfMeta.byteLength} bytes, ${approvedPdfMeta.pageCount} pages, ${approvedPdfMeta.decompressedStreamCount} decompressed streams)`
+    );
 
-    // Mobile responsive viewport check on R7 Laboratory Workspace
+    console.log('--- E4: Structured UI Lab Edit Invalidates Approved R4 & Weekly Diet Plan ---');
     await page.locator('[data-testid="nav-tab-assessment"]').first().click();
-    await page.waitForTimeout(350);
+    await page.waitForTimeout(450);
     await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
-    await page.waitForTimeout(350);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.waitForTimeout(300);
-    const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 8);
-    assert(!mobileOverflow, 'Mobile 390px R7 laboratory workspace avoids horizontal page overflow');
+    await page.waitForTimeout(450);
+    await page.locator('[data-testid="r7-lab-search-input"]').fill('Fasting Blood Sugar');
+    await page.waitForTimeout(200);
+    await fbsRow.locator('input[type="number"]').first().fill('6.8');
+    await page.waitForTimeout(500);
 
-    // Cross-patient isolation check
-    await page.setViewportSize({ width: 1440, height: 900 });
+    // Verify Weekly Diet Plan & R4 Protocol are invalidated immediately
+    await page.locator('[data-testid="nav-tab-diet"]').first().click();
+    await page.waitForTimeout(450);
+    assert((await page.locator('[data-testid="badge-approved-plan"]').count()) === 0, 'E4: Lab edit immediately invalidated approved Weekly Diet Plan');
+
+    await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
+    await page.waitForTimeout(400);
+    await page.locator('button:has-text("Safety Review"), button:has-text("নিরাপত্তা ও অনুমোদন")').first().click();
+    await page.waitForTimeout(350);
+    const postLabEditApproveText = await approveLockBtn.innerText();
+    assert(!postLabEditApproveText.includes('Re-Approve'), `E4: Approved R4 protocol reverted to draft state ("${postLabEditApproveText.trim()}")`);
+
+    console.log('--- E5 & E8: Critical Potassium Blocks Release & All 3 Print Entry Points + Blocked PDF Watermark ---');
+    await page.locator('[data-testid="nav-tab-assessment"]').first().click();
+    await page.waitForTimeout(450);
+    await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
+    await page.waitForTimeout(450);
+    await page.locator('[data-testid="r7-lab-search-input"]').fill('Potassium');
+    await page.waitForTimeout(250);
+    const kRow = page.locator('[data-testid="r7-lab-row-serum_potassium"], [data-testid="r7-lab-row-potassium"]').first();
+    await kRow.locator('select[aria-label="Result availability"]').selectOption('previously_tested');
+    await page.waitForTimeout(150);
+    await kRow.locator('input[type="number"]').first().fill('6.4');
+    await kRow.locator('select[aria-label="Verification status"]').selectOption('unverified');
+    await page.waitForTimeout(450);
+    assert((await page.locator('[data-testid="r7-critical-lab-banner"]').count()) > 0, 'E5: Unverified K+ 6.4 triggers Critical Escalation Banner');
+
+    await page.locator('[data-testid="nav-tab-report"]').first().click();
+    await page.waitForTimeout(500);
+    await page.locator('[data-testid="btn-mode-patient"]').first().click();
+    await page.waitForTimeout(450);
+
+    const printBtnPatient = patientView.locator('[data-testid="btn-print-patient-report"]');
+    const printBtnHub = page.locator('[data-testid="btn-print-report"]');
+    const printBtnHeader = page.locator('[data-testid="btn-print"]');
+    assert((await patientView.locator('[data-testid="patient-release-blocked-alert"]').count()) > 0, 'E5: Patient Prescription shows release blocked alert');
+    assert((await patientView.locator('[data-testid="draft-watermark"]').count()) > 0, 'E8: Blocked report displays PROVISIONAL DRAFT watermark');
+    assert(await printBtnPatient.isDisabled(), 'E5: Print entry #1 (Patient Report button) disabled on critical lab block');
+    assert(await printBtnHub.isDisabled(), 'E5: Print entry #2 (Report Hub button) disabled on critical lab block');
+    assert(await printBtnHeader.isDisabled(), 'E5: Print entry #3 (Global Header button) disabled on critical lab block');
+
+    const blockedPdfPath = path.join(pdfOutDir, 'r7_patient_prescription_blocked.pdf');
+    await page.emulateMedia({ media: 'print' });
+    await page.waitForTimeout(200);
+    const blockedBannerVisible = await page.evaluate(() => {
+      const b = document.querySelector('[data-testid="printable-draft-block-banner"]') as HTMLElement | null;
+      return b ? getComputedStyle(b).display !== 'none' : false;
+    });
+    assert(blockedBannerVisible, 'E8: Printable block warning banner remains visible under @media print');
+    await page.pdf({ path: blockedPdfPath, format: 'A4', printBackground: true });
+    await page.emulateMedia({ media: 'screen' });
+    const blockedPdfMeta = inspectPdfDocument(fs.readFileSync(blockedPdfPath));
+    assert(blockedPdfMeta.validHeader && blockedPdfMeta.byteLength > 10000, `E8: Blocked PDF watermark export verified (${blockedPdfMeta.byteLength} bytes)`);
+
+    console.log('--- E6: Visit Isolation & Cross-Patient Isolation ---');
+    // Test Visit Isolation via "New Visit" flow (mandatory non-bypassed workflow)
+    const startVisitBtn = page.locator('button:has-text("নতুন ভিজিট"), button:has-text("New Visit")').first();
+    assert((await startVisitBtn.count()) > 0, 'E6: Persistent patient bar exposes New Visit trigger');
+    await startVisitBtn.click();
+    await page.waitForTimeout(300);
+    const confirmVisitBtn = page.locator('button:has-text("Confirm & Start Visit"), button:has-text("ভিজিট শুরু করুন")').first();
+    assert((await confirmVisitBtn.count()) > 0, 'E6: Start New Clinical Visit modal confirm button present');
+    await confirmVisitBtn.click();
+    await page.waitForTimeout(700);
+    await page.locator('[data-testid="nav-tab-assessment"]').first().click();
+    await page.waitForTimeout(400);
+    await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
+    await page.waitForTimeout(400);
+    assert((await page.locator('[data-testid="r7-critical-lab-banner"]').count()) === 0, 'E6 Visit Isolation: Critical lab from prior visit does not leak into new visit intake');
+
+    await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
+    await page.waitForTimeout(450);
+    await page.locator('button:has-text("Supplements"), button:has-text("সাপ্লিমেন্ট")').first().click();
+    await page.waitForTimeout(350);
+    assert(!(await page.innerText('body')).includes('Vitamin D3 Clinical Formula'), 'E6 Visit Isolation: Prior visit R4 supplement does not leak to new visit');
+
+    // Test Cross-Patient Isolation
     await page.locator('[data-testid="nav-tab-patients"]').first().click();
     await page.waitForTimeout(400);
-    const openRegisterBtn = page.locator('button:has-text("Register Patient"), button:has-text("নতুন রোগী নিবন্ধন")').first();
-    await openRegisterBtn.click();
-    await page.waitForTimeout(300);
+    await page.locator('button:has-text("Register Patient"), button:has-text("নতুন রোগী নিবন্ধন")').first().click();
+    await page.waitForTimeout(250);
     const regForm = page.locator('form').last();
-    await regForm.locator('input[type="text"]').first().fill('R7 Isolated Synthetic Patient');
+    await regForm.locator('input[type="text"]').first().fill('R7 Isolated Synthetic Patient B');
     await regForm.locator('input[type="number"]').first().fill('38');
     await regForm.locator('button[type="submit"]').click();
     await page.waitForTimeout(600);
@@ -247,7 +441,23 @@ async function runR7BrowserE2E() {
     await page.waitForTimeout(400);
     await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
     await page.waitForTimeout(400);
-    assert((await page.locator('[data-testid="r7-critical-lab-banner"]').count()) === 0, 'Patient isolation: zero critical labs leak to newly registered patient');
+    assert((await page.locator('[data-testid="r7-critical-lab-banner"]').count()) === 0, 'E6 Patient Isolation: Zero critical labs leak into newly registered Patient B');
+
+    await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
+    await page.waitForTimeout(400);
+    await page.locator('button:has-text("Supplements"), button:has-text("সাপ্লিমেন্ট")').first().click();
+    await page.waitForTimeout(300);
+    assert(!(await page.innerText('body')).includes('Vitamin D3 Clinical Formula'), 'E6 Patient Isolation: Patient A R4 supplement never leaks to Patient B');
+
+    // Mobile responsive viewport check
+    await page.locator('[data-testid="nav-tab-assessment"]').first().click();
+    await page.waitForTimeout(300);
+    await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
+    await page.waitForTimeout(300);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 8);
+    assert(!mobileOverflow, 'Mobile 390px R7 laboratory workspace avoids horizontal page overflow');
 
     console.log('\n================================================================');
     console.log(`R7 BROWSER E2E SUMMARY: ${passedAssertions}/${totalAssertions} PASSED (${failedAssertions} FAILED)`);

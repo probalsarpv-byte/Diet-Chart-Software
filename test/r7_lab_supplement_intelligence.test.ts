@@ -18,10 +18,15 @@ import {
   buildR7CatalogEntries,
   convertLabUnitValue,
   getCanonicalMarkerId,
+  isEligibleCanonicalScalarObservation,
   normalizeSingleLabEntry,
+  projectStructuredLabsToLegacyScalars,
   reconcilePatientLaboratories,
   resolveCanonicalMarker
 } from '../src/engine/r7/labFoundation';
+import { buildR5NutritionAdjustmentContract } from '../src/engine/r5NutritionContract';
+import { resolveConflicts } from '../src/engine/conflictResolver';
+import { normalizeStructuredLabEntries } from '../src/engine/r5SystemsNetworkEngine';
 import {
   computeLabTrends,
   computeR7DerivedBiomarkers,
@@ -309,8 +314,8 @@ describe('Phase R7 — Advanced Laboratory, Biomarker, DNI & Supplement Intellig
     it('C01-C05: Calculates HOMA-IR from mixed units, Non-HDL, TG/HDL, TSAT, AST/ALT, FIB-4, UACR, NLR, eGFR with provenance', () => {
       const pt = createSyntheticPatient({ age: 52, gender: 'male' });
       const entries: StructuredLabEntry[] = [
-        makeStructuredLab('fbs', 7.0, 'mmol/L'), // converts -> ~126.1 mg/dL
-        makeStructuredLab('fasting_insulin', 18, 'µIU/mL'),
+        makeStructuredLab('fbs', 7.0, 'mmol/L', { fasting_status: 'fasting' }), // converts -> ~126.1 mg/dL
+        makeStructuredLab('fasting_insulin', 18, 'µIU/mL', { fasting_status: 'fasting' }),
         makeStructuredLab('total_cholesterol', 240, 'mg/dL'),
         makeStructuredLab('hdl', 38, 'mg/dL'),
         makeStructuredLab('triglycerides', 220, 'mg/dL'),
@@ -787,6 +792,469 @@ describe('Phase R7 — Advanced Laboratory, Biomarker, DNI & Supplement Intellig
       );
       assert.equal(safetyBlocked.overall_status, 'HARD_STOP');
       assert.equal(safetyBlocked.can_approve, false);
+    });
+  });
+
+  // ── CHECKPOINT A CLOSURE: Invalid/Unqualified Structured Labs & Projection Gate ─
+  describe('Checkpoint A Closure: Canonical Eligibility & No Raw Fallback', () => {
+    it('CP-A01: Rejects raw numeric fallback & clears stale patient.labs on pending/declined/unsupported/implausible/conflict/foreign', () => {
+      const pt = createSyntheticPatient({
+        id: 'pt_cp_a',
+        current_visit_id: 'vis_cp_a',
+        labs: {
+          fasting_glucose: 140,
+          hba1c: 7.2,
+          potassium: 6.4,
+          hs_crp: 4.5,
+          tsh: 8.5,
+          lab_flags: []
+        }
+      });
+
+      const structured: Record<string, StructuredLabEntry> = {
+        fbs: makeStructuredLab('fbs', 7.0, 'mmol/L', { patient_id: 'pt_cp_a', visit_id: 'vis_cp_a' }),
+        hba1c: makeStructuredLab('hba1c', 42, 'invalid_unit', { patient_id: 'pt_cp_a', visit_id: 'vis_cp_a' }),
+        serum_potassium: makeStructuredLab('serum_potassium', undefined, 'mmol/L', {
+          status: 'declined_unavailable',
+          patient_id: 'pt_cp_a',
+          visit_id: 'vis_cp_a'
+        }),
+        sodium: makeStructuredLab('sodium', 138, 'mmol/L', {
+          status: 'pending_result',
+          patient_id: 'pt_cp_a',
+          visit_id: 'vis_cp_a'
+        }),
+        hs_crp: makeStructuredLab('hs_crp', undefined, 'mg/L', {
+          text_value: '<0.05',
+          inequality_operator: '<',
+          patient_id: 'pt_cp_a',
+          visit_id: 'vis_cp_a'
+        }),
+        tsh: makeStructuredLab('tsh', -2, 'µIU/mL', { patient_id: 'pt_cp_a', visit_id: 'vis_cp_a' }),
+        alt: makeStructuredLab('alt', 120, 'U/L', { patient_id: 'pt_OTHER', visit_id: 'vis_cp_a' }),
+        ldl_1: makeStructuredLab('ldl', 110, 'mg/dL', {
+          observation_id: 'obs_ldl_1',
+          patient_id: 'pt_cp_a',
+          visit_id: 'vis_cp_a',
+          test_date: '2026-11-24'
+        }),
+        ldl_2: makeStructuredLab('ldl', 180, 'mg/dL', {
+          observation_id: 'obs_ldl_2',
+          patient_id: 'pt_cp_a',
+          visit_id: 'vis_cp_a',
+          test_date: '2026-11-24'
+        })
+      };
+
+      const patch = projectStructuredLabsToLegacyScalars({
+        patient: pt,
+        visitId: 'vis_cp_a',
+        structuredEntries: structured
+      });
+
+      // Valid mmol/L glucose converts cleanly (~126.1 mg/dL)
+      assert.ok(typeof patch.fasting_glucose === 'number' && Math.abs(patch.fasting_glucose - 126.1) < 1.0);
+      // Unsupported unit, declined, pending, non-exact inequality, negative/implausible, foreign, and conflict ALL clear to undefined
+      assert.equal(patch.hba1c, undefined, 'Unsupported unit clears stale HbA1c without projecting raw 42');
+      assert.equal(patch.potassium, undefined, 'Declined potassium clears stale potassium');
+      assert.equal(patch.sodium, undefined, 'Pending sodium does not project scalar');
+      assert.equal(patch.hs_crp, undefined, 'Non-exact <0.05 inequality does not overwrite scalar as exact 0.05');
+      assert.equal(patch.tsh, undefined, 'Negative TSH clears stale TSH');
+      assert.equal(patch.alt, undefined, 'Foreign patient ALT does not project into Pt A');
+      assert.equal(patch.ldl, undefined, 'Conflicting duplicate LDL clears scalar projection');
+
+      // Reconcile must not fall back to stale patient.labs.potassium when structured potassium is declined
+      const recon = reconcilePatientLaboratories({
+        patient: pt,
+        visitId: 'vis_cp_a',
+        structuredEntries: structured
+      });
+      assert.equal(recon.latestByCanonical.potassium.availability, 'declined_unavailable');
+      assert.equal(isEligibleCanonicalScalarObservation(recon.latestByCanonical.potassium, recon.conflicts), false);
+      assert.equal(isEligibleCanonicalScalarObservation(recon.latestByCanonical.hba1c, recon.conflicts), false);
+      assert.equal(recon.latestByCanonical.hba1c.original_value, 42, 'Original raw value preserved on structured observation');
+      assert.equal(isEligibleCanonicalScalarObservation(recon.latestByCanonical.ldl, recon.conflicts), false);
+
+      // R5 normalizeStructuredLabEntries must reject raw fallback for invalid/unsupported entries
+      const r5Norm = normalizeStructuredLabEntries(structured);
+      assert.equal(r5Norm.hba1c, undefined, 'R5 structured normalizer rejects unsupported unit without raw fallback');
+      assert.equal(r5Norm.serum_potassium, undefined, 'R5 structured normalizer rejects declined marker');
+      assert.equal(r5Norm.tsh, undefined, 'R5 structured normalizer rejects negative marker');
+      assert.ok(r5Norm.fasting_glucose && Math.abs(r5Norm.fasting_glucose.value - 126.1) < 1.0);
+
+      // Matrix evaluation ignores invalid HbA1c 42 invalid_unit and foreign ALT
+      const matrixRes = evaluateFunctionalMatrix(
+        adaptAssessmentEvidenceToMatrixInput({
+          patient: { ...pt, labs: { ...pt.labs, ...patch } },
+          functionalAnswers: {},
+          labEntries: structured
+        })
+      );
+      const r7Nodes = [...matrixRes.domains.communication, ...matrixRes.domains.biotransformation];
+      assert.ok(!r7Nodes.some(n => n.evidence_source === 'r7_lab:hba1c'), 'Unsupported HbA1c unit never triggers metabolic dysfunction');
+      assert.ok(!r7Nodes.some(n => n.evidence_source === 'r7_lab:alt'), 'Foreign patient ALT never triggers hepatic dysfunction');
+    });
+  });
+
+  // ── CHECKPOINT B CLOSURE: Canonical Conversion Before P2 Classification ─
+  describe('Checkpoint B Closure: Unit-Normalized & Provenance-Safe P2 Handoff', () => {
+    it('CP-B01: Converts mmol/mol HbA1c, umol/L creatinine, nmol/L Vit D before thresholds, preserves missing date & verification status', () => {
+      const pt = createSyntheticPatient({ id: 'pt_cp_b', current_visit_id: 'vis_cp_b', gender: 'male' });
+      const assessment: any = {
+        patient_id: 'pt_cp_b',
+        visit_id: 'vis_cp_b',
+        assessment_id: 'assess_cp_b',
+        assessment_date: '2026-11-25',
+        mode: 'quick',
+        functional_answers: {},
+        population_data: {},
+        labs: {
+          entries: {
+            hba1c: makeStructuredLab('hba1c', 42, 'mmol/mol', {
+              patient_id: 'pt_cp_b',
+              visit_id: 'vis_cp_b',
+              test_date: undefined,
+              verification_status: 'clinician_verified'
+            }),
+            serum_creatinine: makeStructuredLab('serum_creatinine', 70, 'µmol/L', {
+              patient_id: 'pt_cp_b',
+              visit_id: 'vis_cp_b',
+              test_date: '2026-11-20',
+              verification_status: 'lab_document_reviewed'
+            }),
+            vitamin_d3: makeStructuredLab('vitamin_d3', 100, 'nmol/L', {
+              patient_id: 'pt_cp_b',
+              visit_id: 'vis_cp_b',
+              verification_status: 'clinician_verified'
+            }),
+            tsh: makeStructuredLab('tsh', 3.1, 'µIU/mL', {
+              patient_id: 'pt_cp_b',
+              visit_id: 'vis_cp_b',
+              verification_status: 'clinician_verified'
+            }),
+            hs_crp: makeStructuredLab('hs_crp', 1.5, 'mg/L', {
+              patient_id: 'pt_cp_b',
+              visit_id: 'vis_cp_b',
+              verification_status: 'clinician_verified'
+            }),
+            serum_potassium: makeStructuredLab('serum_potassium', 6.4, 'mmol/L', {
+              patient_id: 'pt_cp_b',
+              visit_id: 'vis_cp_b',
+              verification_status: 'unverified'
+            }),
+            bad_ldl: makeStructuredLab('ldl', 180, 'weird_unit', {
+              patient_id: 'pt_cp_b',
+              visit_id: 'vis_cp_b'
+            })
+          },
+          last_updated: '2026-11-25',
+          total_tested_count: 7,
+          pending_count: 0
+        }
+      };
+
+      const p2Obs = buildP2ClinicalObservations(assessment, pt);
+      const a1c = p2Obs.find(o => o.sourceLabMarker === 'hba1c');
+      assert.ok(a1c && typeof a1c.observedValue === 'number');
+      assert.ok(Math.abs(a1c.observedValue - 5.99) < 0.25, 'HbA1c 42 mmol/mol normalizes to ~6.0%');
+      assert.ok(a1c.tags?.includes('prediabetes_range_hba1c'));
+      assert.ok(!a1c.tags?.includes('diabetes_range_hba1c'), 'HbA1c 42 mmol/mol MUST NOT trigger diabetes_range_hba1c');
+      assert.equal(a1c.date, '', 'Missing collection date must remain empty, never stamped with current timestamp');
+      assert.ok(a1c.tags?.includes('missing_collection_date'));
+
+      const cr = p2Obs.find(o => o.sourceLabMarker === 'serum_creatinine');
+      assert.ok(cr && typeof cr.observedValue === 'number');
+      assert.ok(cr.observedValue < 1.0, 'Creatinine 70 umol/L converts to ~0.79 mg/dL');
+      assert.ok(!cr.tags?.includes('elevated_creatinine'), '70 umol/L creatinine MUST NOT trigger elevated_creatinine');
+
+      const vitD = p2Obs.find(o => o.sourceLabMarker === 'vitamin_d3');
+      assert.ok(vitD && typeof vitD.observedValue === 'number');
+      assert.ok(Math.abs(vitD.observedValue - 40.0) < 1.0, 'Vit D 100 nmol/L converts to ~40 ng/mL');
+      assert.ok(!vitD.tags?.includes('vitamin_d_deficiency'), '40 ng/mL Vit D MUST NOT trigger deficiency');
+
+      const tsh = p2Obs.find(o => o.sourceLabMarker === 'tsh');
+      assert.ok(tsh && !tsh.tags?.includes('hypothyroid_pattern'), 'Normal TSH 3.1 MUST NOT emit hypothyroid_pattern');
+
+      const crp = p2Obs.find(o => o.sourceLabMarker === 'hs_crp');
+      assert.ok(crp && !crp.tags?.includes('systemic_inflammation'), 'Exploratory hs-CRP 1.5 MUST NOT trigger pathology tag');
+
+      const k = p2Obs.find(o => o.sourceLabMarker === 'serum_potassium');
+      assert.ok(k);
+      assert.equal(k.verificationStatus, 'unverified', 'Unverified critical potassium MUST stay unverified');
+      assert.ok(k.tags?.includes('urgent_verification_required'));
+
+      const badLdl = p2Obs.find(o => o.sourceLabMarker === 'ldl');
+      assert.ok(badLdl);
+      assert.equal(typeof badLdl.observedValue, 'string', 'Unsupported unit suppresses numeric observedValue');
+      assert.ok(!badLdl.tags?.includes('elevated_ldl'), 'Unsupported unit suppresses dyslipidemia classification');
+
+      const flat = buildFlattenedAnswersForP2(assessment, pt);
+      assert.ok(Math.abs((flat.hba1c ?? 0) - 5.99) < 0.25);
+      assert.equal(flat.lab_ldl, undefined, 'Unsupported LDL excluded from flattened answers');
+    });
+  });
+
+  // ── CHECKPOINT C CLOSURE: Strict HOMA-IR & Derived Eligibility ─
+  describe('Checkpoint C Closure: Strict HOMA-IR & Derived Ratio Eligibility', () => {
+    it('CP-C01: Rejects unknown fasting, non-fasting, multi-day gaps, missing dates without shared report, exogenous insulin & legacy fallback overwrite', () => {
+      const basePt = createSyntheticPatient({ age: 45, gender: 'male' });
+
+      // 1. Unknown fasting -> NOT calculated
+      const unkFasting = computeR7DerivedBiomarkers({
+        patient: basePt,
+        population: buildR5PopulationProfile(basePt),
+        observations: reconcilePatientLaboratories({
+          patient: basePt,
+          structuredEntries: [
+            makeStructuredLab('fbs', 6.5, 'mmol/L', { fasting_status: 'unknown', test_date: '2026-11-24' }),
+            makeStructuredLab('fasting_insulin', 16, 'µIU/mL', { fasting_status: 'fasting', test_date: '2026-11-24' })
+          ]
+        }).latestByCanonical
+      });
+      const homaUnk = unkFasting.find(d => d.derived_id === 'homa_ir');
+      assert.equal(homaUnk?.eligibility_met, false);
+      assert.notEqual(homaUnk?.status, 'calculated', 'Unknown fasting state must disqualify HOMA-IR');
+
+      // 2. Non-fasting -> NOT calculated
+      const nonFast = computeR7DerivedBiomarkers({
+        patient: basePt,
+        population: buildR5PopulationProfile(basePt),
+        observations: reconcilePatientLaboratories({
+          patient: basePt,
+          structuredEntries: [
+            makeStructuredLab('fbs', 6.5, 'mmol/L', { fasting_status: 'nonfasting', test_date: '2026-11-24' }),
+            makeStructuredLab('fasting_insulin', 16, 'µIU/mL', { fasting_status: 'fasting', test_date: '2026-11-24' })
+          ]
+        }).latestByCanonical
+      });
+      assert.equal(nonFast.find(d => d.derived_id === 'homa_ir')?.eligibility_met, false);
+
+      // 3. 3-day gap (formerly tolerated under 7-day window) -> MUST FAIL
+      const multiDay = computeR7DerivedBiomarkers({
+        patient: basePt,
+        population: buildR5PopulationProfile(basePt),
+        observations: reconcilePatientLaboratories({
+          patient: basePt,
+          structuredEntries: [
+            makeStructuredLab('fbs', 6.5, 'mmol/L', { fasting_status: 'fasting', test_date: '2026-11-21' }),
+            makeStructuredLab('fasting_insulin', 16, 'µIU/mL', { fasting_status: 'fasting', test_date: '2026-11-24' })
+          ]
+        }).latestByCanonical
+      });
+      assert.equal(multiDay.find(d => d.derived_id === 'homa_ir')?.eligibility_met, false, 'Different draw days within 7 days rejected for HOMA-IR');
+
+      // 4. Missing collection dates without shared lab_report_id -> MUST FAIL
+      const missingDates = computeR7DerivedBiomarkers({
+        patient: basePt,
+        population: buildR5PopulationProfile(basePt),
+        observations: reconcilePatientLaboratories({
+          patient: basePt,
+          structuredEntries: [
+            makeStructuredLab('fbs', 6.5, 'mmol/L', { fasting_status: 'fasting', test_date: undefined }),
+            makeStructuredLab('fasting_insulin', 16, 'µIU/mL', { fasting_status: 'fasting', test_date: undefined })
+          ]
+        }).latestByCanonical
+      });
+      assert.equal(missingDates.find(d => d.derived_id === 'homa_ir')?.eligibility_met, false, 'Missing dates without shared report rejected');
+
+      // 5. Same shared lab_report_id when dates missing -> VALID
+      const sharedReport = computeR7DerivedBiomarkers({
+        patient: basePt,
+        population: buildR5PopulationProfile(basePt),
+        observations: reconcilePatientLaboratories({
+          patient: basePt,
+          structuredEntries: [
+            makeStructuredLab('fbs', 6.5, 'mmol/L', { fasting_status: 'fasting', test_date: undefined, lab_report_id: 'RPT_100' }),
+            makeStructuredLab('fasting_insulin', 16, 'µIU/mL', { fasting_status: 'fasting', test_date: undefined, lab_report_id: 'RPT_100' })
+          ]
+        }).latestByCanonical
+      });
+      assert.equal(sharedReport.find(d => d.derived_id === 'homa_ir')?.status, 'calculated');
+      assert.equal(sharedReport.find(d => d.derived_id === 'homa_ir')?.eligibility_met, true);
+
+      // 6. Exogenous insulin therapy -> NOT applicable
+      const ptIns = createSyntheticPatient({
+        age: 45,
+        gender: 'male',
+        medication_records: [
+          { id: 'm_ins', generic_name: 'Insulin Glargine', status: 'active' } as any
+        ]
+      });
+      const exoIns = computeR7DerivedBiomarkers({
+        patient: ptIns,
+        population: buildR5PopulationProfile(ptIns),
+        observations: reconcilePatientLaboratories({
+          patient: ptIns,
+          structuredEntries: [
+            makeStructuredLab('fbs', 6.5, 'mmol/L', { fasting_status: 'fasting', test_date: '2026-11-24' }),
+            makeStructuredLab('fasting_insulin', 16, 'µIU/mL', { fasting_status: 'fasting', test_date: '2026-11-24' })
+          ]
+        }).latestByCanonical
+      });
+      assert.equal(exoIns.find(d => d.derived_id === 'homa_ir')?.status, 'not_applicable');
+
+      // 7. Ineligible R7 HOMA-IR (e.g. non-fasting) MUST NOT sneak into P2 via legacy arithmetic as lab_confirmed
+      const assessmentIneligible: any = {
+        patient_id: basePt.id,
+        visit_id: basePt.current_visit_id,
+        assessment_id: 'assess_cp_c',
+        assessment_date: '2026-11-25',
+        mode: 'quick',
+        functional_answers: {},
+        population_data: {},
+        labs: {
+          entries: {
+            fbs: makeStructuredLab('fbs', 7.0, 'mmol/L', { fasting_status: 'unknown', test_date: '2026-11-24' }),
+            fasting_insulin: makeStructuredLab('fasting_insulin', 22, 'µIU/mL', { fasting_status: 'fasting', test_date: '2026-11-24' })
+          },
+          last_updated: '2026-11-25',
+          total_tested_count: 2,
+          pending_count: 0
+        }
+      };
+      const p2ObsIneligible = buildP2ClinicalObservations(assessmentIneligible, basePt);
+      assert.equal(
+        p2ObsIneligible.find(o => o.sourceLabMarker === 'homa_ir'),
+        undefined,
+        'Ineligible R7 HOMA-IR must NOT be synthesized into P2 observations'
+      );
+    });
+  });
+
+  // ── CHECKPOINT D CLOSURE: R5 Nutrition Contract, Null Fallbacks & Renal/K+ Safety ─
+  describe('Checkpoint D Closure: R5 Nutrition Contract & Canonical Renal/Potassium Gating', () => {
+    it('CP-D01: Missing K+/eGFR stay undefined (no ?? 0 or ?? 100), unverified K+ never claims LAB_SUPPORTED, critical & conflicting escalate safely', () => {
+      const ptMissing = createSyntheticPatient({
+        id: 'pt_cp_d1',
+        selected_conditions: ['hypertension_ckd'],
+        labs: { lab_flags: [] }
+      });
+
+      const contractMissing = buildR5NutritionAdjustmentContract({ patient: ptMissing });
+      assert.equal(contractMissing.lab_safety_context?.serum_potassium_mmol_l, undefined, 'Missing K+ stays undefined, NEVER ?? 0');
+      assert.equal(contractMissing.lab_safety_context?.reported_egfr_ml_min, undefined, 'Missing eGFR stays undefined, NEVER ?? 100');
+      assert.equal(contractMissing.lab_safety_context?.potassium_state, 'unavailable');
+      assert.equal(contractMissing.lab_safety_context?.egfr_source, 'unavailable');
+      assert.equal(contractMissing.nutrient_constraints.potassium_mg_max, undefined, 'No arbitrary K+ cap emitted');
+      assert.equal(contractMissing.nutrient_constraints.fluid_ml_max, undefined, 'No fabricated 1500 mL fluid cap');
+      assert.ok(
+        contractMissing.clinical_review_flags?.some(f => f.parameter === 'egfr' && f.flag === 'CLINICAL_REVIEW_REQUIRED'),
+        'Hypertension/CKD without eGFR requests eGFR verification instead of assuming 100 or <60'
+      );
+
+      // Unverified critical K+ = 6.3 -> blocks release WITHOUT claiming LAB_SUPPORTED
+      const ptUnverifiedK = createSyntheticPatient({ id: 'pt_cp_d2', current_visit_id: 'vis_d2' });
+      const contractUnverCrit = buildR5NutritionAdjustmentContract({
+        patient: ptUnverifiedK,
+        structuredLabEntries: {
+          serum_potassium: makeStructuredLab('serum_potassium', 6.3, 'mmol/L', {
+            patient_id: 'pt_cp_d2',
+            visit_id: 'vis_d2',
+            verification_status: 'unverified'
+          })
+        }
+      });
+      assert.equal(contractUnverCrit.lab_safety_context?.potassium_state, 'available_unverified');
+      assert.equal(contractUnverCrit.lab_safety_context?.serum_potassium_mmol_l, 6.3);
+      assert.equal(contractUnverCrit.acute_escalation?.block_release, true, 'Unverified critical K+ must block release');
+      const kFlag = contractUnverCrit.clinical_review_flags?.find(f => f.parameter === 'potassium');
+      assert.notEqual(kFlag?.evidence_status, 'LAB_SUPPORTED', 'Unverified potassium MUST NOT emit LAB_SUPPORTED');
+      assert.equal(kFlag?.evidence_status, 'CLINICAL_REVIEW_REQUIRED');
+
+      // Unverified borderline K+ = 5.4 -> review flag WITHOUT LAB_SUPPORTED or arbitrary 2000 mg limit
+      const contractBorderline = buildR5NutritionAdjustmentContract({
+        patient: ptUnverifiedK,
+        structuredLabEntries: {
+          potassium: makeStructuredLab('potassium', 5.4, 'mmol/L', {
+            patient_id: 'pt_cp_d2',
+            visit_id: 'vis_d2',
+            verification_status: 'patient_reported'
+          })
+        }
+      });
+      const borderFlag = contractBorderline.clinical_review_flags?.find(f => f.parameter === 'potassium');
+      assert.equal(borderFlag?.flag, 'CLINICAL_REVIEW_REQUIRED');
+      assert.notEqual(borderFlag?.evidence_status, 'LAB_SUPPORTED');
+      assert.equal(contractBorderline.nutrient_constraints.potassium_mg_max, undefined);
+
+      // Verified borderline + low reported eGFR = 25 -> conflictResolver reads canonical potassium & reported_egfr cleanly
+      const contractVerifiedCkd = buildR5NutritionAdjustmentContract({
+        patient: ptUnverifiedK,
+        structuredLabEntries: {
+          potassium: makeStructuredLab('potassium', 5.3, 'mmol/L', {
+            patient_id: 'pt_cp_d2',
+            visit_id: 'vis_d2',
+            verification_status: 'clinician_verified'
+          }),
+          egfr: makeStructuredLab('egfr', 25, 'mL/min/1.73m²', {
+            patient_id: 'pt_cp_d2',
+            visit_id: 'vis_d2',
+            verification_status: 'clinician_verified'
+          })
+        }
+      });
+      assert.equal(contractVerifiedCkd.lab_safety_context?.potassium_state, 'available_verified');
+      assert.equal(contractVerifiedCkd.lab_safety_context?.egfr_source, 'reported');
+      assert.equal(contractVerifiedCkd.lab_safety_context?.reported_egfr_ml_min, 25);
+
+      const sampleBanana: any = {
+        id: 'food_banana',
+        code: 'BAN01',
+        name_en: 'Banana',
+        name_bn: 'কলা',
+        category: 'fruits',
+        tags: ['high_potassium'],
+        nutrients_per_100g: { calories: 89, protein_g: 1.1, carbs_g: 23, fat_g: 0.3, potassium_mg: 358 }
+      };
+      const tl = resolveConflicts(
+        [sampleBanana],
+        ['ckd_stage_1_3b'],
+        [],
+        [],
+        [],
+        [],
+        1,
+        contractVerifiedCkd,
+        { potassium: 5.3, reported_egfr: 25, lab_flags: [] }
+      );
+      assert.equal(tl.yellow.length, 1, 'Canonical potassium/reported_egfr triggers YELLOW portion review (not un-overridable RED)');
+
+      // Conflicting duplicate potassium -> conflicting state + release blocked
+      const contractConflict = buildR5NutritionAdjustmentContract({
+        patient: ptUnverifiedK,
+        structuredLabEntries: [
+          makeStructuredLab('potassium', 4.0, 'mmol/L', { patient_id: 'pt_cp_d2', visit_id: 'vis_d2', test_date: '2026-11-24' }),
+          makeStructuredLab('serum_potassium', 6.2, 'mmol/L', { patient_id: 'pt_cp_d2', visit_id: 'vis_d2', test_date: '2026-11-24' })
+        ]
+      });
+      assert.equal(contractConflict.lab_safety_context?.potassium_state, 'conflicting');
+      assert.equal(contractConflict.lab_safety_context?.serum_potassium_mmol_l, undefined, 'Conflicting K+ suppressed from numeric assumptions');
+      assert.equal(contractConflict.acute_escalation?.block_release, true, 'Conflicting K+ blocks release pending reconciliation');
+
+      // Calculated vs reported eGFR separation & no fabricated 1500 mL fluid limit in R5->R4 adapter
+      const r4FluidCheck = adaptR5ContextToR4(
+        {
+          population: buildR5PopulationProfile({ age: 55, gender: 'male' }),
+          pathways: { selected_pathways: [] },
+          medications: [],
+          functional_findings: [],
+          multimorbidity_resolutions: [{ parameter: 'fluid', reason_en: 'Review fluid balance' } as any],
+          nutrition_contract: contractMissing
+        } as any,
+        {
+          id: 'r4_cp_d',
+          patient_id: 'pt_cp_d1',
+          organization_id: 'org_syn',
+          version: 1,
+          status: 'draft',
+          is_approved: false
+        } as any
+      );
+      assert.equal(
+        r4FluidCheck.updated_draft.hydration?.clinician_fluid_limit_ml,
+        undefined,
+        'R5->R4 adapter does NOT fabricate 1500 mL fluid cap'
+      );
     });
   });
 });

@@ -26,7 +26,11 @@ import {
 } from '../types/r5Systems';
 import { R7LabIntelligenceSummary } from '../types/r7Laboratory';
 import { evaluateR7LaboratoryIntelligence } from './r7/biomarkerIntelligence';
-import { normalizeSingleLabEntry } from './r7/labFoundation';
+import {
+  getCanonicalMarkerId,
+  isEligibleCanonicalScalarObservation,
+  normalizeSingleLabEntry
+} from './r7/labFoundation';
 
 export interface MatrixEvaluationInput {
   pathway_ids: ExpandedClinicalPathwayId[];
@@ -285,49 +289,82 @@ export function normalizeStructuredLabEntries(
 
   for (const [key, rawEntry] of Object.entries(rawLabs)) {
     if (rawEntry === undefined || rawEntry === null) continue;
+    const isStructured =
+      typeof rawEntry === 'object' &&
+      ('marker_id' in rawEntry || 'unit' in rawEntry || 'canonical_marker_id' in rawEntry || 'status' in rawEntry);
     const num = extractLabNumericValue(rawEntry);
-    if (num !== null) {
+
+    if (isStructured) {
+      const legacyInterpretationStatuses = new Set(['abnormal', 'critical', 'normal', 'borderline', 'high', 'low']);
+      const intakeStatus =
+        !rawEntry.status || legacyInterpretationStatuses.has(String(rawEntry.status).toLowerCase())
+          ? (num !== null ? 'previously_tested' : 'not_tested')
+          : rawEntry.status;
+
+      const r7Obs = normalizeSingleLabEntry({
+        ...rawEntry,
+        marker_id: rawEntry.marker_id || key,
+        category: rawEntry.category || 'glycemic',
+        name_en: rawEntry.name_en || key,
+        name_bn: rawEntry.name_bn || key,
+        status: intakeStatus,
+        unit: rawEntry.unit ?? rawEntry.original_unit ?? '',
+        numeric_value: rawEntry.numeric_value ?? num ?? undefined,
+        original_value: rawEntry.original_value ?? num ?? undefined,
+        original_unit: rawEntry.original_unit ?? rawEntry.unit,
+        test_date: rawEntry.test_date,
+        verification_status: rawEntry.verification_status
+      } as any);
+
+      // Checkpoint A: Never fall back to raw numeric_value if R7 rejects normalization or eligibility
+      if (!isEligibleCanonicalScalarObservation(r7Obs)) {
+        continue;
+      }
+
+      const rec: NormalizedLabRecord = {
+        value: r7Obs.normalized_value!,
+        unit: r7Obs.canonical_unit,
+        status: rawEntry.status,
+        test_date: rawEntry.test_date,
+        is_abnormal:
+          rawEntry.status === 'abnormal' ||
+          rawEntry.status === 'critical' ||
+          Boolean(rawEntry.is_abnormal)
+      };
+      normalized[key] = rec;
+      const cid = getCanonicalMarkerId(r7Obs.canonical_marker_id);
+      if (cid && !normalized[cid]) normalized[cid] = rec;
+      if ((key === 'serum_potassium' || cid === 'potassium') && !normalized.potassium) normalized.potassium = rec;
+      if ((key === 'potassium' || cid === 'potassium') && !normalized.serum_potassium) normalized.serum_potassium = rec;
+      if ((key === 'hs_crp' || cid === 'hs_crp') && !normalized.crp) normalized.crp = rec;
+      if ((key === 'fasting_blood_glucose' || key === 'fbs' || cid === 'fasting_glucose') && !normalized.fasting_glucose) {
+        normalized.fasting_glucose = rec;
+      }
+      if ((key === 'sgpt_alt' || cid === 'alt') && !normalized.alt) normalized.alt = rec;
+      continue;
+    }
+
+    if (num !== null && Number.isFinite(num) && num >= 0) {
       const unit = typeof rawEntry === 'object' ? rawEntry.unit : undefined;
       const status = typeof rawEntry === 'object' ? rawEntry.status : undefined;
       const date = typeof rawEntry === 'object' ? rawEntry.test_date : undefined;
-      const isStructured = typeof rawEntry === 'object' && ('marker_id' in rawEntry || 'unit' in rawEntry);
-      const r7Obs = isStructured
-        ? normalizeSingleLabEntry({
-            marker_id: rawEntry.marker_id || key,
-            category: rawEntry.category || 'glycemic',
-            name_en: rawEntry.name_en || key,
-            name_bn: rawEntry.name_bn || key,
-            status: status || 'previously_tested',
-            unit: unit || '',
-            numeric_value: num,
-            original_value: rawEntry.original_value ?? num,
-            original_unit: rawEntry.original_unit ?? unit,
-            test_date: date,
-            verification_status: rawEntry.verification_status
-          } as any)
-        : undefined;
-
-      const resolvedVal = r7Obs?.normalized_value !== undefined ? r7Obs.normalized_value : num;
-      const resolvedUnit = r7Obs?.canonical_unit || unit;
       const isAbnormal = status === 'abnormal' || status === 'critical' || Boolean(typeof rawEntry === 'object' && rawEntry.is_abnormal);
 
       const rec: NormalizedLabRecord = {
-        value: resolvedVal,
-        unit: resolvedUnit,
+        value: num,
+        unit,
         status,
         test_date: date,
         is_abnormal: isAbnormal
       };
       normalized[key] = rec;
-      if (r7Obs?.canonical_marker_id && !normalized[r7Obs.canonical_marker_id]) {
-        normalized[r7Obs.canonical_marker_id] = rec;
-      }
-      if (key === 'serum_potassium' && !normalized.potassium) normalized.potassium = normalized[key];
-      if (key === 'potassium' && !normalized.serum_potassium) normalized.serum_potassium = normalized[key];
-      if (key === 'hs_crp' && !normalized.crp) normalized.crp = normalized[key];
-      if (key === 'fasting_blood_glucose' && !normalized.fasting_glucose) normalized.fasting_glucose = normalized[key];
-      if (key === 'fbs' && !normalized.fasting_glucose) normalized.fasting_glucose = normalized[key];
-      if (key === 'sgpt_alt' && !normalized.alt) normalized.alt = normalized[key];
+      const cid = getCanonicalMarkerId(key);
+      if (cid && !normalized[cid]) normalized[cid] = rec;
+      if (key === 'serum_potassium' && !normalized.potassium) normalized.potassium = rec;
+      if (key === 'potassium' && !normalized.serum_potassium) normalized.serum_potassium = rec;
+      if (key === 'hs_crp' && !normalized.crp) normalized.crp = rec;
+      if ((key === 'fasting_blood_glucose' || key === 'fbs') && !normalized.fasting_glucose) normalized.fasting_glucose = rec;
+      if (key === 'sgpt_alt' && !normalized.alt) normalized.alt = rec;
     }
   }
   return normalized;
@@ -357,14 +394,45 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
   const symptoms = (input.symptoms || []).map(s => s.toLowerCase());
   const meds = input.medications || [];
   const answers = input.assessment_answers || {};
-  const labs = input.lab_entries || {};
+  const rawLabEntries = input.lab_entries || {};
+  const normalizedLabMap = normalizeStructuredLabEntries(rawLabEntries);
   const now = new Date().toISOString();
 
   // Helper to check valid positive/reported symptom value
   const isAffirmative = (val: any): boolean => isAffirmativeAbnormalResponse(val);
 
-  // Helper to parse numeric lab values safely
-  const parseLabNum = (val: any): number | null => extractLabNumericValue(val);
+  // Helper to parse numeric lab values safely AFTER canonical normalization & eligibility gating
+  const parseLabNum = (val: any): number | null => {
+    if (typeof val === 'number') return Number.isFinite(val) && val >= 0 ? val : null;
+    if (val && typeof val === 'object' && ('marker_id' in val || 'unit' in val || 'status' in val)) {
+      const rawNum = extractLabNumericValue(val);
+      const legacyInterpretationStatuses = new Set(['abnormal', 'critical', 'normal', 'borderline', 'high', 'low']);
+      const intakeStatus =
+        !val.status || legacyInterpretationStatuses.has(String(val.status).toLowerCase())
+          ? (rawNum !== null ? 'previously_tested' : 'not_tested')
+          : val.status;
+      const obs = normalizeSingleLabEntry({
+        ...val,
+        marker_id: val.marker_id || val.canonical_marker_id || 'unknown',
+        status: intakeStatus,
+        unit: val.unit ?? val.original_unit ?? ''
+      } as any);
+      return isEligibleCanonicalScalarObservation(obs) ? obs.normalized_value! : null;
+    }
+    const n = extractLabNumericValue(val);
+    return n !== null && n >= 0 ? n : null;
+  };
+  const labs: Record<string, any> = {};
+  for (const [k, rawV] of Object.entries(rawLabEntries)) {
+    if (normalizedLabMap[k] !== undefined) {
+      labs[k] = normalizedLabMap[k].value;
+    } else if (typeof rawV === 'number' && Number.isFinite(rawV) && rawV >= 0) {
+      labs[k] = rawV;
+    }
+  }
+  for (const [k, normRec] of Object.entries(normalizedLabMap)) {
+    if (labs[k] === undefined) labs[k] = normRec.value;
+  }
 
   // 1. Assimilation Domain Observations
   if (pathways.includes('gastrointestinal_hepatobiliary') || symptoms.some(s => s.includes('bloat') || s.includes('reflux') || s.includes('constip') || s.includes('diarrhea'))) {
@@ -1032,6 +1100,9 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
   if (r7Summary) {
     for (const evalItem of r7Summary.evaluations) {
       const obs = evalItem.observation;
+      if (!isEligibleCanonicalScalarObservation(obs)) {
+        continue;
+      }
       const isAbnormalRef =
         evalItem.reference_status === 'below_reference_interval' ||
         evalItem.reference_status === 'above_reference_interval' ||

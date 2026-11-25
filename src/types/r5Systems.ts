@@ -476,6 +476,14 @@ export interface R5NutritionAdjustmentContract {
     fasting_contraindication_reasons: string[];
     default_fasting_schedule?: '12_12' | '14_10' | '16_8' | 'none';
   };
+  lab_safety_context?: {
+    potassium_state: 'available_verified' | 'available_unverified' | 'conflicting' | 'invalid' | 'pending' | 'unavailable';
+    serum_potassium_mmol_l?: number;
+    egfr_state: 'available_verified' | 'available_unverified' | 'conflicting' | 'invalid' | 'pending' | 'unavailable';
+    egfr_source: 'reported' | 'calculated' | 'unavailable';
+    reported_egfr_ml_min?: number;
+    calculated_egfr_ml_min?: number;
+  };
   provenance: {
     generated_at: string;
     engine_version: string;

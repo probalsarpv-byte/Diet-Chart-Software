@@ -1862,7 +1862,7 @@ function parseRawValueOrInequality(raw: unknown): {
   return { isExact: false, isMalformed: true };
 }
 
-function mapLegacyStatusToAvailability(status?: StructuredLabEntry['status']): LabResultAvailability {
+function mapLegacyStatusToAvailability(status?: StructuredLabEntry['status'] | string): LabResultAvailability {
   switch (status) {
     case 'previously_tested':
       return 'available';
@@ -1871,6 +1871,7 @@ function mapLegacyStatusToAvailability(status?: StructuredLabEntry['status']): L
     case 'not_tested':
       return 'not_tested';
     case 'declined_unavailable':
+    case 'declined_or_cost':
       return 'declined_unavailable';
     case 'invalid':
       return 'invalid';
@@ -2275,7 +2276,14 @@ export function reconcilePatientLaboratories(options: {
 
     const presentCanonical = new Set(
       normalizedList
-        .filter(o => o.availability === 'available' || o.availability === 'pending' || o.availability === 'invalid')
+        .filter(
+          o =>
+            o.availability === 'available' ||
+            o.availability === 'pending' ||
+            o.availability === 'invalid' ||
+            o.availability === 'declined_unavailable' ||
+            o.availability === 'superseded'
+        )
         .map(o => o.canonical_marker_id)
     );
 
@@ -2429,6 +2437,109 @@ export function reconcilePatientLaboratories(options: {
     rejectedForeignRecords,
     population
   };
+}
+
+export const R7_CANONICAL_TO_LEGACY_LAB_KEY: Record<string, keyof FunctionalLabs> = {
+  fasting_glucose: 'fasting_glucose',
+  postprandial_glucose: 'two_hour_post_prandial',
+  hba1c: 'hba1c',
+  fasting_insulin: 'fasting_insulin',
+  total_cholesterol: 'total_cholesterol',
+  triglycerides: 'triglycerides',
+  hdl: 'hdl',
+  ldl: 'ldl',
+  creatinine: 'serum_creatinine',
+  reported_egfr: 'egfr',
+  potassium: 'potassium',
+  sodium: 'sodium',
+  alt: 'alt',
+  ast: 'ast',
+  tsh: 'tsh',
+  ft4: 'ft4',
+  ft3: 'ft3',
+  hemoglobin: 'hemoglobin',
+  ferritin: 'ferritin',
+  uric_acid: 'uric_acid',
+  vitamin_d3: 'vitamin_d3',
+  vitamin_b12: 'vitamin_b12',
+  homocysteine: 'homocysteine',
+  hs_crp: 'hs_crp'
+};
+
+const BLOCKING_SCALAR_QUALITY_FLAGS = new Set([
+  'patient_identity_mismatch',
+  'visit_identity_mismatch',
+  'unsupported_unit',
+  'missing_unit',
+  'malformed_numeric_value',
+  'missing_numeric_value',
+  'clinically_implausible_value',
+  'negative_value_rejected',
+  'conflicting_duplicate_results',
+  'inequality_non_exact'
+]);
+
+/**
+ * Authoritative Checkpoint A gate: determines whether a normalized canonical observation
+ * is clinically & structurally eligible for scalar numeric projection or rule evaluation.
+ */
+export function isEligibleCanonicalScalarObservation(
+  obs?: R7NormalizedLabObservation | null,
+  conflicts?: Set<string> | Array<{ canonical_marker_id: string }>
+): boolean {
+  if (!obs) return false;
+  if (obs.availability !== 'available') return false;
+  if (!obs.is_interpretable) return false;
+  if (typeof obs.normalized_value !== 'number' || !Number.isFinite(obs.normalized_value) || obs.normalized_value < 0) {
+    return false;
+  }
+  if (!obs.is_exact_measurement || Boolean(obs.inequality_operator)) return false;
+  if (obs.data_quality_flags.some(f => BLOCKING_SCALAR_QUALITY_FLAGS.has(f))) return false;
+
+  if (conflicts) {
+    if (conflicts instanceof Set) {
+      if (conflicts.has(obs.canonical_marker_id)) return false;
+    } else if (conflicts.some(c => c.canonical_marker_id === obs.canonical_marker_id)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Projects structured R7 laboratory entries onto legacy `PatientProfile.labs` scalar keys
+ * ONLY when eligible in canonical form, and actively clears stale scalar values (`undefined`)
+ * whenever a structured entry becomes invalid, pending, not tested, declined, unsupported, or conflicting.
+ */
+export function projectStructuredLabsToLegacyScalars(options: {
+  patient: Partial<PatientProfile>;
+  visitId?: string;
+  structuredEntries: Record<string, StructuredLabEntry> | StructuredLabEntry[];
+}): Partial<FunctionalLabs> {
+  const patch: Record<string, any> = {};
+  const entriesArr = Array.isArray(options.structuredEntries)
+    ? options.structuredEntries
+    : Object.values(options.structuredEntries || {});
+
+  // Identify every legacy key touched by current structured entries (for clearing stale scalars)
+  const recon = reconcilePatientLaboratories({
+    patient: { ...options.patient, labs: undefined },
+    visitId: options.visitId,
+    structuredEntries: options.structuredEntries
+  });
+
+  for (const entry of entriesArr) {
+    if (!entry) continue;
+    const cid = getCanonicalMarkerId(entry.canonical_marker_id || entry.marker_id);
+    const legacyKey = R7_CANONICAL_TO_LEGACY_LAB_KEY[cid];
+    if (!legacyKey) continue;
+    const obs = recon.latestByCanonical[cid];
+    patch[legacyKey] = isEligibleCanonicalScalarObservation(obs, recon.conflicts)
+      ? obs.normalized_value
+      : undefined;
+  }
+
+  return patch as Partial<FunctionalLabs>;
 }
 
 /**
