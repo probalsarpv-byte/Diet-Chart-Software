@@ -31,9 +31,12 @@ export interface MedicationProtocolRow {
   clinical_instructions_en: string;
   clinical_instructions_bn: string;
   item_type: 'medication' | 'supplement' | 'candidate_supplement';
-  approval_status: 'prescribed_approved' | 'draft_candidate' | 'discontinued' | 'requires_verification' | 'unverified';
+  approval_status: 'prescribed_approved' | 'draft_candidate' | 'discontinued' | 'historical' | 'requires_verification' | 'unverified';
   relationship_to_meals?: 'before_meal' | 'with_meal' | 'after_meal' | 'empty_stomach' | 'bedtime' | 'anytime' | 'before_meal_empty_stomach' | 'independent_of_meals' | 'unknown';
   requires_clinician_verification?: boolean;
+  verification_issue_reasons_en?: string[];
+  verification_issue_reasons_bn?: string[];
+  source_verification_status?: string;
   is_prn?: boolean;
   source_record_id?: string;
 }
@@ -188,7 +191,9 @@ export interface R6PrescriptionMasterPayload {
       'ক্লিনিক্যাল নির্দেশনা'
     ];
     active_rows: MedicationProtocolRow[];
+    pending_verification_rows: MedicationProtocolRow[];
     draft_candidates: MedicationProtocolRow[];
+    has_unresolved_verification: boolean;
   };
   lifestyle_support: {
     hydration: {

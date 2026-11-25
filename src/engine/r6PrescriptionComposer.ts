@@ -188,6 +188,11 @@ function getMealInstruction(relation?: string): { bn: string; en: string } {
         bn: 'খাবার গ্রহণের ৩০ মিনিট পূর্বে সেব্য।',
         en: 'Take 30 minutes before meal.'
       };
+    case 'before_meal_empty_stomach':
+      return {
+        bn: 'সকালে সম্পূর্ণ খালি পেটে অথবা খাবার গ্রহণের ৩০-৬০ মিনিট পূর্বে সেব্য।',
+        en: 'Take on empty stomach 30-60 minutes before meal.'
+      };
     case 'with_meal':
       return {
         bn: 'খাবারের সাথে অথবা খাবার শেষ করার পরপরই সেব্য।',
@@ -208,10 +213,16 @@ function getMealInstruction(relation?: string): { bn: string; en: string } {
         bn: 'রাতে ঘুমানোর পূর্বে সেব্য।',
         en: 'Take at bedtime.'
       };
+    case 'independent_of_meals':
+      return {
+        bn: 'খাবারের আগে বা পরে যেকোনো সময় সেব্য।',
+        en: 'Take with or without food.'
+      };
+    case 'unknown':
     default:
       return {
-        bn: 'চিকিৎসকের পরামর্শ অনুযায়ী সেব্য।',
-        en: 'Take as directed by clinician.'
+        bn: 'সেবন নির্দেশনা ক্লিনিক্যাল পর্যালোচনা প্রয়োজন।',
+        en: 'Administration instructions require clinician confirmation.'
       };
   }
 }
@@ -244,6 +255,162 @@ function formatEnglishDosage(dose?: string, unit?: string): string {
   return trimmed;
 }
 
+export interface MedicationSafetyAssessment {
+  classification: 'verified_current' | 'pending_verification' | 'draft_candidate' | 'discontinued' | 'historical' | 'held';
+  is_clinician_verified: boolean;
+  is_dose_pending: boolean;
+  is_timing_unknown: boolean;
+  is_prn: boolean;
+  requires_clinician_verification: boolean;
+  admin_times: string[];
+  issues_en: string[];
+  issues_bn: string[];
+}
+
+/**
+ * Single Medication Safety Contract Evaluator
+ * Distinguishes current verified, patient-reported/unverified, incomplete dosage,
+ * unknown timing, explicit PRN, discontinued, held, and historical medications.
+ */
+export function evaluateMedicationSafetyContract(med: R5MedicationRecord): MedicationSafetyAssessment {
+  const rawStatus = (med.status || 'active').toLowerCase();
+  const isHistorical =
+    rawStatus === 'historical' ||
+    rawStatus === 'completed' ||
+    rawStatus === 'past' ||
+    Boolean((med as any).is_historical);
+  const isDiscontinued =
+    rawStatus === 'discontinued' ||
+    (med.verification_status as string) === 'discontinued';
+
+  if (isDiscontinued) {
+    return {
+      classification: 'discontinued',
+      is_clinician_verified: false,
+      is_dose_pending: false,
+      is_timing_unknown: false,
+      is_prn: Boolean(med.is_prn),
+      requires_clinician_verification: false,
+      admin_times: [],
+      issues_en: [],
+      issues_bn: []
+    };
+  }
+
+  if (isHistorical) {
+    return {
+      classification: 'historical',
+      is_clinician_verified: false,
+      is_dose_pending: false,
+      is_timing_unknown: false,
+      is_prn: Boolean(med.is_prn),
+      requires_clinician_verification: false,
+      admin_times: [],
+      issues_en: [],
+      issues_bn: []
+    };
+  }
+
+  if (rawStatus === 'held') {
+    return {
+      classification: 'held',
+      is_clinician_verified: false,
+      is_dose_pending: false,
+      is_timing_unknown: false,
+      is_prn: Boolean(med.is_prn),
+      requires_clinician_verification: false,
+      admin_times: [],
+      issues_en: [],
+      issues_bn: []
+    };
+  }
+
+  if (rawStatus === 'draft_candidate') {
+    return {
+      classification: 'draft_candidate',
+      is_clinician_verified: false,
+      is_dose_pending: false,
+      is_timing_unknown: false,
+      is_prn: Boolean(med.is_prn),
+      requires_clinician_verification: true,
+      admin_times: [],
+      issues_en: ['Draft candidate medication awaiting clinician approval'],
+      issues_bn: ['খসড়া প্রস্তাবিত ওষুধ — চিকিৎসকের অনুমোদন প্রয়োজন']
+    };
+  }
+
+  const isClinicianVerified =
+    med.verification_status === 'clinician_verified' ||
+    (med.verification_status as string) === 'verified_active';
+
+  const rawDose = (med.prescribed_dose || (med as any).dose || '').trim();
+  const isDosePending =
+    !rawDose ||
+    rawDose.toUpperCase() === 'UNKNOWN' ||
+    rawDose.toUpperCase() === 'UNSPECIFIED';
+
+  const isPRN = Boolean(med.is_prn);
+  const validTimes = (med.administration_times || []).filter(
+    t => t && t.trim() !== '' && t.trim().toUpperCase() !== 'UNKNOWN'
+  );
+  // Explicitly verified PRN medications must not be rejected solely for having no scheduled clock time
+  const isTimingUnknown = !isPRN && (Boolean(med.is_timing_unknown) || validTimes.length === 0);
+  const adminTimes = isPRN ? ['PRN'] : (isTimingUnknown ? ['UNKNOWN'] : validTimes);
+
+  const issuesEn: string[] = [];
+  const issuesBn: string[] = [];
+
+  if (!isClinicianVerified) {
+    issuesEn.push(`Unverified verification status (${med.verification_status || 'unverified'}) awaiting clinician reconciliation`);
+    issuesBn.push(`অযাচাইকৃত বা রোগী-বর্ণিত ওষুধ (${med.verification_status || 'unverified'}) — চিকিৎসকের যাচাই আবশ্যক`);
+  }
+  if (rawStatus === 'unknown') {
+    issuesEn.push('Medication current active status is unconfirmed');
+    issuesBn.push('ওষুধটি বর্তমানে চালু কিনা তা নিশ্চিত নয়');
+  }
+  if (isDosePending) {
+    issuesEn.push('Prescribed medication dosage is missing or unknown');
+    issuesBn.push('ওষুধের নির্ধারিত মাত্রা অনুপস্থিত বা অজ্ঞাত');
+  }
+  if (isTimingUnknown) {
+    issuesEn.push('Administration timing is unknown');
+    issuesBn.push('ওষুধ গ্রহণের সুনির্দিষ্ট সময় অনির্ধারিত');
+  }
+
+  const requiresVerification = issuesEn.length > 0;
+
+  return {
+    classification: requiresVerification ? 'pending_verification' : 'verified_current',
+    is_clinician_verified: isClinicianVerified,
+    is_dose_pending: isDosePending,
+    is_timing_unknown: isTimingUnknown,
+    is_prn: isPRN,
+    requires_clinician_verification: requiresVerification,
+    admin_times: adminTimes,
+    issues_en: issuesEn,
+    issues_bn: issuesBn
+  };
+}
+
+function sortProtocolRowsChronologically(rows: MedicationProtocolRow[]): void {
+  rows.sort((a, b) => {
+    if (a.sequence_time === b.sequence_time) return 0;
+    const isATime = /^\d{1,2}:\d{2}$/.test(a.sequence_time);
+    const isBTime = /^\d{1,2}:\d{2}$/.test(b.sequence_time);
+    if (isATime && isBTime) return a.sequence_time.localeCompare(b.sequence_time);
+    if (isATime && !isBTime) return -1;
+    if (!isATime && isBTime) return 1;
+
+    if (a.sequence_time === 'PRN') return -1;
+    if (b.sequence_time === 'PRN') return 1;
+
+    if (a.sequence_time === 'UNKNOWN') return 1;
+    if (b.sequence_time === 'UNKNOWN') return -1;
+
+    return a.sequence_time.localeCompare(b.sequence_time);
+  });
+}
+
 /**
  * Module 5: 6-Column Chronological Medication & Supplementation Protocol Composer
  */
@@ -262,34 +429,44 @@ export function compose6ColumnMedicationProtocol(
     'ক্লিনিক্যাল নির্দেশনা'
   ];
   active_rows: MedicationProtocolRow[];
+  pending_verification_rows: MedicationProtocolRow[];
   draft_candidates: MedicationProtocolRow[];
+  has_unresolved_verification: boolean;
 } {
   const activeRows: MedicationProtocolRow[] = [];
+  const pendingVerificationRows: MedicationProtocolRow[] = [];
   const draftCandidates: MedicationProtocolRow[] = [];
 
-  // 1. Process Prescribed Medications (Domain 13)
+  // 1. Process Prescribed Medications (Domain 13) via single medication safety contract
   for (const med of medications) {
-    // Stage B: Discontinued medication MUST NOT be included as an active prescription
-    if (med.status === 'discontinued') {
+    const assessment = evaluateMedicationSafetyContract(med);
+
+    // Discontinued, historical, and held medications are strictly excluded from active instructions
+    if (
+      assessment.classification === 'discontinued' ||
+      assessment.classification === 'historical' ||
+      assessment.classification === 'held'
+    ) {
       continue;
     }
 
-    const isVerified = med.verification_status === 'clinician_verified';
-    const isTimingUnknown = Boolean(med.is_timing_unknown) || !med.administration_times || med.administration_times.length === 0;
-    const isDosePending = !med.prescribed_dose || med.prescribed_dose.trim() === '';
-
-    const adminTimes = isTimingUnknown ? ['UNKNOWN'] : med.administration_times;
-    const mealNote = getMealInstruction(med.relationship_to_meals);
     const brandDisplay = med.brand_name || med.generic_name;
+    const rawDose = (med.prescribed_dose || (med as any).dose || '').trim();
+    const mealNote = getMealInstruction(med.relationship_to_meals);
+    const customInstr = med.prescriber_instructions?.trim();
 
-    // Dose formatting - never convert missing dose to strength
-    const doseEn = isDosePending ? 'Dose Pending (Review required)' : formatEnglishDosage(med.prescribed_dose, med.dose_unit);
-    const doseBn = isDosePending ? 'ডোজ নির্ধারণ বাকি (পর্যালোচনা প্রয়োজন)' : formatBanglaDosage(med.prescribed_dose, med.dose_unit);
+    // Dose formatting - never convert missing dose to product strength
+    const doseEn = assessment.is_dose_pending
+      ? 'Dose Pending (Review required)'
+      : formatEnglishDosage(rawDose, med.dose_unit);
+    const doseBn = assessment.is_dose_pending
+      ? 'ডোজ নির্ধারণ বাকি (পর্যালোচনা প্রয়োজন)'
+      : formatBanglaDosage(rawDose, med.dose_unit);
 
-    // Duration formatting - never fabricate "Ongoing / Long-term" when not documented
+    // Duration formatting - unknown duration must remain unknown
     let durationEn = 'Not documented';
     let durationBn = 'অনির্দিষ্ট';
-    if (med.duration && med.duration.trim() !== '') {
+    if (med.duration && med.duration.trim() !== '' && med.duration.trim().toUpperCase() !== 'UNKNOWN') {
       durationEn = med.duration.trim();
       durationBn = med.duration_bn || med.duration.trim();
     } else if (med.duration_weeks) {
@@ -297,14 +474,55 @@ export function compose6ColumnMedicationProtocol(
       durationBn = `${med.duration_weeks} সপ্তাহ`;
     }
 
-    const isPRN = Boolean(med.is_prn);
+    if (assessment.classification === 'draft_candidate') {
+      draftCandidates.push({
+        id: `${med.id}_draft`,
+        sequence_time: 'UNKNOWN',
+        sequence_time_bn: 'খসড়া প্রস্তাবনা (অনুমোদন সাপেক্ষ)',
+        sequence_time_en: 'Draft Candidate (Pending Approval)',
+        brand_name: brandDisplay,
+        generic_name: med.generic_name,
+        dosage_display_en: doseEn,
+        dosage_display_bn: doseBn,
+        duration_en: durationEn,
+        duration_bn: durationBn,
+        clinical_instructions_en: customInstr || 'Draft medication candidate awaiting clinician reconciliation.',
+        clinical_instructions_bn: customInstr || 'চিকিৎসক কর্তৃক অনুমোদনের অপেক্ষায় খসড়া ওষুধ।',
+        item_type: 'medication',
+        approval_status: 'draft_candidate',
+        relationship_to_meals: med.relationship_to_meals,
+        requires_clinician_verification: true,
+        verification_issue_reasons_en: assessment.issues_en,
+        verification_issue_reasons_bn: assessment.issues_bn,
+        source_verification_status: med.verification_status,
+        is_prn: assessment.is_prn,
+        source_record_id: med.id
+      });
+      continue;
+    }
 
-    for (let i = 0; i < adminTimes.length; i++) {
-      const time = isPRN ? 'PRN' : adminTimes[i];
-      const timeDisplays = isPRN 
+    for (let i = 0; i < assessment.admin_times.length; i++) {
+      const time = assessment.admin_times[i];
+      const timeDisplays = assessment.is_prn
         ? { time_bn: 'প্রয়োজনে (PRN)', time_en: 'PRN (As Needed)' }
         : formatTimeDisplays(time);
-      const isRowUnknown = !isPRN && (time === 'UNKNOWN' || isTimingUnknown);
+      const isRowUnknown = !assessment.is_prn && (time === 'UNKNOWN' || assessment.is_timing_unknown);
+
+      const instrEn = customInstr
+        ? (isRowUnknown ? `TIMING REQUIRES REVIEW: ${customInstr}` : customInstr)
+        : isRowUnknown
+        ? `TIMING REQUIRES REVIEW: Prescribed administration time not recorded. ${mealNote.en}`
+        : assessment.is_prn
+        ? `PRN / AS NEEDED: ${mealNote.en}`
+        : mealNote.en;
+
+      const instrBn = customInstr
+        ? (isRowUnknown ? `সময় নির্ধারণ প্রয়োজন: ${customInstr}` : customInstr)
+        : isRowUnknown
+        ? `সময় নির্ধারণ প্রয়োজন: গ্রহণের সুনির্দিষ্ট সময় নথিভুক্ত হয়নি। ${mealNote.bn}`
+        : assessment.is_prn
+        ? `প্রয়োজনে সেব্য: ${mealNote.bn}`
+        : mealNote.bn;
 
       const row: MedicationProtocolRow = {
         id: `${med.id}_dose_${i + 1}`,
@@ -317,20 +535,26 @@ export function compose6ColumnMedicationProtocol(
         dosage_display_bn: doseBn,
         duration_en: durationEn,
         duration_bn: durationBn,
-        clinical_instructions_en: isRowUnknown 
-          ? `TIMING REQUIRES REVIEW: Prescribed administration time not recorded. ${mealNote.en}`
-          : (isPRN ? `PRN / AS NEEDED: ${mealNote.en}` : mealNote.en),
-        clinical_instructions_bn: isRowUnknown 
-          ? `সময় নির্ধারণ প্রয়োজন: গ্রহণের সুনির্দিষ্ট সময় নথিভুক্ত হয়নি। ${mealNote.bn}`
-          : (isPRN ? `প্রয়োজনে সেব্য: ${mealNote.bn}` : mealNote.bn),
+        clinical_instructions_en: instrEn,
+        clinical_instructions_bn: instrBn,
         item_type: 'medication',
-        approval_status: isVerified ? 'prescribed_approved' : 'requires_verification',
+        approval_status: assessment.requires_clinician_verification
+          ? (assessment.is_clinician_verified ? 'requires_verification' : 'unverified')
+          : 'prescribed_approved',
         relationship_to_meals: med.relationship_to_meals,
-        requires_clinician_verification: !isVerified || isRowUnknown || isDosePending,
-        is_prn: isPRN,
+        requires_clinician_verification: assessment.requires_clinician_verification,
+        verification_issue_reasons_en: assessment.issues_en.length > 0 ? assessment.issues_en : undefined,
+        verification_issue_reasons_bn: assessment.issues_bn.length > 0 ? assessment.issues_bn : undefined,
+        source_verification_status: med.verification_status,
+        is_prn: assessment.is_prn,
         source_record_id: med.id
       };
-      activeRows.push(row);
+
+      if (assessment.requires_clinician_verification) {
+        pendingVerificationRows.push(row);
+      } else {
+        activeRows.push(row);
+      }
     }
   }
 
@@ -490,22 +714,8 @@ export function compose6ColumnMedicationProtocol(
   }
 
   // 4. Sort Chronologically (Stage C: strict sequence)
-  activeRows.sort((a, b) => {
-    if (a.sequence_time === b.sequence_time) return 0;
-    const isATime = /^\d{1,2}:\d{2}$/.test(a.sequence_time);
-    const isBTime = /^\d{1,2}:\d{2}$/.test(b.sequence_time);
-    if (isATime && isBTime) return a.sequence_time.localeCompare(b.sequence_time);
-    if (isATime && !isBTime) return -1;
-    if (!isATime && isBTime) return 1;
-
-    if (a.sequence_time === 'PRN') return -1;
-    if (b.sequence_time === 'PRN') return 1;
-
-    if (a.sequence_time === 'UNKNOWN') return 1;
-    if (b.sequence_time === 'UNKNOWN') return -1;
-
-    return a.sequence_time.localeCompare(b.sequence_time);
-  });
+  sortProtocolRowsChronologically(activeRows);
+  sortProtocolRowsChronologically(pendingVerificationRows);
 
   return {
     columns: [
@@ -517,7 +727,9 @@ export function compose6ColumnMedicationProtocol(
       'ক্লিনিক্যাল নির্দেশনা'
     ],
     active_rows: activeRows,
-    draft_candidates: draftCandidates
+    pending_verification_rows: pendingVerificationRows,
+    draft_candidates: draftCandidates,
+    has_unresolved_verification: pendingVerificationRows.length > 0
   };
 }
 
@@ -781,6 +993,136 @@ export function evaluateFastingSafety(
   };
 }
 
+export interface HydrationAndFluidSafetyResult {
+  fluid_restriction_active: boolean;
+  fluid_limit_ml?: number;
+  target_daily_ml?: number;
+  is_prescribed: boolean;
+  requires_clinician_confirmation: boolean;
+  instructions_bn: string;
+  instructions_en: string;
+}
+
+/**
+ * Single Fluid Restriction & Hydration Safety Contract (Checkpoint B)
+ * Separates:
+ * 1. Confirmed fluid restriction with verified quantitative limit -> exact limit
+ * 2. Confirmed fluid restriction with unknown quantitative limit -> no 1500 mL fabrication; requires confirmation & blocks release
+ * 3. Fluid-sensitive diagnosis alone -> no numeric fabrication; requires clinician assessment
+ * 4. Clinician-approved individualized R4 hydration target -> preserved verbatim
+ * 5. Missing hydration assessment -> "Not individually prescribed"
+ */
+export function evaluateR6HydrationAndFluidSafety(
+  patient: PatientProfile,
+  r4Protocol?: R4ProtocolStudioData | null,
+  visitId?: string
+): HydrationAndFluidSafetyResult {
+  const selectedConditions = (patient?.selected_conditions || []) as unknown as string[];
+  const hasFluidSensitiveDiagnosis =
+    selectedConditions.includes('ckd_dialysis') ||
+    selectedConditions.includes('heart_failure');
+
+  const isR4ApprovedForPatientAndVisit = Boolean(
+    r4Protocol &&
+    r4Protocol.is_approved === true &&
+    r4Protocol.status !== 'superseded' &&
+    r4Protocol.status !== 'archived' &&
+    (!r4Protocol.patient_id || r4Protocol.patient_id === patient.id) &&
+    (!visitId || !r4Protocol.visit_id || r4Protocol.visit_id === visitId)
+  );
+
+  // Explicit clinician-confirmed quantitative limit
+  const patientPrescribedLimit =
+    (patient?.fluid_prescription?.total_fluid_limit_ml && patient.fluid_prescription.total_fluid_limit_ml > 0
+      ? patient.fluid_prescription.total_fluid_limit_ml
+      : undefined) ??
+    (patient?.clinical_safety?.fluid_restriction?.limit_ml && patient.clinical_safety.fluid_restriction.limit_ml > 0
+      ? patient.clinical_safety.fluid_restriction.limit_ml
+      : undefined) ??
+    ((patient?.feeding_status as any)?.fluid_limit_ml && (patient?.feeding_status as any).fluid_limit_ml > 0
+      ? (patient?.feeding_status as any).fluid_limit_ml
+      : undefined);
+
+  const r4ApprovedFluidLimit =
+    isR4ApprovedForPatientAndVisit &&
+    r4Protocol?.hydration?.is_restricted &&
+    !r4Protocol.hydration.requires_individualized_fluid_review &&
+    r4Protocol.hydration.clinician_fluid_limit_ml &&
+    r4Protocol.hydration.clinician_fluid_limit_ml > 0
+      ? r4Protocol.hydration.clinician_fluid_limit_ml
+      : undefined;
+
+  const verifiedFluidLimit = patientPrescribedLimit ?? r4ApprovedFluidLimit;
+
+  const explicitRestrictionFlag = Boolean(
+    patient?.fluid_prescription?.is_restricted ||
+    patient?.clinical_safety?.fluid_restriction?.is_restricted ||
+    r4Protocol?.hydration?.is_restricted ||
+    r4Protocol?.hydration?.requires_individualized_fluid_review
+  );
+
+  // State 1: Confirmed fluid restriction with verified quantitative limit
+  if (verifiedFluidLimit !== undefined && verifiedFluidLimit > 0) {
+    return {
+      fluid_restriction_active: true,
+      fluid_limit_ml: verifiedFluidLimit,
+      target_daily_ml: verifiedFluidLimit,
+      is_prescribed: true,
+      requires_clinician_confirmation: false,
+      instructions_bn: `ক্লিনিক্যাল তরল সীমাবদ্ধতা সক্রিয়: চিকিৎসকের নির্দেশ মোতাবেক দৈনিক মোট তরল গ্রহণ কঠোরভাবে সর্বাধিক ${verifiedFluidLimit} মিলিলিটারে সীমাবদ্ধ রাখুন (পানি, চা, ঝোল সহ)। মেপে পানি পান করুন।`,
+      instructions_en: `Clinical Fluid Restriction Active: Strictly limit total daily fluid intake to maximum ${verifiedFluidLimit} mL/day as ordered by physician (including water, tea, soups). Measure accurately.`
+    };
+  }
+
+  // State 2: Fluid restriction flagged/active, OR fluid-sensitive diagnosis, WITHOUT verified numeric limit
+  if (explicitRestrictionFlag || hasFluidSensitiveDiagnosis) {
+    return {
+      fluid_restriction_active: explicitRestrictionFlag,
+      fluid_limit_ml: undefined,
+      target_daily_ml: undefined,
+      is_prescribed: false,
+      requires_clinician_confirmation: true,
+      instructions_bn: 'তরল সীমাবদ্ধতা — সুনির্দিষ্ট পরিমাণ চিকিৎসকের নিশ্চিতকরণ প্রয়োজন',
+      instructions_en: 'Fluid Restriction — Quantitative Limit Requires Clinician Confirmation'
+    };
+  }
+
+  // State 4: Existing clinician-approved individualized R4 hydration prescription (unrestricted)
+  if (
+    isR4ApprovedForPatientAndVisit &&
+    r4Protocol?.hydration &&
+    (r4Protocol.hydration.baseline_fluid_target_ml > 0 || Boolean(r4Protocol.hydration.timing_guidance_en))
+  ) {
+    const targetMl = r4Protocol.hydration.baseline_fluid_target_ml > 0
+      ? r4Protocol.hydration.baseline_fluid_target_ml
+      : undefined;
+    return {
+      fluid_restriction_active: false,
+      fluid_limit_ml: undefined,
+      target_daily_ml: targetMl,
+      is_prescribed: true,
+      requires_clinician_confirmation: false,
+      instructions_bn: r4Protocol.hydration.timing_guidance_bn || (targetMl
+        ? `দৈনিক তরল লক্ষ্যমাত্রা: প্রায় ${targetMl} মিলি। খাবার গ্রহণের ৩০ মিনিট পূর্বে বা পরে পানি পান করুন।`
+        : 'ব্যক্তিগতভাবে নির্ধারিত হাইড্রেশন নির্দেশিকা অনুসরণ করুন।'),
+      instructions_en: r4Protocol.hydration.timing_guidance_en || (targetMl
+        ? `Daily fluid target: approximately ${targetMl} mL. Space hydration 30 min away from meals.`
+        : 'Follow individualized hydration guidance.')
+    };
+  }
+
+  // States 3 & 5: No confirmed restriction and no approved individualized hydration assessment
+  return {
+    fluid_restriction_active: false,
+    fluid_limit_ml: undefined,
+    target_daily_ml: undefined,
+    is_prescribed: false,
+    requires_clinician_confirmation: false,
+    instructions_bn: 'ব্যক্তিগতভাবে নির্ধারিত নয়',
+    instructions_en: 'Not individually prescribed'
+  };
+}
+
 /**
  * Module 1 & 8: Master Prescription Composition Engine
  * Stage A: Single Authoritative Composition Flow
@@ -822,7 +1164,7 @@ export function composeR6Prescription(options: {
     duration_weeks: 'Weeks 1–4'
   };
 
-  // 1. Release Gating
+  // 1. Release Gating (Authoritative across Medication, Diet Plan, Fluid, Safety)
   const eligibility = validateReportReleaseEligibility({
     patient,
     plan: weeklyDietPlan || dietChart,
@@ -830,7 +1172,9 @@ export function composeR6Prescription(options: {
     visit,
     safetyEvaluation,
     isDietPlanDirty: isDietPlanDirty ?? patient.is_diet_plan_dirty,
-    r5NutritionContract
+    r5NutritionContract,
+    medications,
+    r4Protocol
   });
 
   const isApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
@@ -905,16 +1249,11 @@ export function composeR6Prescription(options: {
     };
   });
 
-  // 6. Safety Directives & Fluid Calculation
-  const fluidLimit = patient.fluid_prescription?.total_fluid_limit_ml || patient.clinical_safety?.fluid_restriction?.limit_ml || r4Protocol?.hydration?.clinician_fluid_limit_ml;
+  // 6. Safety Directives & Fluid Calculation (Checkpoint B: Zero Fabricated 1500 mL)
   const selectedConditions = (patient.selected_conditions || []) as unknown as string[];
-  const isFluidRestricted = Boolean(
-    (patient.clinical_safety?.fluid_restriction?.is_restricted) ||
-    r4Protocol?.hydration?.is_restricted ||
-    selectedConditions.includes('ckd_dialysis') ||
-    selectedConditions.includes('heart_failure') ||
-    (fluidLimit && fluidLimit > 0)
-  );
+  const hydrationSafety = evaluateR6HydrationAndFluidSafety(patient, r4Protocol, visitId);
+  const fluidLimit = hydrationSafety.fluid_limit_ml;
+  const isFluidRestricted = hydrationSafety.fluid_restriction_active;
 
   // 7. Stage D: Patient-Specific Food Exchanges
   const patientSpecificExchanges = buildPatientSpecificFoodExchanges(
@@ -924,23 +1263,10 @@ export function composeR6Prescription(options: {
   );
 
   // 8. Stage E: Connect R4 Lifestyle Protocols (Zero Fabricated Blanket Advice)
-  // Hydration
-  let hydrationTargetMl: number | undefined = undefined;
-  let hydrationBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
-  let hydrationEn = 'Not individually prescribed';
-  let isHydrationPrescribed = false;
-
-  if (isFluidRestricted) {
-    isHydrationPrescribed = true;
-    hydrationTargetMl = fluidLimit || 1500;
-    hydrationBn = `ক্লিনিক্যাল তরল সীমাবদ্ধতা সক্রিয়: চিকিৎসকের নির্দেশ মোতাবেক দৈনিক মোট তরল গ্রহণ কঠোরভাবে সর্বাধিক ${hydrationTargetMl} মিলিলিটারে সীমাবদ্ধ রাখুন (পানি, চা, ঝোল সহ)। মেপে পানি পান করুন।`;
-    hydrationEn = `Clinical Fluid Restriction Active: Strictly limit total daily fluid intake to maximum ${hydrationTargetMl} mL/day as ordered by physician (including water, tea, soups). Measure accurately.`;
-  } else if (r4Protocol?.hydration && (r4Protocol.hydration.baseline_fluid_target_ml > 0 || r4Protocol.hydration.timing_guidance_en)) {
-    isHydrationPrescribed = true;
-    hydrationTargetMl = r4Protocol.hydration.baseline_fluid_target_ml;
-    hydrationBn = r4Protocol.hydration.timing_guidance_bn || `দৈনিক তরল লক্ষ্যমাত্রা: প্রায় ${hydrationTargetMl} মিলি। খাবার গ্রহণের ৩০ মিনিট পূর্বে বা পরে পানি পান করুন।`;
-    hydrationEn = r4Protocol.hydration.timing_guidance_en || `Daily fluid target: approximately ${hydrationTargetMl} mL. Space hydration 30 min away from meals.`;
-  }
+  const hydrationTargetMl = hydrationSafety.target_daily_ml;
+  const hydrationBn = hydrationSafety.instructions_bn;
+  const hydrationEn = hydrationSafety.instructions_en;
+  const isHydrationPrescribed = hydrationSafety.is_prescribed;
 
   // Exercise
   let exerciseTargetBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';

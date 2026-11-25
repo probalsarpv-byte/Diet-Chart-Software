@@ -52,7 +52,9 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
     setIsMigrationModalOpen,
     setIsReconciliationModalOpen,
     stagedSubmissionsCount,
-    syncStatus
+    syncStatus,
+    reportStudioMode,
+    reportReleaseGate
   } = usePractice();
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -355,12 +357,27 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
           {/* Print A4 Report */}
           <button
             data-testid="btn-print"
+            disabled={activeTab === 'report' && reportStudioMode === 'patient' && !reportReleaseGate.isEligible}
             onClick={() => {
+              if (reportStudioMode === 'patient' && !reportReleaseGate.isEligible) {
+                setActiveTab('report');
+                alert(bn
+                  ? `ত্রুটি: রোগীর প্রেসক্রিপশন চূড়ান্ত বিতরণের জন্য অনুমোদিত নয়।\n\nকারনসমূহ:\n${reportReleaseGate.blockingReasons_bn.join('\n')}`
+                  : `Blocked: Patient prescription cannot be printed or exported before resolving clinical gates.\n\nReasons:\n${reportReleaseGate.blockingReasons.join('\n')}`
+                );
+                return;
+              }
               setActiveTab('report');
               setTimeout(() => window.print(), 350);
             }}
-            className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-foreground text-background hover:opacity-90 shadow-subtle transition-all hover:scale-[1.02] active:scale-[0.98]"
-            title="Print A4 Clinical Report"
+            className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shadow-subtle transition-all ${
+              activeTab === 'report' && reportStudioMode === 'patient' && !reportReleaseGate.isEligible
+                ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-60'
+                : 'bg-foreground text-background hover:opacity-90 hover:scale-[1.02] active:scale-[0.98]'
+            }`}
+            title={activeTab === 'report' && reportStudioMode === 'patient' && !reportReleaseGate.isEligible
+              ? (bn ? 'রোগীর প্রেসক্রিপশন রিলিজ গেট দ্বারা সুরক্ষিত' : 'Patient prescription release is blocked pending verification')
+              : 'Print A4 Clinical Report'}
           >
             <Printer className="h-3.5 w-3.5" />
             <span>{bn ? 'A4 রিপোর্ট' : 'A4 Report'}</span>

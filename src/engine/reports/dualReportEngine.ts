@@ -39,6 +39,8 @@ import {
 import { R4ProtocolStudioData, SupplementProtocolItem } from '@/types/r4Protocol';
 import { 
   compose6ColumnMedicationProtocol, 
+  evaluateMedicationSafetyContract,
+  evaluateR6HydrationAndFluidSafety,
   evaluateFastingSafety, 
   STANDARD_BANGLADESHI_EXCHANGES,
   composeR6Prescription
@@ -329,7 +331,9 @@ export interface PatientReportPayload {
       'ক্লিনিক্যাল নির্দেশনা'
     ];
     active_rows: MedicationProtocolRow[];
+    pending_verification_rows: MedicationProtocolRow[];
     draft_candidates: MedicationProtocolRow[];
+    has_unresolved_verification: boolean;
   };
   food_exchange_guide?: FoodExchangeRule[];
   patient_specific_exchanges?: PatientFoodExchangeItem[];
@@ -358,8 +362,20 @@ export function validateReportReleaseEligibility(options: {
   safetyEvaluation?: any;
   isDietPlanDirty?: boolean;
   r5NutritionContract?: any;
+  medications?: R5MedicationRecord[];
+  r4Protocol?: R4ProtocolStudioData | null;
 }): ReleaseEligibilityResult {
-  const { patient, plan, weeklyDietPlan, visit, expectedVisitId, safetyEvaluation, isDietPlanDirty, r5NutritionContract } = options;
+  const {
+    patient,
+    plan,
+    weeklyDietPlan,
+    visit,
+    expectedVisitId,
+    safetyEvaluation,
+    isDietPlanDirty,
+    r5NutritionContract,
+    medications
+  } = options;
   const blockingReasons: string[] = [];
   const blockingReasons_bn: string[] = [];
 
@@ -485,6 +501,38 @@ export function validateReportReleaseEligibility(options: {
     const escMsgBn = effectiveContract.acute_escalation.message_bn || 'জরুরি ক্লিনিক্যাল ঝুঁকি বিদ্যমান। তাৎক্ষণিক মেডিকেল মূল্যায়ন আবশ্যক।';
     blockingReasons.push(`Acute Clinical Safety Escalation: ${escMsgEn}`);
     blockingReasons_bn.push(`জরুরি ক্লিনিক্যাল ঝুঁকি: ${escMsgBn}`);
+  }
+
+  // Check 11: Single Medication Safety Contract (Checkpoint A)
+  const effectiveMedications: R5MedicationRecord[] = medications !== undefined
+    ? medications
+    : ((patient?.medication_records as any) || []);
+
+  if (Array.isArray(effectiveMedications) && effectiveMedications.length > 0) {
+    for (const med of effectiveMedications) {
+      const assessment = evaluateMedicationSafetyContract(med);
+      if (assessment.classification === 'pending_verification' || assessment.classification === 'draft_candidate') {
+        const medName = med.brand_name || med.generic_name || (med as any).medication_name || 'Medication';
+        blockingReasons.push(`Medication verification required before patient release (${medName}): ${assessment.issues_en.join('; ')}`);
+        blockingReasons_bn.push(`ওষুধের তথ্য যাচাইকরণ অসম্পূর্ণ (${medName}): ${assessment.issues_bn.join('; ')}`);
+      }
+    }
+  } else if (
+    patient?.active_medications &&
+    patient.active_medications.length > 0 &&
+    patient.medication_reconciliation_status !== 'fully_reconciled'
+  ) {
+    blockingReasons.push(`Medication reconciliation incomplete for active medications (${patient.active_medications.join(', ')}). Complete Domain 13 verification before release.`);
+    blockingReasons_bn.push(`সক্রিয় ওষুধগুলোর (${patient.active_medications.join(', ')}) ডোমেন ১৩ যাচাইকরণ ও মাত্রা নির্ধারণ সম্পন্ন হয়নি।`);
+  }
+
+  // Check 12: Fluid Restriction Quantitative Confirmation Gate (Checkpoint B)
+  if (patient && patient.id) {
+    const hydrationSafety = evaluateR6HydrationAndFluidSafety(patient, options.r4Protocol, effectiveVisitId);
+    if (hydrationSafety.requires_clinician_confirmation) {
+      blockingReasons.push('Fluid restriction or fluid-sensitive diagnosis requires an explicit clinician-confirmed quantitative daily fluid limit (mL/day) before patient release.');
+      blockingReasons_bn.push('তরল সীমাবদ্ধতা বা তরল-সংবেদনশীল রোগের জন্য চিকিৎসকের নিশ্চিতকৃত দৈনিক সুনির্দিষ্ট তরল সীমা (মি.লি.) আবশ্যক।');
+    }
   }
 
   return {
@@ -1007,7 +1055,7 @@ export function buildPatientReportProjection(options: {
     isDietPlanDirty,
     releaseEligibility: explicitEligibility,
     r5NutritionContract,
-    medications = [],
+    medications,
     r4Protocol,
     supplements = [],
     candidateSupplements = []
@@ -1016,17 +1064,6 @@ export function buildPatientReportProjection(options: {
   const phaseInfo = CLINICAL_PHASES[patient.current_phase || 1];
   const visitId = visit?.visit_id || visit?.id || patient.current_visit_id || 'vis_current';
   const visitDate = visit?.visit_date || patient.visit_date;
-
-  // Release eligibility verification (Unified across caller and projection)
-  const eligibility = explicitEligibility || validateReportReleaseEligibility({
-    patient,
-    plan: weeklyDietPlan || dietChart,
-    weeklyDietPlan,
-    visit,
-    safetyEvaluation,
-    isDietPlanDirty: isDietPlanDirty ?? patient.is_diet_plan_dirty,
-    r5NutritionContract: r5NutritionContract || options.r5NutritionContract
-  });
 
   // Build patient days using an EXPLICIT ALLOWLIST
   // Absolutely omit: kcal, protein_g, carbs_g, fat_g, fiber_g, gl, pral, summary
@@ -1089,41 +1126,6 @@ export function buildPatientReportProjection(options: {
     });
   }
 
-  // Hydration directives: only output explicit clinical restrictions or explicit directives
-  const fluidPrescription = patient.clinical_safety?.fluid_restriction;
-  const isFluidRestricted = Boolean(fluidPrescription?.is_restricted);
-  const fluidLimitMl = fluidPrescription?.limit_ml;
-
-  let hydrationBn: string;
-  let hydrationEn: string;
-
-  if (isFluidRestricted) {
-    hydrationBn = `চিকিৎসকের নির্দেশ মোতাবেক দৈনিক মোট তরল গ্রহণ কঠোরভাবে সর্বাধিক ${fluidLimitMl || 'নির্দিষ্ট'} মিলিলিটারে সীমাবদ্ধ রাখুন। অতিরিক্ত পানি বা তরল গ্রহণ করবেন না।`;
-    hydrationEn = `Clinical Fluid Restriction Active: Strictly limit total daily fluid intake to maximum ${fluidLimitMl || 'prescribed'} mL/day as ordered by your managing physician. Do not exceed.`;
-  } else {
-    hydrationBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
-    hydrationEn = 'Not individually prescribed';
-  }
-
-  // Cooking oil directives: only output if explicitly prescribed
-  const cookingOilBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
-  const cookingOilEn = 'Not individually prescribed';
-
-  // Salt directives: only output if explicitly prescribed (e.g., sodium restriction)
-  const isSodiumRestricted = Boolean(
-    patient.selected_conditions?.includes('hypertension_ckd') ||
-    patient.selected_conditions?.includes('ckd_stage_1_3b')
-  );
-  let saltBn: string;
-  let saltEn: string;
-  if (isSodiumRestricted) {
-    saltBn = 'চিকিৎসকের নির্দেশ অনুযায়ী রান্নার অতিরিক্ত লবণ পরিহার করুন।';
-    saltEn = 'Clinically restricted dietary sodium. Avoid adding raw or excessive cooking salt.';
-  } else {
-    saltBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
-    saltEn = 'Not individually prescribed';
-  }
-
   // Chronological schedule for patient instructions (filtering out internal medication warnings)
   const patientSchedule: Array<{
     time: string;
@@ -1153,11 +1155,11 @@ export function buildPatientReportProjection(options: {
   const isApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
   const clinicianName = weeklyDietPlan?.approved_by || weeklyDietPlan?.approval_metadata?.clinician_name || 'Unassigned Clinician';
 
-  // Module 5 & R6 Master Prescription Composition (Authoritative Pipeline)
-  const medRecords = (medications && medications.length > 0)
+  const medRecords = medications !== undefined
     ? medications
     : ((patient.medication_records as any) || []);
 
+  // Module 5 & R6 Master Prescription Composition (Authoritative Pipeline)
   const masterPrescription = composeR6Prescription({
     patient,
     weeklyDietPlan,
@@ -1173,6 +1175,20 @@ export function buildPatientReportProjection(options: {
     isDietPlanDirty
   });
 
+  // Authoritative fail-closed release decision: never let stale explicitEligibility override masterPrescription blocks
+  const mergedBlockingEn = Array.from(new Set([
+    ...masterPrescription.release_eligibility.blocking_reasons_en,
+    ...(explicitEligibility?.blockingReasons || [])
+  ]));
+  const mergedBlockingBn = Array.from(new Set([
+    ...masterPrescription.release_eligibility.blocking_reasons_bn,
+    ...(explicitEligibility?.blockingReasons_bn || [])
+  ]));
+  const isReleasedAuthoritative =
+    masterPrescription.is_released &&
+    (explicitEligibility ? explicitEligibility.isEligible : true) &&
+    mergedBlockingEn.length === 0;
+
   return {
     report_type: 'PATIENT_LIFESTYLE_PRESCRIPTION',
     schema_version: 1,
@@ -1180,11 +1196,11 @@ export function buildPatientReportProjection(options: {
     is_approved: isApproved,
     approval_status: weeklyDietPlan?.status || 'draft',
     plan_version: weeklyDietPlan?.version || 1,
-    is_released: eligibility.isEligible,
+    is_released: isReleasedAuthoritative,
     release_eligibility: {
-      is_eligible: eligibility.isEligible,
-      blocking_reasons_en: eligibility.blockingReasons,
-      blocking_reasons_bn: eligibility.blockingReasons_bn
+      is_eligible: isReleasedAuthoritative,
+      blocking_reasons_en: mergedBlockingEn,
+      blocking_reasons_bn: mergedBlockingBn
     },
     clinic_letterhead: {
       clinic_name_bn: 'শুদ্ধ ক্লিনিক্যাল ফাংশনাল নিউট্রিশন সেন্টার',
@@ -1213,18 +1229,18 @@ export function buildPatientReportProjection(options: {
       followup_date: undefined // only included when scheduled follow-up exists
     },
     safety_instructions: {
-      confirmed_allergies_to_avoid_bn: patient.confirmed_allergies || [],
-      confirmed_allergies_to_avoid_en: patient.confirmed_allergies || [],
-      clinician_food_exclusions_bn: patient.clinician_disallowed_foods || [],
-      clinician_food_exclusions_en: patient.clinician_disallowed_foods || [],
-      hydration_guidelines_bn: hydrationBn,
-      hydration_guidelines_en: hydrationEn,
-      fluid_restriction_active: isFluidRestricted,
-      fluid_limit_ml: fluidLimitMl,
-      cooking_oil_rules_bn: cookingOilBn,
-      cooking_oil_rules_en: cookingOilEn,
-      salt_guidelines_bn: saltBn,
-      salt_guidelines_en: saltEn
+      confirmed_allergies_to_avoid_bn: masterPrescription.safety_directives.allergies_to_avoid_bn,
+      confirmed_allergies_to_avoid_en: masterPrescription.safety_directives.allergies_to_avoid_en,
+      clinician_food_exclusions_bn: masterPrescription.safety_directives.clinical_food_exclusions_bn,
+      clinician_food_exclusions_en: masterPrescription.safety_directives.clinical_food_exclusions_en,
+      hydration_guidelines_bn: masterPrescription.lifestyle_support.hydration.instructions_bn,
+      hydration_guidelines_en: masterPrescription.lifestyle_support.hydration.instructions_en,
+      fluid_restriction_active: masterPrescription.safety_directives.fluid_restriction_active,
+      fluid_limit_ml: masterPrescription.safety_directives.fluid_limit_ml,
+      cooking_oil_rules_bn: masterPrescription.safety_directives.cooking_oil_rules_bn || 'ব্যক্তিগতভাবে নির্ধারিত নয়',
+      cooking_oil_rules_en: masterPrescription.safety_directives.cooking_oil_rules_en || 'Not individually prescribed',
+      salt_guidelines_bn: masterPrescription.safety_directives.salt_rules_bn || 'ব্যক্তিগতভাবে নির্ধারিত নয়',
+      salt_guidelines_en: masterPrescription.safety_directives.salt_rules_en || 'Not individually prescribed'
     },
     traffic_light_guide: {
       green_foods_bn: greenBn,

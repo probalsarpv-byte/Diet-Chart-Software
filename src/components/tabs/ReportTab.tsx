@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import { CLINICAL_PHASES } from '@/engine/phaseProgression';
 import { 
@@ -68,11 +68,15 @@ export const ReportTab: React.FC = () => {
     isDietPlanDirty,
     r5NutritionContract,
     r5Medications,
-    r4Protocol
+    r4Protocol,
+    reportStudioMode,
+    setReportStudioMode,
+    setReportReleaseGate
   } = usePractice();
 
   // Primary studio mode: Clinician (U20) or Patient (U21)
-  const [reportMode, setReportMode] = useState<ReportStudioMode>('clinician');
+  const reportMode = reportStudioMode;
+  const setReportMode = setReportStudioMode;
   
   // Clinician subtab (defaulting to 7-Day Weekly Nutrition Plan)
   const [clinicianSubTab, setClinicianSubTab] = useState<ClinicianSubTab>('weekly_diet_plan');
@@ -139,22 +143,16 @@ export const ReportTab: React.FC = () => {
 
   const isHistoricalVisitWithoutPlan = !isCurrentActiveVisit && !effectiveWeeklyDietPlan && (!effectiveDietChart || effectiveDietChart.length === 0);
 
-  // Release eligibility verification (Deterministic Gate)
-  const releaseEligibility = useMemo(() => {
-    return validateReportReleaseEligibility({
-      patient: effectivePatientForReport,
-      plan: effectiveWeeklyDietPlan || effectiveDietChart,
-      weeklyDietPlan: effectiveWeeklyDietPlan,
-      visit: activeReportVisit,
-      expectedVisitId: activeReportVisit?.visit_id || activeReportVisit?.id,
-      safetyEvaluation: isCurrentActiveVisit ? clinicalSafetyEvaluation : undefined,
-      isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false,
-      r5NutritionContract: isCurrentActiveVisit ? r5NutritionContract : undefined
-    });
-  }, [effectivePatientForReport, effectiveWeeklyDietPlan, effectiveDietChart, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, r5NutritionContract]);
-
   // Subtab Single-Day vs 7-Day distinction
   const isSingleDayClinicianMode = clinicianSubTab === 'diet_prescription';
+
+  // Effective medications for selected visit (isolated from live medications on historical views)
+  const effectiveMedicationsForReport = useMemo(() => {
+    if (isCurrentActiveVisit) {
+      return r5Medications;
+    }
+    return ((visitSnapshot?.medications?.reconciled_records as any) || []);
+  }, [isCurrentActiveVisit, r5Medications, visitSnapshot]);
 
   // Build Authoritative Projections
   const clinicianPayload = useMemo(() => {
@@ -183,14 +181,24 @@ export const ReportTab: React.FC = () => {
       includeAllDays: true,
       safetyEvaluation: isCurrentActiveVisit ? clinicalSafetyEvaluation : undefined,
       isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false,
-      releaseEligibility,
       r5NutritionContract: isCurrentActiveVisit ? r5NutritionContract : undefined,
-      medications: isCurrentActiveVisit ? r5Medications : undefined,
+      medications: effectiveMedicationsForReport,
       r4Protocol: isCurrentActiveVisit ? r4Protocol : undefined,
       supplements: isCurrentActiveVisit ? (r4Protocol?.supplements?.filter(s => s.approval_status === 'clinician_approved') || []) : undefined,
       candidateSupplements: isCurrentActiveVisit ? candidateSupplements : undefined
     });
-  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, releaseEligibility, r5NutritionContract, r5Medications, r4Protocol, candidateSupplements]);
+  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, r5NutritionContract, effectiveMedicationsForReport, r4Protocol, candidateSupplements]);
+
+  // Authoritative Release Eligibility derived directly from Master Prescription Composer
+  const releaseEligibility = useMemo(() => ({
+    isEligible: patientPayload.is_released,
+    blockingReasons: patientPayload.release_eligibility.blocking_reasons_en,
+    blockingReasons_bn: patientPayload.release_eligibility.blocking_reasons_bn
+  }), [patientPayload]);
+
+  useEffect(() => {
+    setReportReleaseGate(releaseEligibility);
+  }, [releaseEligibility, setReportReleaseGate]);
 
   const handlePrint = () => {
     if (reportMode === 'patient') {
@@ -236,11 +244,12 @@ export const ReportTab: React.FC = () => {
 
           <button
             data-testid="btn-print-report"
+            disabled={reportMode === 'patient' && !releaseEligibility.isEligible}
             onClick={handlePrint}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] shadow-subtle ${
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-subtle ${
               reportMode === 'patient' && !releaseEligibility.isEligible
                 ? 'bg-muted text-muted-foreground cursor-not-allowed opacity-70'
-                : 'bg-primary hover:bg-primary-hover text-primary-foreground'
+                : 'bg-primary hover:bg-primary-hover text-primary-foreground hover:scale-[1.02] active:scale-[0.98]'
             }`}
           >
             <Printer className="h-4 w-4" />
@@ -363,6 +372,11 @@ export const ReportTab: React.FC = () => {
                   <span>{bn ? 'খসড়া / প্রোভিশনাল' : 'Draft / Provisional (Sign-off Required)'}</span>
                 </span>
               )
+            ) : reportMode === 'patient' && !releaseEligibility.isEligible ? (
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                <span>{bn ? 'রিলিজ গেট সক্রিয় (যাচাইকরণ ও অনুমোদন বাকি)' : 'Release Blocked (Pending Clinical Verification)'}</span>
+              </span>
             ) : weeklyDietPlan?.status === 'approved' && weeklyDietPlan?.is_approved ? (
               <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                 <CheckCircle className="h-3 w-3" />
@@ -377,9 +391,9 @@ export const ReportTab: React.FC = () => {
                 <span>{bn ? 'পুনঃনিরীক্ষণ প্রয়োজন (ডাটা পরিমার্জিত)' : 'Requires Re-Review (Plan Modified)'}</span>
               </span>
             ) : (
-              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                <ShieldCheck className="h-3 w-3" />
-                <span>{bn ? 'ক্লিনিক্যাল সুরক্ষা যাচাইকৃত' : 'Clinical Safety Verified'}</span>
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                <span>{bn ? 'খসড়া / প্রোভিশনাল' : 'Draft / Provisional (Sign-off Required)'}</span>
               </span>
             )}
           </div>

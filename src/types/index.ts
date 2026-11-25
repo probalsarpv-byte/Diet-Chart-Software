@@ -341,8 +341,9 @@ export interface ReconciledMedicationRecord {
   indication?: string;
   start_date?: string;
   stop_date?: string;
-  status?: 'active' | 'discontinued' | 'held' | 'tapering' | 'draft_candidate' | 'unknown';
+  status?: 'active' | 'discontinued' | 'historical' | 'completed' | 'held' | 'tapering' | 'draft_candidate' | 'unknown';
   is_prn?: boolean;
+  is_historical?: boolean;
   prescriber_instructions?: string;
   dose_titration_history?: string;
   adherence_status?: 'adherent' | 'intermittent_misses' | 'severe_nonadherence' | 'unknown';

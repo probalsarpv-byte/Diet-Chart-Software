@@ -86,7 +86,10 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
                 type="button"
                 data-testid="btn-print-patient-report"
                 disabled={!is_released}
-                onClick={onPrint}
+                onClick={() => {
+                  if (!is_released) return;
+                  onPrint();
+                }}
                 title={!is_released ? (bn ? 'অনুমোদনহীন খসড়া প্রিন্ট বা বিতরণ করা যাবে না' : 'Unapproved draft cannot be released') : ''}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-subtle transition ${
                   is_released
@@ -137,12 +140,33 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
       {/* Printable Patient-Safe Container */}
       <div className="print-container relative bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 border border-border/80 rounded-3xl p-6 sm:p-12 max-w-4xl mx-auto shadow-xl space-y-7 print:p-0 print:border-none print:shadow-none print:bg-white print:text-black">
         
-        {/* Prominent Watermark if Unapproved Draft */}
+        {/* Prominent Watermark if Unapproved Draft (also visible in print) */}
         {!is_released && (
-          <div data-testid="draft-watermark" className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden z-0 opacity-10">
+          <div data-testid="draft-watermark" className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden z-0 opacity-10 print:opacity-25">
             <span className="text-6xl sm:text-7xl font-black uppercase text-amber-600 -rotate-45 tracking-widest border-8 border-dashed border-amber-600 p-8 rounded-3xl">
               {bn ? 'খসড়া প্রাক-দর্শন' : 'PROVISIONAL DRAFT'}
             </span>
+          </div>
+        )}
+
+        {/* Print-Visible Unreleased Block Banner (Never hidden in print) */}
+        {!is_released && (
+          <div data-testid="printable-draft-block-banner" className="relative z-10 p-3.5 rounded-2xl border-2 border-amber-500 bg-amber-50/95 text-amber-950 text-xs space-y-1 avoid-break">
+            <div className="font-extrabold uppercase tracking-wide flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0" />
+              <span>
+                {bn
+                  ? 'অস্থায়ী খসড়া প্রেসক্রিপশন — চূড়ান্ত বিতরণের জন্য অনুমোদিত নয়'
+                  : 'PROVISIONAL UNRELEASED DRAFT — NOT APPROVED FOR PATIENT DISPENSATION'}
+              </span>
+            </div>
+            {(bn ? release_eligibility.blocking_reasons_bn : release_eligibility.blocking_reasons_en).length > 0 && (
+              <ul className="list-disc pl-5 text-[11px] space-y-0.5 text-amber-900">
+                {(bn ? release_eligibility.blocking_reasons_bn : release_eligibility.blocking_reasons_en).map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -434,7 +458,11 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
         )}
 
         {/* Module 5: 6-Column Chronological Medication & Supplementation Protocol */}
-        {payload.medication_supplement_protocol && payload.medication_supplement_protocol.active_rows.length > 0 && (
+        {payload.medication_supplement_protocol && (
+          payload.medication_supplement_protocol.active_rows.length > 0 ||
+          (payload.medication_supplement_protocol.pending_verification_rows?.length || 0) > 0 ||
+          payload.medication_supplement_protocol.draft_candidates.length > 0
+        ) && (
           <div data-testid="six-column-medication-protocol" className="relative z-10 border border-slate-200 dark:border-slate-800 print:border-slate-300 rounded-2xl p-4 space-y-3 bg-white dark:bg-slate-900/40 print:bg-white avoid-break">
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
               <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 print:text-black flex items-center gap-1.5">
@@ -446,67 +474,95 @@ export const PatientDietReportView: React.FC<PatientDietReportViewProps> = ({
               </span>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px] border-collapse border border-slate-200 dark:border-slate-800 print:border-slate-300 print:text-[10px]">
-                <thead className="print:table-header-group">
-                  <tr className="bg-slate-50 dark:bg-slate-800/60 print:bg-slate-100 text-left border-b border-slate-200 dark:border-slate-800 print:border-slate-300">
-                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[15%]">
-                      {bn ? 'সময় (Time Sequence)' : 'Time Sequence'}
-                    </th>
-                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[18%]">
-                      {bn ? 'ওষুধ/সাপ্লিমেন্ট (ব্র্যান্ড)' : 'Brand Name'}
-                    </th>
-                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[18%]">
-                      {bn ? 'জেনেরিক নাম (Generic)' : 'Generic Name'}
-                    </th>
-                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[15%]">
-                      {bn ? 'ডোজ ও পরিমাণ (Dosage)' : 'Dosage'}
-                    </th>
-                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[12%]">
-                      {bn ? 'Duration' : 'Duration'}
-                    </th>
-                    <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black w-[22%]">
-                      {bn ? 'ক্লিনিক্যাল নির্দেশনা' : 'Clinical Instructions'}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 print:divide-slate-300">
-                  {payload.medication_supplement_protocol.active_rows.map((row, idx) => (
-                    <tr key={row.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 print:break-inside-avoid">
-                      <td className="p-2 font-mono font-bold text-slate-800 dark:text-slate-200 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] inline-block ${
-                          row.sequence_time === 'UNKNOWN' 
-                            ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-300' 
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
-                        }`}>
-                          {bn ? row.sequence_time_bn : row.sequence_time_en}
-                        </span>
-                      </td>
-                      <td className="p-2 font-bold text-slate-900 dark:text-white print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
-                        {row.brand_name}
-                        {row.requires_clinician_verification && (
-                          <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-900 border border-amber-300 font-normal no-print">
-                            {bn ? 'যাচাই সাপেক্ষ' : 'Review Required'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-2 italic text-slate-600 dark:text-slate-400 print:text-slate-700 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
-                        {row.generic_name}
-                      </td>
-                      <td className="p-2 font-semibold text-emerald-800 dark:text-emerald-400 print:text-emerald-900 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
-                        {bn ? row.dosage_display_bn : row.dosage_display_en}
-                      </td>
-                      <td className="p-2 text-slate-600 dark:text-slate-400 print:text-slate-700 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
-                        {bn ? row.duration_bn : row.duration_en}
-                      </td>
-                      <td className="p-2 text-slate-700 dark:text-slate-300 print:text-black">
-                        {bn ? row.clinical_instructions_bn : row.clinical_instructions_en}
-                      </td>
+            {payload.medication_supplement_protocol.active_rows.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] border-collapse border border-slate-200 dark:border-slate-800 print:border-slate-300 print:text-[10px]">
+                  <thead className="print:table-header-group">
+                    <tr className="bg-slate-50 dark:bg-slate-800/60 print:bg-slate-100 text-left border-b border-slate-200 dark:border-slate-800 print:border-slate-300">
+                      <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[15%]">
+                        {bn ? 'সময় (Time Sequence)' : 'Time Sequence'}
+                      </th>
+                      <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[18%]">
+                        {bn ? 'ওষুধ/সাপ্লিমেন্ট (ব্র্যান্ড)' : 'Brand Name'}
+                      </th>
+                      <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[18%]">
+                        {bn ? 'জেনেরিক নাম (Generic)' : 'Generic Name'}
+                      </th>
+                      <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[15%]">
+                        {bn ? 'ডোজ ও পরিমাণ (Dosage)' : 'Dosage'}
+                      </th>
+                      <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300 w-[12%]">
+                        {bn ? 'Duration' : 'Duration'}
+                      </th>
+                      <th className="p-2 font-bold text-slate-700 dark:text-slate-300 print:text-black w-[22%]">
+                        {bn ? 'ক্লিনিক্যাল নির্দেশনা' : 'Clinical Instructions'}
+                      </th>
                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 print:divide-slate-300">
+                    {payload.medication_supplement_protocol.active_rows.map((row, idx) => (
+                      <tr key={row.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 print:break-inside-avoid">
+                        <td className="p-2 font-mono font-bold text-slate-800 dark:text-slate-200 print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] inline-block ${
+                            row.sequence_time === 'UNKNOWN' 
+                              ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-300' 
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
+                          }`}>
+                            {bn ? row.sequence_time_bn : row.sequence_time_en}
+                          </span>
+                        </td>
+                        <td className="p-2 font-bold text-slate-900 dark:text-white print:text-black border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                          {row.brand_name}
+                          {row.requires_clinician_verification && (
+                            <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-900 border border-amber-300 font-normal print:inline-block print:border-amber-700">
+                              {bn ? 'যাচাই সাপেক্ষ' : 'Review Required'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-2 italic text-slate-600 dark:text-slate-400 print:text-slate-700 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                          {row.generic_name}
+                        </td>
+                        <td className="p-2 font-semibold text-emerald-800 dark:text-emerald-400 print:text-emerald-900 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                          {bn ? row.dosage_display_bn : row.dosage_display_en}
+                        </td>
+                        <td className="p-2 text-slate-600 dark:text-slate-400 print:text-slate-700 border-r border-slate-200 dark:border-slate-800 print:border-slate-300">
+                          {bn ? row.duration_bn : row.duration_en}
+                        </td>
+                        <td className="p-2 text-slate-700 dark:text-slate-300 print:text-black">
+                          {bn ? row.clinical_instructions_bn : row.clinical_instructions_en}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Unverified / Incomplete Medication Reconciliation Warning Panel (Never hidden in print, strictly separated from approved active rows) */}
+            {(payload.medication_supplement_protocol.pending_verification_rows?.length || 0) > 0 && (
+              <div data-testid="pending-medication-verification-panel" className="mt-3 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/40 text-xs space-y-2 avoid-break">
+                <span className="font-bold text-rose-800 dark:text-rose-300 print:text-rose-900 flex items-center gap-1.5 text-[11px]">
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span>
+                    {bn
+                      ? '⛔ অযাচাইকৃত বা অসম্পূর্ণ ওষুধ (রোগীর জন্য চূড়ান্ত নয় — চিকিৎসকের পুনর্মিলন আবশ্যক):'
+                      : '⛔ Unverified / Incomplete Medications (Excluded from Approved Instructions — Clinician Verification Required):'}
+                  </span>
+                </span>
+                <ul className="list-disc pl-5 space-y-1 text-[11px] text-slate-800 dark:text-slate-200 print:text-black">
+                  {payload.medication_supplement_protocol.pending_verification_rows.map((pRow, pIdx) => (
+                    <li key={pRow.id || pIdx}>
+                      <strong>{pRow.brand_name} ({pRow.generic_name})</strong> — {bn ? pRow.dosage_display_bn : pRow.dosage_display_en} • {bn ? pRow.sequence_time_bn : pRow.sequence_time_en}
+                      {(bn ? pRow.verification_issue_reasons_bn : pRow.verification_issue_reasons_en)?.length ? (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-900 border border-amber-400 font-semibold print:inline-block">
+                          {(bn ? pRow.verification_issue_reasons_bn : pRow.verification_issue_reasons_en)!.join('; ')}
+                        </span>
+                      ) : null}
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </ul>
+              </div>
+            )}
 
             {/* Candidate / Draft Supplements Notice - Hidden in print as draft candidates are clinician review items only */}
             {payload.medication_supplement_protocol.draft_candidates.length > 0 && (

@@ -223,6 +223,9 @@ export interface SystemsNetworkGraph {
 export type R5MedicationStatus =
   | 'active'
   | 'discontinued'
+  | 'historical'
+  | 'completed'
+  | 'held'
   | 'draft_candidate'
   | 'unknown';
 
@@ -250,6 +253,7 @@ export interface R5MedicationRecord {
   start_date?: string;
   stop_date?: string;
   is_prn: boolean;                   // Pro re nata / As-needed
+  is_historical?: boolean;           // Past/completed medication course
   duration?: string;                 // e.g. "14 days", "1 month"
   duration_bn?: string;              // e.g. "১৪ দিন"
   duration_weeks?: number;

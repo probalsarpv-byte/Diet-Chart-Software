@@ -324,6 +324,12 @@ export interface PracticeContextType {
   setIsReconciliationModalOpen: (open: boolean) => void;
   stagedSubmissionsCount: number;
   refreshStagedSubmissionsCount: () => Promise<void>;
+
+  // Phase R6: Authoritative Report Mode & Print/PDF Release Gate
+  reportStudioMode: 'clinician' | 'patient';
+  setReportStudioMode: (mode: 'clinician' | 'patient') => void;
+  reportReleaseGate: { isEligible: boolean; blockingReasons: string[]; blockingReasons_bn: string[] };
+  setReportReleaseGate: (gate: { isEligible: boolean; blockingReasons: string[]; blockingReasons_bn: string[] }) => void;
 }
 
 const PracticeContext = createContext<PracticeContextType | undefined>(undefined);
@@ -372,6 +378,7 @@ function createInitialSeedPatient(): PatientProfile {
     clinician_disallowed_tags: [],
     selected_conditions: ['t2d_ir', 'hypothyroid', 'fatty_liver', 'uric_acid_gout'],
     active_medications: ['med_metformin', 'med_ppi', 'med_levothyroxine'],
+    medication_reconciliation_status: 'fully_reconciled',
     medication_records: [
       {
         id: 'med_seed_metformin',
@@ -469,6 +476,12 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const [r4Protocol, setR4Protocol] = useState<R4ProtocolStudioData | null>(null);
   const [isR4ProtocolDirty, setIsR4ProtocolDirty] = useState<boolean>(false);
+  const [reportStudioMode, setReportStudioMode] = useState<'clinician' | 'patient'>('clinician');
+  const [reportReleaseGate, setReportReleaseGate] = useState<{
+    isEligible: boolean;
+    blockingReasons: string[];
+    blockingReasons_bn: string[];
+  }>({ isEligible: false, blockingReasons: [], blockingReasons_bn: [] });
 
   const [patient, setPatient] = useState<PatientProfile>(createInitialSeedPatient);
 
@@ -4628,7 +4641,11 @@ function createTypedPlanningContextFallback(
         updateR5Pathways,
         updateR5Medications,
         syncR5ToR4Protocol,
-        r5NutritionContract
+        r5NutritionContract,
+        reportStudioMode,
+        setReportStudioMode,
+        reportReleaseGate,
+        setReportReleaseGate
       }}
     >
       {children}

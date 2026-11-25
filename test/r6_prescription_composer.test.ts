@@ -219,13 +219,14 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
       ];
 
       const protocol = compose6ColumnMedicationProtocol(meds, []);
-      assert.strictEqual(protocol.active_rows.length, 1);
-      assert.strictEqual(protocol.active_rows[0].dosage_display_en, 'Dose Pending (Review required)');
-      assert.ok(protocol.active_rows[0].dosage_display_bn.includes('ডোজ নির্ধারণ বাকি'));
+      assert.strictEqual(protocol.active_rows.length, 0, 'Missing-dose medication must not enter verified active_rows');
+      assert.strictEqual(protocol.pending_verification_rows.length, 1);
+      assert.strictEqual(protocol.pending_verification_rows[0].dosage_display_en, 'Dose Pending (Review required)');
+      assert.ok(protocol.pending_verification_rows[0].dosage_display_bn.includes('ডোজ নির্ধারণ বাকি'));
     });
 
     // Scenario 6: Unknown timing
-    it('Scenario 6: Unknown timing placed at end with UNKNOWN sequence time and clinical review warning', () => {
+    it('Scenario 6: Unknown timing placed in pending_verification_rows with UNKNOWN sequence time and clinical review warning', () => {
       const meds: R5MedicationRecord[] = [
         {
           id: 'med_amlodipine',
@@ -264,14 +265,15 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
       ];
 
       const protocol = compose6ColumnMedicationProtocol(meds, []);
-      assert.strictEqual(protocol.active_rows.length, 2);
+      assert.strictEqual(protocol.active_rows.length, 1);
       assert.strictEqual(protocol.active_rows[0].sequence_time, '07:30');
-      assert.strictEqual(protocol.active_rows[1].sequence_time, 'UNKNOWN');
-      assert.ok(protocol.active_rows[1].clinical_instructions_bn.includes('সময় নির্ধারণ'));
+      assert.strictEqual(protocol.pending_verification_rows.length, 1);
+      assert.strictEqual(protocol.pending_verification_rows[0].sequence_time, 'UNKNOWN');
+      assert.ok(protocol.pending_verification_rows[0].clinical_instructions_bn.includes('সময় নির্ধারণ'));
     });
 
     // Scenario 7: PRN medication
-    it('Scenario 7: PRN medication marked PRN and placed after scheduled times but before UNKNOWN', () => {
+    it('Scenario 7: Verified PRN medication is accepted in active_rows while UNKNOWN timing stays in pending verification', () => {
       const meds: R5MedicationRecord[] = [
         {
           id: 'med_unknown',
@@ -327,12 +329,14 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
       ];
 
       const protocol = compose6ColumnMedicationProtocol(meds, []);
-      assert.strictEqual(protocol.active_rows.length, 3);
-      // Order: 06:30 (Scheduled) -> PRN -> UNKNOWN
+      assert.strictEqual(protocol.active_rows.length, 2);
+      // Order in active_rows: 06:30 (Scheduled) -> PRN
       assert.strictEqual(protocol.active_rows[0].sequence_time, '06:30');
       assert.strictEqual(protocol.active_rows[1].sequence_time, 'PRN');
       assert.strictEqual(protocol.active_rows[1].is_prn, true);
-      assert.strictEqual(protocol.active_rows[2].sequence_time, 'UNKNOWN');
+      // Unknown time stays in pending_verification_rows
+      assert.strictEqual(protocol.pending_verification_rows.length, 1);
+      assert.strictEqual(protocol.pending_verification_rows[0].sequence_time, 'UNKNOWN');
     });
 
     // Scenario 8: Drug–supplement timing conflict / separation
@@ -673,6 +677,13 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
 
     it('maps approved R4 hydration, exercise, and sleep without blanket advice', () => {
       const r4Protocol: Partial<R4ProtocolStudioData> = {
+        id: 'proto_lifestyle_01',
+        patient_id: 'p_lifestyle_01',
+        version: 1,
+        status: 'active',
+        is_approved: true,
+        approved_by: 'clin_shahriar',
+        approved_at: '2026-11-25T09:00:00Z',
         hydration: {
           baseline_fluid_target_ml: 2200,
           timing_guidance_bn: 'দৈনিক ২.২ লিটার পানি নিয়মিত পান করুন।',
