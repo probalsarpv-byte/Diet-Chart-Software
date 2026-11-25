@@ -4,7 +4,8 @@
 **Repository:** `https://github.com/probalsarpv-byte/Diet-Chart-Software`  
 **Branch:** `main`  
 **Starting Verified Baseline Commit:** `4989b4723f3d2898a3e68defac45c7700828958a` (`fix(r6): complete Checkpoint C R4 supplement authorization, E2E PDF verification, and engineering closure`)  
-**Decision:** **GO — R7 ENGINEERING ACCEPTED**
+**Previous R7 Baseline Commit:** `3c094022c3394fd97325d403dc19a735239a2142` (`feat(r7): implement advanced laboratory, biomarker, drug-nutrient and individualized supplement intelligence`)  
+**Decision:** **GO — R7 FINAL ENGINEERING CLOSURE ACCEPTED**
 
 ---
 
@@ -70,3 +71,17 @@ Phase R7 delivered five integrated workstreams without rebuilding prior phases (
 
 - Non-critical R7 UX, catalog, and post-R15 enhancements are catalogued in [R7_BACKLOG.md](../roadmap/R7_BACKLOG.md).
 - Ready to advance to **Phase R8 (Food Knowledge Base Expansion)** once authorized.
+
+---
+
+## 6. Final Independent Review Corrections — Checkpoints A–E
+
+Following the post-`3c094022c3394fd97325d403dc19a735239a2142` clinical safety & architecture review, all five mandatory closure checkpoints (`Checkpoints A–E`) were implemented, verified, and integrated cleanly:
+
+| Checkpoint | Root Cause Resolved | Key Code Changes | Verification Outcome |
+| :--- | :--- | :--- | :--- |
+| **A (P0)** | Eliminated raw numeric fallbacks (`normalizedVal ?? entry.numeric_value`, `r7Obs?.normalized_value ?? num`) and cleared stale `patient.labs` scalars on pending, not-tested, declined, unsupported-unit, implausible/negative, conflicting, or foreign records; added R4/Diet invalidation on any structured lab edit (including custom/unmapped markers) | `src/engine/r7/labFoundation.ts` (`isEligibleCanonicalScalarObservation`, `projectStructuredLabsToLegacyScalars`, `R7_CANONICAL_TO_LEGACY_LAB_KEY`), `src/components/assessment/StepLaboratoryIntake.tsx`, `src/context/PracticeContext.tsx` (`updateLabs` sanitization), `src/engine/r5SystemsNetworkEngine.ts` (`normalizeStructuredLabEntries`, `evaluateFunctionalMatrix`) | `CP-A01` + `test:r7` + `test:r5` passed |
+| **B (P0)** | Reordered `p2HandoffAdapter.ts` so canonical reconciliation & 3-layer R7 biomarker evaluation execute BEFORE clinical threshold rules (`42 mmol/mol` HbA1c -> prediabetes, `70 µmol/L` creatinine -> normal, `100 nmol/L` Vitamin D3 -> non-deficient); removed fabricated `now` fallback on missing specimen collection dates; blocked `'lab_confirmed'` on unverified entries | `src/engine/assessment/p2HandoffAdapter.ts` (`buildP2ClinicalObservations`, `buildFlattenedAnswersForP2`, `prepareP2Handoff`) | `CP-B01` + `test:p1` + `test:p2` + `test:p2:advanced` + `test:p2:gate` + `test:step02` passed |
+| **C (P1)** | Hardened `datesCompatibleForRatio` (disallowing missing collection dates without shared `lab_report_id`) and HOMA-IR eligibility (same-day draw or shared report accession, documented `fasting_status === 'fasting'` on both glucose & insulin, confirmed verification, no exogenous insulin); stopped legacy arithmetic HOMA-IR from overwriting ineligible R7 HOMA-IR as `lab_confirmed` | `src/engine/r7/biomarkerIntelligence.ts` (`datesCompatibleForRatio`, `computeR7DerivedBiomarkers`), `src/engine/assessment/p2HandoffAdapter.ts`, `src/engine/p2/evidenceAggregator.ts` | `CP-C01` + `test:r7` + `test:p0` + `test:p2` + `test:r5` passed |
+| **D (P1)** | Extracted `buildR5NutritionAdjustmentContract` using canonical `potassium` & `reported_egfr` (removing `.serum_potassium ?? 0` and `.egfr ?? 100` defaults); preserved reported vs calculated eGFR separation; ensured unverified critical K+ escalates & blocks release without emitting `LAB_SUPPORTED`; removed fabricated `1500 mL` fluid cap in `r5ToR4Adapter.ts` and aligned `conflictResolver.ts` | `src/engine/r5NutritionContract.ts`, `src/types/r5Systems.ts`, `src/context/PracticeContext.tsx`, `src/engine/conflictResolver.ts`, `src/engine/r5ToR4Adapter.ts` | `CP-D01` + `test:r7` + `test:r4` + `test:r5` + `test:r6` passed |
+| **E (P1)** | Upgraded Playwright Chromium E2E (`E1–E8`) covering real UI workflows with zero bypasses; fixed `SupplementsSection.tsx` missing Duration input, `visitLifecycle.ts` clearing `patient.labs` on new visit creation, `LocalDemoRepository`/`SupabasePracticeRepository` clearing `invalidated_at`/invalidated notes on clinician R4 re-approval, and `PracticeContext.updateLabs` persisting invalidated R4 drafts | `test/r7_browser_e2e.test.ts`, `src/components/protocol-studio/SupplementsSection.tsx`, `src/engine/visit/visitLifecycle.ts`, `src/repositories/LocalDemoRepository.ts`, `src/repositories/SupabasePracticeRepository.ts`, `src/types/r4Protocol.ts` | `test:r7:browser` **43/43 passed** (`E1–E8`, approved A4 PDF `746,534` bytes / 17 pages, blocked PDF `737,350` bytes), `test:r4:browser`, `test:r5:browser` **37/37**, `test:r6:browser` **48/48**, `npm test` (19/19 suites) passed |

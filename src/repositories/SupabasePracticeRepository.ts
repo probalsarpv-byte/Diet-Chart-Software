@@ -637,7 +637,12 @@ export class SupabasePracticeRepository implements IPracticeRepository {
           is_approved: true,
           approved_by: clinician.id,
           approved_at: rpcData.approved_at || new Date().toISOString(),
-          approval_notes: notes || protocol.approval_notes,
+          invalidated_at: undefined,
+          approval_notes: notes && notes.trim()
+            ? notes
+            : /invalidated/i.test(protocol.approval_notes || '')
+            ? undefined
+            : protocol.approval_notes,
           approval_authority: 'AUTHORITATIVE_CLOUD',
           version: rpcData.version || (protocol.version || 1) + 1,
           updated_at: new Date().toISOString()

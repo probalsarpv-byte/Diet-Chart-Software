@@ -76,6 +76,7 @@ export function createNewVisitTransition(params: CreateVisitTransitionParams): C
     ...patient,
     current_visit_id: newVisitId,
     visit_date: today,
+    labs: { lab_flags: [] },
     is_diet_plan_dirty: true,
     assessment_last_updated_at: new Date().toISOString()
   };

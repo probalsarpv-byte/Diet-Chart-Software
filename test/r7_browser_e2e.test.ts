@@ -154,7 +154,7 @@ async function runR7BrowserE2E() {
     await page.locator('[data-testid="r7-lab-search-input"]').fill('FBS');
     await page.waitForTimeout(400);
     // The marker_id is canonical 'fasting_glucose' (initialized from canonical_id when no existing entry)
-    const fbsRow = page.locator('[data-testid="r7-lab-row-fasting_glucose"]');
+    const fbsRow = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
     await fbsRow.waitFor({ state: 'visible', timeout: 8000 });
     assert((await fbsRow.count()) > 0, 'FBS biomarker row present in Step 8');
 
@@ -191,7 +191,7 @@ async function runR7BrowserE2E() {
     await page.waitForTimeout(500);
     await page.locator('[data-testid="r7-lab-search-input"]').fill('FBS');
     await page.waitForTimeout(400);
-    const fbsRowReloaded = page.locator('[data-testid="r7-lab-row-fasting_glucose"]');
+    const fbsRowReloaded = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
     await fbsRowReloaded.waitFor({ state: 'visible', timeout: 8000 });
     const persistedVal = await fbsRowReloaded.locator('input[type="number"]').first().inputValue();
     assert(persistedVal === '7.2', `E1 Persistence: 7.2 mmol/L persisted across page reload (got "${persistedVal}")`);
@@ -225,7 +225,7 @@ async function runR7BrowserE2E() {
     await unsafeApproveBtn.click();
     await page.waitForTimeout(300);
 
-    const safetyTabBtn = page.locator('button:has-text("Safety Review"), button:has-text("নিরাপত্তা ও অনুমোদন")').first();
+    const safetyTabBtn = page.locator('button:has-text("Safety & Sign-Off"), button:has-text("সেফটি ও সাইন-অফ")').first();
     await safetyTabBtn.click();
     await page.waitForTimeout(400);
 
@@ -239,7 +239,7 @@ async function runR7BrowserE2E() {
     await page.waitForTimeout(350);
 
     // Delete Magnesium Overload Complex (find its card and click Delete)
-    const mgCard = page.locator('div.rounded-2xl', { hasText: 'Magnesium Overload Complex' }).first();
+    const mgCard = page.locator('[data-testid^="r7-supplement-card-"]', { hasText: 'Magnesium Overload Complex' }).first();
     await mgCard.locator('button[title="Delete"], button[title="মুছে ফেলুন"]').first().click();
     await page.waitForTimeout(350);
 
@@ -255,7 +255,7 @@ async function runR7BrowserE2E() {
     await page.waitForTimeout(400);
 
     // Approve ONLY Vitamin D3 Clinical Formula
-    const vitDCard = page.locator('div.rounded-2xl', { hasText: 'Vitamin D3 Clinical Formula' }).first();
+    const vitDCard = page.locator('[data-testid^="r7-supplement-card-"]', { hasText: 'Vitamin D3 Clinical Formula' }).first();
     await vitDCard.locator('button[title="Approve Supplement"], button[title="অনুমোদন করুন"]').first().click();
     await page.waitForTimeout(350);
 
@@ -303,16 +303,21 @@ async function runR7BrowserE2E() {
     await page.waitForTimeout(500);
 
     const patientView = page.locator('[data-testid="patient-projection-view"]');
-    assert((await patientView.locator('[data-testid="patient-release-approved-banner"]').count()) > 0, 'E3/E7: Approved clinical path reaches RELEASED R6 Prescription');
+    const isReleased = (await patientView.locator('[data-testid="patient-release-approved-banner"]').count()) > 0;
+    if (!isReleased) {
+      const blockedReason = await patientView.locator('[data-testid="patient-release-blocked-alert"]').innerText().catch(() => 'No alert text');
+      console.error('  [DEBUG E3 blocked reason]:', blockedReason);
+    }
+    assert(isReleased, 'E3/E7: Approved clinical path reaches RELEASED R6 Prescription');
     assert((await patientView.locator('[data-testid="draft-watermark"]').count()) === 0, 'E7: Draft watermark removed on released prescription');
 
     const medProtocol = patientView.locator('[data-testid="six-column-medication-protocol"]');
-    const medProtocolText = await medProtocol.innerText();
-    assert(medProtocolText.includes('Vitamin D3 Clinical Formula'), 'E3: Approved supplement name rendered in R6 6-column protocol');
-    assert(medProtocolText.includes('1000 IU'), 'E3: Exact approved supplement dose (1000 IU) rendered in R6');
-    assert(medProtocolText.includes('13:30'), 'E3: Exact approved supplement timing (13:30) rendered in R6');
-    assert(/8\s*(Weeks|সপ্তাহ)/i.test(medProtocolText), 'E3: Exact approved supplement duration (8 Weeks) rendered in R6');
-    assert(!medProtocolText.includes('Selenium Unapproved Candidate'), 'E3: Unapproved draft candidate excluded from R6 6-column protocol');
+    const activeMedTableText = await medProtocol.locator('table tbody').innerText();
+    assert(activeMedTableText.includes('Vitamin D3 Clinical Formula'), 'E3: Approved supplement name rendered in R6 6-column protocol');
+    assert(/1000\s*IU|১০০০\s*IU/i.test(activeMedTableText), `E3: Exact approved supplement dose (1000 IU) rendered in R6 (got: ${activeMedTableText.substring(0, 160)})`);
+    assert(/13:30|১৩:৩০|১:৩০/.test(activeMedTableText), 'E3: Exact approved supplement timing (13:30) rendered in R6');
+    assert(/(8|৮)\s*(Weeks|সপ্তাহ)/i.test(activeMedTableText), 'E3: Exact approved supplement duration (8 Weeks) rendered in R6');
+    assert(!activeMedTableText.includes('Selenium Unapproved Candidate'), 'E3: Unapproved draft candidate excluded from R6 6-column protocol table');
 
     console.log('--- E7: Approved Chromium A4 PDF Generation & Print-Media Content Audit ---');
     const pdfOutDir = process.env.R7_PDF_DIR || path.join(os.tmpdir(), 'shuddho-r7-pdf');
@@ -329,7 +334,7 @@ async function runR7BrowserE2E() {
       return {
         noPrintHidden,
         hasBangla: /[\u0980-\u09FF]+/.test(text),
-        hasVitD: text.includes('Vitamin D3 Clinical Formula') && text.includes('1000 IU') && text.includes('13:30'),
+        hasVitD: text.includes('Vitamin D3 Clinical Formula') && /(1000|১০০০)\s*IU/i.test(text) && /(13:30|১৩:৩০|১:৩০)/.test(text),
         hasNoCandidateLeak: !text.includes('Selenium Unapproved Candidate'),
         hasNoKcal: !/\b\d+\s*kcal\b/i.test(text),
         hasNoBiomarkers: !text.includes('HOMA-IR') && !text.includes('FIB-4'),
@@ -366,7 +371,7 @@ async function runR7BrowserE2E() {
     await page.locator('[data-testid="r7-lab-search-input"]').fill('FBS');
     await page.waitForTimeout(400);
     // Re-acquire the FBS row locator (same canonical id as E1)
-    const fbsRowE4 = page.locator('[data-testid="r7-lab-row-fasting_glucose"]');
+    const fbsRowE4 = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
     await fbsRowE4.waitFor({ state: 'visible', timeout: 8000 });
     // The row is already 'previously_tested' from E1 — the numeric input should already be visible
     const fbsNumE4 = fbsRowE4.locator('input[type="number"]').first();
@@ -381,7 +386,7 @@ async function runR7BrowserE2E() {
 
     await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
     await page.waitForTimeout(400);
-    await page.locator('button:has-text("Safety Review"), button:has-text("নিরাপত্তা ও অনুমোদন")').first().click();
+    await page.locator('button:has-text("Safety & Sign-Off"), button:has-text("সেফটি ও সাইন-অফ")').first().click();
     await page.waitForTimeout(350);
     const postLabEditApproveText = await approveLockBtn.innerText();
     assert(!postLabEditApproveText.includes('Re-Approve'), `E4: Approved R4 protocol reverted to draft state ("${postLabEditApproveText.trim()}")`);

@@ -393,6 +393,7 @@ export interface R4ProtocolStudioData {
   is_approved: boolean;
   approved_by?: string;
   approved_at?: string;
+  invalidated_at?: string;
   approval_notes?: string;
   previous_approved_version?: number;
   is_demo_unverified?: boolean;

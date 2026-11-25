@@ -301,7 +301,12 @@ export class LocalDemoRepository implements IPracticeRepository {
       is_approved: true,
       approved_by: clinician.id,
       approved_at: new Date().toISOString(),
-      approval_notes: notes || protocol.approval_notes,
+      invalidated_at: undefined,
+      approval_notes: notes && notes.trim()
+        ? notes
+        : /invalidated/i.test(protocol.approval_notes || '')
+        ? undefined
+        : protocol.approval_notes,
       version: (protocol.version || 1) + 1,
       is_demo_unverified: true,
       approval_authority: 'LOCAL_SIMULATION_NON_AUTHORITATIVE',
