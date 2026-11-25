@@ -18,7 +18,8 @@ import {
   Layers,
   Sparkles,
   Award,
-  Pill
+  Pill,
+  Microscope
 } from 'lucide-react';
 
 interface ClinicianReportViewProps {
@@ -516,6 +517,60 @@ export const ClinicianReportView: React.FC<ClinicianReportViewProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Section E: R7 Advanced Laboratory Intelligence & Cumulative Supplement Exposure */}
+        {(payload.r7_lab_intelligence || payload.r7_supplement_exposure) && (
+          <div data-testid="r7-clinician-lab-intelligence-section" className="border border-border rounded-2xl p-4 sm:p-5 space-y-4 bg-card shadow-2xs avoid-break">
+            <h2 className="font-bold text-xs uppercase tracking-wider text-foreground flex items-center gap-1.5 border-b border-border pb-2.5">
+              <Microscope className="h-4 w-4 text-primary" />
+              <span>{bn ? '৫. R7 ল্যাবরেটরি বায়োমার্কার প্যাটার্ন ও সম্মিলিত সাপ্লিমেন্ট বিশ্লেষণ' : '5. R7 Biomarker Pattern Intelligence & Cumulative Supplement Exposure'}</span>
+            </h2>
+
+            {payload.r7_lab_intelligence && payload.r7_lab_intelligence.evaluations.length > 0 && (
+              <div className="space-y-2 text-xs">
+                <div className="font-bold text-foreground">
+                  {bn ? 'প্রমিত ল্যাব বায়োমার্কার (৩-স্তর ব্যাখ্যা):' : 'Canonical Biomarkers (3-Layer Evaluation):'}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {payload.r7_lab_intelligence.evaluations.map(ev => (
+                    <div key={ev.observation.observation_id} className="p-2.5 rounded-xl border border-border bg-secondary/20 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <strong>{bn ? ev.marker_label_bn : ev.marker_label_en}</strong>
+                        <span className="font-mono font-bold">
+                          {ev.observation.display_normalized_value ?? ev.observation.normalized_value} {ev.observation.canonical_unit}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Ref: {ev.layer1_reference_interval.display} ({ev.layer1_reference_interval.provenance}) · Status: {ev.reference_status} · Verification: {ev.observation.verification_status}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {payload.r7_supplement_exposure && Object.values(payload.r7_supplement_exposure.exposures_by_nutrient).length > 0 && (
+              <div className="space-y-2 text-xs">
+                <div className="font-bold text-foreground">
+                  {bn ? 'সম্মিলিত সাপ্লিমেন্ট ডোজ বনাম নিরাপদ ঊর্ধ্বসীমা (UL):' : 'Combined Supplement Exposure vs Tolerable Upper Limits:'}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {Object.values(payload.r7_supplement_exposure.exposures_by_nutrient).map(b => (
+                    <div key={b.nutrient_id} className="p-2.5 rounded-xl border border-border bg-secondary/20 text-[11px]">
+                      <div className="flex justify-between font-bold">
+                        <span>{b.nutrient_name}</span>
+                        <span className="font-mono">{b.combined_daily} {b.unit}/day</span>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Approved: {b.current_approved_daily} · Proposed: {b.proposed_candidate_daily} · UL ({b.ul_life_stage}): {b.tolerable_upper_limit ?? 'N/A'} {b.unit}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Clinician Sign-Off & Confidentiality Block */}
         <div className="pt-4 border-t border-border flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 text-xs avoid-break">

@@ -11,6 +11,7 @@ export * from './clinical';
 export * from './assessment';
 export * from './r4Protocol';
 export * from './r5Systems';
+export * from './r7Laboratory';
 
 export const CURRENT_SCHEMA_VERSION = 2;
 

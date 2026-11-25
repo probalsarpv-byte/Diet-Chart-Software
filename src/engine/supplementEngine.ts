@@ -20,6 +20,14 @@ import {
   SupplementFrequency, 
   FoodRelationship 
 } from '@/types/r4Protocol';
+import { R7LabIntelligenceSummary } from '@/types/r7Laboratory';
+import {
+  calculateR7SupplementExposure,
+  extractItemIngredients,
+  buildHonestCatalogVerificationMetadata,
+  canonicalizeNutrientId,
+  resolveLifeStageUpperLimit
+} from './r7/supplementIntelligence';
 
 export interface ParsedDoseInfo {
   raw: string;
@@ -198,131 +206,179 @@ export const TOLERABLE_UPPER_LIMITS: Record<string, NutrientULReference> = {
 
 /**
  * Advanced multi-source supplement overlap and cumulative dosage evaluation.
+ * Phase R7: Integrates multi-ingredient breakdown, physical deduplication, life-stage ULs,
+ * and single-dose bolus threshold checks while preserving structured legacy warnings.
  */
 export function checkAdvancedSupplementOverlaps(
   items: SupplementProtocolItem[],
-  patient: PatientProfile
+  patient: PatientProfile,
+  labSummary?: R7LabIntelligenceSummary
 ): SupplementOverlapWarning[] {
   const warnings: SupplementOverlapWarning[] = [];
   const activeItems = items.filter(i => i.approval_status !== 'rejected' && i.approval_status !== 'discontinued');
 
-  const isPediatric = (patient.age || 35) < 18;
-  const isPregnant = patient.population_group === 'pregnancy';
+  const isPediatric = patient.age !== undefined && patient.age < 18;
+  const isPregnant = patient.population_group === 'pregnancy' || Boolean((patient as any).is_pregnant);
   const hasRenal = (patient.selected_conditions || []).includes('ckd_stage_1_3b') || 
     (patient.confirmed_conditions || []).some(c => c.toLowerCase().includes('ckd') || c.toLowerCase().includes('renal')) ||
     Boolean(patient.labs?.egfr && patient.labs.egfr < 30);
 
-  // Group items by target nutrient
-  const nutrientBuckets: Record<string, { item: SupplementProtocolItem; parsed: ParsedDoseInfo }[]> = {
+  // Run structured R7 exposure summary for multi-ingredient & deduplicated checks
+  const r7Exposure = calculateR7SupplementExposure({
+    supplements: activeItems,
+    patient,
+    labSummary
+  });
+
+  // 1. Add physical duplicate warnings
+  for (const dup of r7Exposure.physical_duplicates) {
+    warnings.push({
+      nutrient: dup.label,
+      total_amount_estimated: `PHYSICAL DUPLICATE DEDUPLICATED (${dup.item_ids.length} entries)`,
+      tolerable_upper_limit: 'Deduplicated to prevent false exposure inflation',
+      sources: dup.item_ids,
+      severity: 'medium',
+      warning_bn: `${dup.label}-এর একই প্রোডাক্ট একাধিকবার যুক্ত হয়েছে; মোট মাত্রা দ্বিগুণ গণনা এড়াতে একত্রিত করা হয়েছে।`,
+      warning_en: `Duplicate physical product reference detected for "${dup.label}" (${dup.item_ids.length} entries); exposure deduplicated for accuracy.`
+    });
+  }
+
+  // 2. Group items by target nutrient (supports multi-ingredient formulations via extractItemIngredients)
+  const nutrientBuckets: Record<string, { item: SupplementProtocolItem; parsed: ParsedDoseInfo; canonicalId: string }[]> = {
     magnesium: [],
     vitamin_d: [],
     zinc: [],
     folate: [],
     calcium: [],
-    potassium: []
+    potassium: [],
+    iron: [],
+    vitamin_a: [],
+    pyridoxine_b6: [],
+    selenium: []
   };
 
   for (const item of activeItems) {
-    const text = `${item.generic_nutrient} ${item.chemical_form} ${item.id}`.toLowerCase();
-    const parsed = parseDoseString(item.total_compound_dose, item.frequency);
+    const extracted = extractItemIngredients(item);
+    for (const ing of extracted) {
+      const cid = canonicalizeNutrientId(ing.nutrient_id || ing.nutrient_name);
+      const bucketKey = cid === 'vitamin_d3' ? 'vitamin_d' : cid;
+      if (!nutrientBuckets[bucketKey]) continue;
 
-    if (text.includes('magnesium')) nutrientBuckets.magnesium.push({ item, parsed });
-    if (text.includes('vitamin d') || text.includes('d3') || text.includes('cholecalciferol')) nutrientBuckets.vitamin_d.push({ item, parsed });
-    if (text.includes('zinc')) nutrientBuckets.zinc.push({ item, parsed });
-    if (text.includes('folate') || text.includes('folic') || text.includes('b9') || text.includes('methylfolate')) nutrientBuckets.folate.push({ item, parsed });
-    if (text.includes('calcium')) nutrientBuckets.calcium.push({ item, parsed });
-    if (text.includes('potassium')) nutrientBuckets.potassium.push({ item, parsed });
+      const parsed: ParsedDoseInfo = ing.is_elemental_known && ing.elemental_amount_per_unit !== undefined
+        ? (() => {
+            const single = ing.elemental_amount_per_unit * (ing.prescribed_units_per_dose ?? item.prescribed_units_per_dose ?? 1);
+            const p = parseDoseString(`${single} ${ing.amount_unit || 'mg'}`, item.frequency);
+            return p.isUndetermined
+              ? {
+                  raw: `${single} ${ing.amount_unit || 'mg'}`,
+                  elementalValue: single,
+                  representativeDailyValue: single,
+                  unit: (ing.amount_unit as any) || 'mg',
+                  isElemental: ing.is_elemental_known,
+                  isWeekly: item.frequency === 'weekly',
+                  isUndetermined: false
+                }
+              : p;
+          })()
+        : parseDoseString(item.total_compound_dose, item.frequency);
+
+      if (!nutrientBuckets[bucketKey].some(existing => existing.item.id === item.id)) {
+        nutrientBuckets[bucketKey].push({ item, parsed, canonicalId: cid });
+      }
+    }
   }
 
-  // Evaluate each nutrient bucket
+  // Evaluate each nutrient bucket (preserving legacy TOLERABLE_UPPER_LIMITS & expanding to R7 life-stage ULs)
   for (const [nutrientKey, entries] of Object.entries(nutrientBuckets)) {
     if (entries.length === 0) continue;
 
+    const r7Bucket = r7Exposure.exposures_by_nutrient[entries[0].canonicalId];
     const ref = TOLERABLE_UPPER_LIMITS[nutrientKey];
-    if (!ref) continue;
+    const lifeStageUL = resolveLifeStageUpperLimit(entries[0].canonicalId, patient);
+    const effectiveUL =
+      hasRenal && ref?.renalUL !== undefined
+        ? ref.renalUL
+        : lifeStageUL.ul !== undefined
+        ? lifeStageUL.ul
+        : isPediatric && ref?.pediatricUL !== undefined
+        ? ref.pediatricUL
+        : isPregnant && ref?.pregnancyUL !== undefined
+        ? ref.pregnancyUL
+        : ref?.adultUL;
 
-    // Determine population-specific UL
-    let effectiveUL = ref.adultUL;
-    if (hasRenal && ref.renalUL !== undefined) {
-      effectiveUL = ref.renalUL;
-    } else if (isPediatric && ref.pediatricUL !== undefined) {
-      effectiveUL = ref.pediatricUL;
-    } else if (isPregnant && ref.pregnancyUL !== undefined) {
-      effectiveUL = ref.pregnancyUL;
-    }
+    const nutrientLabel = ref?.nutrient || lifeStageUL.def?.nutrient_name || nutrientKey;
+    const unitLabel = ref?.unit || lifeStageUL.unit || 'mg';
+    if (effectiveUL === undefined && !r7Bucket?.is_incomplete_exposure) continue;
 
-    // Check for multiple sources
     if (entries.length > 1) {
       const sourceNames = entries.map(e => e.item.generic_nutrient);
-      const hasUndetermined = entries.some(e => e.parsed.isUndetermined);
+      const hasUndetermined = entries.some(e => e.parsed.isUndetermined) || Boolean(r7Bucket?.is_incomplete_exposure);
 
       if (hasUndetermined) {
         warnings.push({
-          nutrient: ref.nutrient,
+          nutrient: nutrientLabel,
           total_amount_estimated: `UNDETERMINED — CLINICIAN REVIEW REQUIRED (${entries.length} concurrent sources)`,
-          tolerable_upper_limit: `${effectiveUL} ${ref.unit}/day`,
+          tolerable_upper_limit: effectiveUL !== undefined ? `${effectiveUL} ${unitLabel}/day` : 'No established UL',
           sources: sourceNames,
           severity: 'high',
-          warning_bn: `সতর্কতা: একাধিক ${ref.nutrient} উৎস চিহ্নিত হয়েছে, কিন্তু সঠিক ডোজ অপরিবর্তনীয় বা অজানা। কোনো সংখ্যা অনুমান না করে ক্লিনিশিয়ানকে সরাসরি লেবেল ও উপাদান যাচাই করতে হবে।`,
-          warning_en: `UNDETERMINED OVERLAP: Multiple concurrent ${ref.nutrient} products prescribed (${sourceNames.join(', ')}), with at least one unstandardized dose. Immediate clinician verification required before approval.`
+          warning_bn: `সতর্কতা: একাধিক ${nutrientLabel} উৎস চিহ্নিত হয়েছে, কিন্তু সঠিক ডোজ অনির্ধারিত বা অজানা। ক্লিনিশিয়ানকে সরাসরি লেবেল যাচাই করতে হবে।`,
+          warning_en: `UNDETERMINED OVERLAP: Multiple concurrent ${nutrientLabel} products prescribed (${sourceNames.join(', ')}), with at least one unstandardized/incomplete dose. Immediate clinician verification required before approval.`
         });
         continue;
       }
 
-      // Check unit compatibility
       const firstUnit = entries[0].parsed.unit;
       const allSameUnit = entries.every(e => e.parsed.unit === firstUnit);
 
       if (!allSameUnit) {
         warnings.push({
-          nutrient: ref.nutrient,
+          nutrient: nutrientLabel,
           total_amount_estimated: `UNDETERMINED — INCOMPATIBLE UNITS DETECTED (${entries.map(e => `${e.parsed.representativeDailyValue} ${e.parsed.unit}`).join(' + ')})`,
-          tolerable_upper_limit: `${effectiveUL} ${ref.unit}/day`,
+          tolerable_upper_limit: `${effectiveUL} ${unitLabel}/day`,
           sources: sourceNames,
           severity: 'high',
-          warning_bn: `সতর্কতা: একাধিক উৎস থেকে বিভিন্ন পরিমাপের এককে (${entries.map(e => e.parsed.unit).join(', ')}) ${ref.nutrient} নির্ধারিত হয়েছে। সরাসরি যোগ করা অসম্ভব। ক্লিনিশিয়ান রিভিউ আবশ্যক।`,
-          warning_en: `INCOMPATIBLE UNITS DETECTED: Multiple sources of ${ref.nutrient} contain mismatched units (${entries.map(e => e.parsed.unit).join(', ')}). Manual chemical normalization required.`
+          warning_bn: `সতর্কতা: একাধিক উৎস থেকে বিভিন্ন পরিমাপের এককে (${entries.map(e => e.parsed.unit).join(', ')}) ${nutrientLabel} নির্ধারিত হয়েছে।`,
+          warning_en: `INCOMPATIBLE UNITS DETECTED: Multiple sources of ${nutrientLabel} contain mismatched units (${entries.map(e => e.parsed.unit).join(', ')}). Manual chemical normalization required.`
         });
         continue;
       }
 
-      // Sum compatible units
-      const totalEstimated = entries.reduce((sum, e) => sum + (e.parsed.representativeDailyValue || 0), 0);
+      const totalEstimated = r7Bucket ? r7Bucket.combined_daily : entries.reduce((sum, e) => sum + (e.parsed.representativeDailyValue || 0), 0);
 
-      if (totalEstimated > effectiveUL) {
+      if (effectiveUL !== undefined && totalEstimated > effectiveUL) {
+        const currentPart = r7Bucket ? ` (Current approved: ${r7Bucket.current_approved_daily} + Proposed: ${r7Bucket.proposed_candidate_daily})` : '';
         warnings.push({
-          nutrient: ref.nutrient,
+          nutrient: nutrientLabel,
           total_amount_estimated: `${Math.round(totalEstimated)} ${firstUnit}/day`,
-          tolerable_upper_limit: `${effectiveUL} ${ref.unit}/day`,
+          tolerable_upper_limit: `${effectiveUL} ${unitLabel}/day`,
           sources: sourceNames,
           severity: 'high',
-          warning_bn: `মারাত্মক ওভারল্যাপ: ${ref.nutrient} এর দৈনিক সম্মিলিত মাত্রা (${Math.round(totalEstimated)} ${firstUnit}) নিরাপদ ঊর্ধ্বসীমা (${effectiveUL} ${ref.unit}) অতিক্রম করেছে। ${ref.description_bn}`,
-          warning_en: `TOLERABLE UPPER INTAKE LEVEL (UL) EXCEEDED: Combined estimated daily intake of ${ref.nutrient} (${Math.round(totalEstimated)} ${firstUnit}) exceeds the upper limit of ${effectiveUL} ${ref.unit}/day. ${ref.description_en}`
+          warning_bn: `মারাত্মক ওভারল্যাপ: ${nutrientLabel} এর দৈনিক সম্মিলিত মাত্রা (${Math.round(totalEstimated)} ${firstUnit}) নিরাপদ ঊর্ধ্বসীমা (${effectiveUL} ${unitLabel}) অতিক্রম করেছে।`,
+          warning_en: `TOLERABLE UPPER INTAKE LEVEL (UL) EXCEEDED: Combined estimated daily intake of ${nutrientLabel} (${Math.round(totalEstimated)} ${firstUnit})${currentPart} exceeds the ${lifeStageUL.stageLabel} upper limit of ${effectiveUL} ${unitLabel}/day.`
         });
       } else {
         warnings.push({
-          nutrient: ref.nutrient,
+          nutrient: nutrientLabel,
           total_amount_estimated: `${Math.round(totalEstimated)} ${firstUnit}/day`,
-          tolerable_upper_limit: `${effectiveUL} ${ref.unit}/day`,
+          tolerable_upper_limit: effectiveUL !== undefined ? `${effectiveUL} ${unitLabel}/day` : 'Monitored',
           sources: sourceNames,
           severity: 'medium',
-          warning_bn: `একাধিক উৎস উপস্থিতি: ${entries.length}টি ফর্মুলেশন থেকে সম্মিলিতভাবে আনুমানিক ${Math.round(totalEstimated)} ${firstUnit}/দিন সরবরাহ হচ্ছে (নিরাপদ সীমার মধ্যে)।`,
-          warning_en: `Multi-Source Nutrient Ingestion: ${entries.length} concurrent formulations provide a combined ~${Math.round(totalEstimated)} ${firstUnit}/day (within upper limit).`
+          warning_bn: `একাধিক উৎস উপস্থিতি: ${entries.length}টি ফর্মুলেশন থেকে সম্মিলিতভাবে আনুমানিক ${Math.round(totalEstimated)} ${firstUnit}/দিন সরবরাহ হচ্ছে।`,
+          warning_en: `Multi-Source Nutrient Ingestion: ${entries.length} concurrent formulations provide a combined ~${Math.round(totalEstimated)} ${firstUnit}/day (approved: ${r7Bucket?.current_approved_daily ?? 0}, proposed: ${r7Bucket?.proposed_candidate_daily ?? Math.round(totalEstimated)}).`
         });
       }
     } else {
-      // Single source: check if single dose exceeds UL
       const entry = entries[0];
-      if (!entry.parsed.isUndetermined && entry.parsed.unit === ref.unit && entry.parsed.representativeDailyValue) {
+      if (effectiveUL !== undefined && !entry.parsed.isUndetermined && entry.parsed.unit === unitLabel && entry.parsed.representativeDailyValue) {
         if (entry.parsed.representativeDailyValue > effectiveUL) {
           warnings.push({
-            nutrient: ref.nutrient,
+            nutrient: nutrientLabel,
             total_amount_estimated: `${entry.parsed.representativeDailyValue} ${entry.parsed.unit}/day`,
-            tolerable_upper_limit: `${effectiveUL} ${ref.unit}/day`,
+            tolerable_upper_limit: `${effectiveUL} ${unitLabel}/day`,
             sources: [entry.item.generic_nutrient],
             severity: 'high',
-            warning_bn: `একক ডোজ সতর্কতা: ${entry.item.generic_nutrient} এর নির্ধারিত ডোজ (${entry.parsed.representativeDailyValue} ${ref.unit}) নিরাপদ দৈনিক ঊর্ধ্বসীমা (${effectiveUL} ${ref.unit}) অতিক্রম করেছে।`,
-            warning_en: `EXCESSIVE SINGLE DOSE: Prescribed single item ${entry.item.generic_nutrient} (${entry.parsed.representativeDailyValue} ${ref.unit}/day) exceeds the established UL of ${effectiveUL} ${ref.unit}/day.`
+            warning_bn: `একক ডোজ সতর্কতা: ${entry.item.generic_nutrient} এর নির্ধারিত ডোজ (${entry.parsed.representativeDailyValue} ${unitLabel}) নিরাপদ দৈনিক ঊর্ধ্বসীমা (${effectiveUL} ${unitLabel}) অতিক্রম করেছে।`,
+            warning_en: `EXCESSIVE SINGLE DOSE: Prescribed single item ${entry.item.generic_nutrient} (${entry.parsed.representativeDailyValue} ${unitLabel}/day) exceeds the established ${lifeStageUL.stageLabel} UL of ${effectiveUL} ${unitLabel}/day.`
           });
         }
       }
@@ -343,77 +399,99 @@ export function generateCandidateSupplements(patient: PatientProfile): Supplemen
 
   const catalog = supplementsCatalog as any[];
 
-  // Helper to add from catalog with targeted indication
+  // Helper to add from catalog with targeted indication and honest verification metadata
   const addFromCatalog = (
     catalogId: string, 
     indicationEn: string, 
     indicationBn: string, 
     source: 'dni_auto_candidate' | 'condition_targeted',
     overrideTiming?: string,
-    overrideFood?: FoodRelationship
+    overrideFood?: FoodRelationship,
+    monitoringIndication?: string
   ) => {
     const found = catalog.find(s => s.id === catalogId);
     if (!found) return;
 
     if (items.some(i => i.catalog_id === catalogId)) return; // No duplicates
 
-    items.push({
+    const verification = buildHonestCatalogVerificationMetadata(found.verified_bd_brands);
+    const provisionalItem: SupplementProtocolItem = {
       id: `supp_item_${catalogId}_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       catalog_id: found.id,
+      physical_product_key: found.id,
       generic_nutrient: found.name_en,
       chemical_form: found.category || 'Nutraceutical',
       brand_name: found.verified_bd_brands && found.verified_bd_brands.length > 0 
         ? found.verified_bd_brands[0] 
         : undefined,
-      brand_verification_status: 'verified_bd_market',
+      brand_verification_status: verification.status,
+      brand_verification_metadata: verification.metadata,
       indication_en: indicationEn,
       indication_bn: indicationBn,
       evidence_category: 'evidence_based',
-      total_compound_dose: found.recommended_dose,
+      total_compound_dose: found.recommended_dose || 'UNKNOWN',
+      route: 'oral',
       frequency: 'once_daily',
-      administration_time: overrideTiming || '08:00',
+      administration_time: overrideTiming || 'UNKNOWN',
+      is_timing_unknown: !overrideTiming,
       relationship_to_food: overrideFood || 'with_breakfast',
-      duration_weeks: 12,
-      monitoring_parameters: ['Symptom improvement', 'Follow-up clinical review'],
+      duration_weeks: undefined,
+      monitoring_parameters: ['Symptom improvement', 'Relevant laboratory re-evaluation'],
+      monitoring_indication: monitoringIndication,
       contraindications: found.contraindications || [],
       known_interactions: [],
-      clinician_rationale: `Automated recommendation based on ${source === 'dni_auto_candidate' ? 'medication depletion' : 'clinical condition'}.`,
+      clinician_rationale: `Draft candidate surfaced from ${source === 'dni_auto_candidate' ? 'medication-nutrient review' : 'clinical condition'}. Requires clinician authorization.`,
       approval_status: 'draft_candidate', // Strictly candidate review required!
       source
-    });
+    };
+    provisionalItem.ingredients = extractItemIngredients(provisionalItem);
+    items.push(provisionalItem);
   };
 
-  // 1. DNI Depletion Candidates
+  // 1. DNI Depletion Candidates (qualified, never blanket deficiency diagnosis)
   if (activeMeds.some(m => m.includes('metformin'))) {
-    addFromCatalog(
-      'supp_methyl_b12',
-      'Metformin-induced cellular Vitamin B12 depletion mitigation',
-      'মেটফর্মিন ওষুধ ব্যবহারের কারণে ভিটামিন বি১২ শোষণ হ্রাস রোধ',
-      'dni_auto_candidate',
-      '08:00',
-      'with_breakfast'
-    );
+    const metforminHighOrMissingLab =
+      activeMeds.some(m => m.includes('1000') || m.includes('1500') || m.includes('2000') || m.includes('850')) ||
+      (patient.labs?.vitamin_b12 !== undefined && patient.labs.vitamin_b12 < 300) ||
+      patient.labs?.vitamin_b12 === undefined;
+    if (metforminHighOrMissingLab) {
+      addFromCatalog(
+        'supp_methyl_b12',
+        'Metformin-associated Vitamin B12 monitoring/repletion candidate (verify serum B12)',
+        'মেটফর্মিন ব্যবহারের কারণে ভিটামিন বি১২ পর্যবেক্ষণ ও প্রয়োজনে সাপ্লিমেন্ট প্রার্থী',
+        'dni_auto_candidate',
+        '08:00',
+        'with_breakfast',
+        'Monitoring candidate unless low/borderline B12 (<300 pg/mL) or neuropathy symptoms documented.'
+      );
+    }
   }
 
   if (activeMeds.some(m => m.includes('omeprazole') || m.includes('esomeprazole') || m.includes('pantoprazole') || m.includes('rabeprazole'))) {
     addFromCatalog(
       'supp_magnesium_glycinate',
-      'PPI-induced hypomagnesemia & neuromuscular relaxation',
-      'পিপিআই ওষুধের কারণে ম্যাগনেসিয়াম ঘাটতি পূরণ ও স্নায়ু শিথিলকরণ',
+      'PPI-associated hypomagnesemia risk monitoring candidate',
+      'পিপিআই ওষুধের কারণে ম্যাগনেসিয়াম ঘাটতির ঝুঁকি পর্যবেক্ষণ প্রার্থী',
       'dni_auto_candidate',
       '21:30',
-      'before_bed'
+      'before_bed',
+      'Verify serum Magnesium & renal function (eGFR >= 30) prior to approval.'
     );
   }
 
-  if (activeMeds.some(m => m.includes('statin') || m.includes('atorvastatin') || m.includes('rosuvastatin'))) {
+  // Statin: Do NOT blindly auto-recommend CoQ10 unless fatigue / myalgia / low energy clinical indication exists
+  const hasMuscleOrFatigueConcern =
+    (patient.gut_profile?.energy_score !== undefined && patient.gut_profile.energy_score <= 4) ||
+    (patient.confirmed_conditions || []).some(c => /myalgia|fatigue|sams|fibromyalgia/i.test(c || ''));
+  if (hasMuscleOrFatigueConcern && activeMeds.some(m => m.includes('statin') || m.includes('atorvastatin') || m.includes('rosuvastatin'))) {
     addFromCatalog(
       'supp_coq10',
-      'Statin HMG-CoA reductase inhibition CoQ10 depletion support',
-      'স্ট্যাটিন ওষুধের কারণে কো-এনজাইম কিউ১০ ঘাটতি ও পেশির ক্লান্তি রোধ',
+      'Conditional CoQ10 trial consideration for symptomatic fatigue/myalgia on statin therapy',
+      'স্ট্যাটিন থেরাপিতে পেশির দুর্বলতা বা ক্লান্তি থাকলে শর্তসাপেক্ষ CoQ10 পর্যালোচনা',
       'dni_auto_candidate',
       '13:30',
-      'with_fatty_meal'
+      'with_fatty_meal',
+      'Trial evidence mixed for routine prophylaxis; clinician review required.'
     );
   }
 

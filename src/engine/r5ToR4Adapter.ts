@@ -247,57 +247,147 @@ export function adaptR5ContextToR4(
     requires_reapproval: isApproved
   });
 
-  // 4. Candidate Supplements Generation (strictly draft_candidate!)
+  // 4. Candidate Supplements Generation (strictly draft_candidate & lab/symptom-qualified!)
   const updatedSupplements: SupplementProtocolItem[] = [];
+  const activeMedsOnly = (r5Context.medications || []).filter(
+    m =>
+      !m.is_historical &&
+      m.status !== 'discontinued' &&
+      m.status !== 'historical' &&
+      m.status !== 'completed' &&
+      m.status !== 'held'
+  );
 
-  const hasStatin = r5Context.medications.some(m => (m.generic_name || '').toLowerCase().includes('statin'));
-  if (hasStatin) {
+  const activeStatin = activeMedsOnly.find(m => (m.generic_name || '').toLowerCase().includes('statin'));
+  if (activeStatin) {
+    const hasMyalgiaOrMuscleSymptoms =
+      (activeStatin.adverse_effects_reported || []).some(ae =>
+        /myalgia|muscle|cramp|weakness|sams|fatigue/i.test(ae || '')
+      ) ||
+      (r5Context.functional_findings || []).some(
+        f => f.domain === 'energy' && f.confidence_status === 'confirmed_clinical'
+      );
+
     updatedSupplements.push({
       id: 'SUPP_COQ10_STATIN',
+      physical_product_key: 'supp_coq10_ubiquinol::100mg',
       generic_nutrient: 'Coenzyme Q10 (Ubiquinol)',
       chemical_form: 'Ubiquinol',
       brand_verification_status: 'generic_prescription_only',
-      indication_en: 'Support mitochondrial energy and attenuate statin-associated muscle symptoms.',
-      indication_bn: 'মাইটোকন্ড্রিয়ার শক্তি বৃদ্ধি ও স্ট্যাটিনজনিত পেশীর ব্যথা উপশমে সহায়ক।',
-      evidence_category: 'clinical_guideline',
+      brand_verification_metadata: {
+        product_identity_verified: false,
+        formulation_verified: false,
+        regulatory_status: 'unverified',
+        retail_availability_status: 'not_checked'
+      },
+      ingredients: [
+        {
+          nutrient_id: 'coq10',
+          nutrient_name: 'Coenzyme Q10 (Ubiquinol)',
+          chemical_form: 'Ubiquinol',
+          elemental_amount_per_unit: 100,
+          amount_unit: 'mg',
+          prescribed_units_per_dose: 1,
+          compound_amount_text: '100 mg',
+          is_standardized: true,
+          is_elemental_known: true
+        }
+      ],
+      indication_en: hasMyalgiaOrMuscleSymptoms
+        ? 'Conditional CoQ10 trial for documented statin-associated muscle symptoms / fatigue.'
+        : 'Optional monitoring consideration on statin therapy (evidence inconclusive for routine asymptomatic prophylaxis).',
+      indication_bn: hasMyalgiaOrMuscleSymptoms
+        ? 'স্ট্যাটিনজনিত পেশির ব্যথা বা দুর্বলতায় ক্লিনিক্যাল পর্যালোচনার সাপেক্ষে সহায়ক।'
+        : 'স্ট্যাটিন থেরাপিতে ঐচ্ছিক পর্যবেক্ষণ প্রার্থী (উপসর্গ না থাকলে নিয়মিত ব্যবহারের প্রমাণ মিশ্র)।',
+      evidence_category: hasMyalgiaOrMuscleSymptoms ? 'clinical_guideline' : 'review_required',
       elemental_dose_numeric: 100,
       elemental_dose_unit: 'mg',
       total_compound_dose: '100 mg',
+      route: 'oral',
       frequency: 'once_daily',
       administration_time: '12:00',
       relationship_to_food: 'with_lunch',
-      duration_weeks: 12,
-      monitoring_parameters: ['Muscle soreness', 'Fatigue levels'],
+      duration_weeks: hasMyalgiaOrMuscleSymptoms ? 12 : undefined,
+      monitoring_parameters: ['Statin-associated muscle symptoms (SAMS)', 'CK if symptomatic'],
+      monitoring_indication: hasMyalgiaOrMuscleSymptoms
+        ? 'Conditional symptom-supported trial; review response at 8-12 weeks.'
+        : 'monitoring_consideration_inconclusive_evidence: Do not treat as confirmed CoQ10 deficiency or approve routinely without myalgia/symptom review.',
+      clinician_rationale: hasMyalgiaOrMuscleSymptoms
+        ? 'Muscle/energy symptoms documented alongside active statin.'
+        : 'Optional monitoring consideration only; routine primary CoQ10 prophylaxis evidence remains mixed.',
       contraindications: [],
-      known_interactions: ['Warfarin (mild reduction in INR)'],
+      known_interactions: ['Warfarin (monitor INR closely)'],
+      linked_dni_rule_ids: ['DNI_STATIN_COQ10'],
       approval_status: 'draft_candidate',
       source: 'dni_auto_candidate'
     });
   }
 
-  const hasMetformin = r5Context.medications.some(m => (m.generic_name || '').toLowerCase().includes('metformin'));
-  if (hasMetformin) {
-    updatedSupplements.push({
-      id: 'SUPP_B12_METFORMIN',
-      generic_nutrient: 'Vitamin B12 (Methylcobalamin)',
-      chemical_form: 'Methylcobalamin',
-      brand_verification_status: 'generic_prescription_only',
-      indication_en: 'Prevent metformin-induced ileal vitamin B12 malabsorption and peripheral neuropathy.',
-      indication_bn: 'মেটফরমিনজনিত ভিটামিন বি১২ শোষণের ঘাটতি এবং স্নায়ুর দুর্বলতা প্রতিরোধে সহায়ক।',
-      evidence_category: 'evidence_based',
-      elemental_dose_numeric: 1000,
-      elemental_dose_unit: 'mcg',
-      total_compound_dose: '1000 mcg',
-      frequency: 'once_daily',
-      administration_time: '08:00',
-      relationship_to_food: 'empty_stomach_waking',
-      duration_weeks: 12,
-      monitoring_parameters: ['Serum Vitamin B12', 'CBC / MCV'],
-      contraindications: [],
-      known_interactions: [],
-      approval_status: 'draft_candidate',
-      source: 'dni_auto_candidate'
-    });
+  const activeMetformin = activeMedsOnly.find(m => (m.generic_name || '').toLowerCase().includes('metformin'));
+  if (activeMetformin) {
+    const labB12 = (r5Context as any).r7_lab_summary?.evaluations_by_marker?.vitamin_b12;
+    const isB12RepleteNormal =
+      labB12?.reference_interval_status === 'normal' &&
+      (!labB12?.exploratory_zone_status || labB12.exploratory_zone_status === 'within_functional_zone');
+
+    if (isB12RepleteNormal) {
+      alertsEn.push(
+        'Metformin active: Serum Vitamin B12 is within normal/optimal limits; continue periodic annual B12 monitoring rather than initiating high-dose B12 repletion.'
+      );
+      alertsBn.push(
+        'মেটফর্মিন চালু আছে: ভিটামিন বি১২ স্বাভাবিক সীমায় রয়েছে; উচ্চ মাত্রার বি১২ শুরু করার পরিবর্তে নিয়মিত বার্ষিক ল্যাব পর্যবেক্ষণ চালিয়ে যান।'
+      );
+    } else {
+      updatedSupplements.push({
+        id: 'SUPP_B12_METFORMIN',
+        physical_product_key: 'supp_methylcobalamin_b12::1000mcg',
+        generic_nutrient: 'Vitamin B12 (Methylcobalamin)',
+        chemical_form: 'Methylcobalamin',
+        brand_verification_status: 'generic_prescription_only',
+        brand_verification_metadata: {
+          product_identity_verified: false,
+          formulation_verified: false,
+          regulatory_status: 'unverified',
+          retail_availability_status: 'not_checked'
+        },
+        ingredients: [
+          {
+            nutrient_id: 'vitamin_b12',
+            nutrient_name: 'Vitamin B12 (Methylcobalamin)',
+            chemical_form: 'Methylcobalamin',
+            elemental_amount_per_unit: 1000,
+            amount_unit: 'mcg',
+            prescribed_units_per_dose: 1,
+            compound_amount_text: '1000 mcg',
+            is_standardized: true,
+            is_elemental_known: true
+          }
+        ],
+        indication_en: labB12
+          ? 'Lab-supported Vitamin B12 repletion consideration on Metformin therapy.'
+          : 'Monitoring candidate: check serum Vitamin B12 before/during chronic Metformin therapy to prevent ileal B12 malabsorption.',
+        indication_bn: 'মেটফর্মিনজনিত ভিটামিন বি১২ শোষণ হ্রাস পর্যবেক্ষণ ও প্রয়োজনে সংশোধনে সহায়ক।',
+        evidence_category: 'evidence_based',
+        elemental_dose_numeric: 1000,
+        elemental_dose_unit: 'mcg',
+        total_compound_dose: '1000 mcg',
+        route: 'sublingual',
+        frequency: 'once_daily',
+        administration_time: '08:00',
+        relationship_to_food: 'empty_stomach_waking',
+        duration_weeks: 12,
+        monitoring_parameters: ['Serum Vitamin B12', 'Homocysteine', 'CBC / MCV'],
+        monitoring_indication: labB12
+          ? `Lab-supported Vitamin B12 abnormality (${labB12.reference_interval_status}).`
+          : 'Baseline serum B12 not yet documented — verify B12 level and clinician need.',
+        contraindications: [],
+        known_interactions: [],
+        linked_lab_marker_ids: ['vitamin_b12', 'homocysteine', 'mcv'],
+        linked_dni_rule_ids: ['DNI_METFORMIN_B12'],
+        approval_status: 'draft_candidate',
+        source: 'dni_auto_candidate'
+      });
+    }
   }
 
   if (updatedSupplements.length > 0) {

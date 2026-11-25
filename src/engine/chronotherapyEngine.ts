@@ -356,14 +356,20 @@ export function buildChronotherapyTimeline(
         }
       }
 
-      // Rule B: Bisphosphonates (Alendronate / Fosamax / Bonviva)
-      const isItem1Bisphos = item1.category === 'medication' && medMatches(item1.title_en, ['alendronate', 'fosamax', 'risedronate', 'ibandronate', 'bonviva']);
-      const isItem2Bisphos = item2.category === 'medication' && medMatches(item2.title_en, ['alendronate', 'fosamax', 'risedronate', 'ibandronate', 'bonviva']);
+      // Rule B: Oral Bisphosphonates (Alendronate / Risedronate / Oral Ibandronate) — excluded for IV formulations
+      const isItem1OralBisphos =
+        item1.category === 'medication' &&
+        medMatches(item1.title_en, ['alendronate', 'fosamax', 'risedronate', 'ibandronate', 'bonviva']) &&
+        !medMatches(item1.title_en, ['iv ', 'intravenous', 'infusion', 'zoledronate']);
+      const isItem2OralBisphos =
+        item2.category === 'medication' &&
+        medMatches(item2.title_en, ['alendronate', 'fosamax', 'risedronate', 'ibandronate', 'bonviva']) &&
+        !medMatches(item2.title_en, ['iv ', 'intravenous', 'infusion', 'zoledronate']);
 
-      if (isItem1Bisphos || isItem2Bisphos) {
-        const other = isItem1Bisphos ? item2 : item1;
-        const bisphos = isItem1Bisphos ? item1 : item2;
-        if (gapHours < 1.0 && (other.category === 'supplement' || other.category === 'medication' || other.category === 'meal')) {
+      if (isItem1OralBisphos || isItem2OralBisphos) {
+        const other = isItem1OralBisphos ? item2 : item1;
+        const bisphos = isItem1OralBisphos ? item1 : item2;
+        if (isTimingKnown && gapHours < 1.0 && (other.category === 'supplement' || other.category === 'medication' || other.category === 'meal')) {
           const warning: ChronoSpacingWarning = {
             rule_id: 'RULE_BISPHOSPHONATE_SPACING',
             severity: 'critical',
@@ -395,21 +401,33 @@ export function buildChronotherapyTimeline(
         }
       }
 
-      // Rule C: Antibiotic vs Probiotic Spacing
-      const isItem1Abx = item1.category === 'medication' && medMatches(item1.title_en, ['amoxicillin', 'azithromycin', 'ciprofloxacin', 'cefixime', 'augmentin', 'metronidazole', 'doxycycline']);
-      const isItem2Abx = item2.category === 'medication' && medMatches(item2.title_en, ['amoxicillin', 'azithromycin', 'ciprofloxacin', 'cefixime', 'augmentin', 'metronidazole', 'doxycycline']);
-      const isItem1Probiotic = item1.category === 'supplement' && medMatches(item1.title_en, ['probiotic', 'lactobacillus', 'bifidobacterium', 'saccharomyces']);
-      const isItem2Probiotic = item2.category === 'supplement' && medMatches(item2.title_en, ['probiotic', 'lactobacillus', 'bifidobacterium', 'saccharomyces']);
+      // Rule C: Oral Antibacterial Antibiotic vs Bacterial Probiotic Spacing (yeast Saccharomyces boulardii is intrinsically resistant to antibacterials)
+      const isItem1Abx =
+        item1.category === 'medication' &&
+        medMatches(item1.title_en, ['amoxicillin', 'azithromycin', 'ciprofloxacin', 'cefixime', 'augmentin', 'metronidazole', 'doxycycline', 'levofloxacin']) &&
+        !medMatches(item1.title_en, ['topical', 'eye drop', 'ear drop']);
+      const isItem2Abx =
+        item2.category === 'medication' &&
+        medMatches(item2.title_en, ['amoxicillin', 'azithromycin', 'ciprofloxacin', 'cefixime', 'augmentin', 'metronidazole', 'doxycycline', 'levofloxacin']) &&
+        !medMatches(item2.title_en, ['topical', 'eye drop', 'ear drop']);
+      const isItem1BacterialProbiotic =
+        item1.category === 'supplement' &&
+        medMatches(item1.title_en, ['probiotic', 'lactobacillus', 'bifidobacterium']) &&
+        !medMatches(item1.title_en, ['boulardii']);
+      const isItem2BacterialProbiotic =
+        item2.category === 'supplement' &&
+        medMatches(item2.title_en, ['probiotic', 'lactobacillus', 'bifidobacterium']) &&
+        !medMatches(item2.title_en, ['boulardii']);
 
-      if ((isItem1Abx && isItem2Probiotic) || (isItem2Abx && isItem1Probiotic)) {
-        if (gapHours < 2.0) {
+      if ((isItem1Abx && isItem2BacterialProbiotic) || (isItem2Abx && isItem1BacterialProbiotic)) {
+        if (isTimingKnown && gapHours < 2.0) {
           const abx = isItem1Abx ? item1 : item2;
           const prob = isItem1Abx ? item2 : item1;
           const warning: ChronoSpacingWarning = {
             rule_id: 'RULE_ANTIBIOTIC_PROBIOTIC_SPACING',
             severity: 'high',
-            message_en: `Probiotics must be taken at least 2 hours apart from antibiotics to prevent antibiotic neutralization of probiotic strains. Current gap: ${gapHours}h.`,
-            message_bn: `অ্যান্টিবায়োটিকের কার্যকারিতায় প্রোবায়োটিক ধ্বংস রোধে উভয়ের মাঝে কমপক্ষে ২ ঘণ্টার ব্যবধান রাখুন।`,
+            message_en: `Bacterial probiotics must be taken at least 2 hours apart from antibacterial antibiotics to prevent strain inactivation. Current gap: ${gapHours}h.`,
+            message_bn: `অ্যান্টিবায়োটিকের কার্যকারিতায় ব্যাকটেরিয়াল প্রোবায়োটিক ধ্বংস রোধে উভয়ের মাঝে কমপক্ষে ২ ঘণ্টার ব্যবধান রাখুন।`,
             required_gap_hours: 2.0,
             actual_gap_hours: gapHours
           };
@@ -436,6 +454,54 @@ export function buildChronotherapyTimeline(
         }
       }
 
+      // Rule C2: Oral Fluoroquinolone / Tetracycline vs Polyvalent Mineral Chelation (Ca, Fe, Mg, Zn)
+      const isItem1ChelatedAbx =
+        item1.category === 'medication' &&
+        medMatches(item1.title_en, ['ciprofloxacin', 'levofloxacin', 'moxifloxacin', 'doxycycline', 'tetracycline', 'minocycline']) &&
+        !medMatches(item1.title_en, ['iv ', 'intravenous', 'topical', 'eye drop']);
+      const isItem2ChelatedAbx =
+        item2.category === 'medication' &&
+        medMatches(item2.title_en, ['ciprofloxacin', 'levofloxacin', 'moxifloxacin', 'doxycycline', 'tetracycline', 'minocycline']) &&
+        !medMatches(item2.title_en, ['iv ', 'intravenous', 'topical', 'eye drop']);
+      const isItem1ChelationMineral =
+        item1.category === 'supplement' && medMatches(item1.title_en, ['calcium', 'iron', 'ferrous', 'magnesium', 'zinc']);
+      const isItem2ChelationMineral =
+        item2.category === 'supplement' && medMatches(item2.title_en, ['calcium', 'iron', 'ferrous', 'magnesium', 'zinc']);
+
+      if ((isItem1ChelatedAbx && isItem2ChelationMineral) || (isItem2ChelatedAbx && isItem1ChelationMineral)) {
+        if (isTimingKnown && gapHours < 2.0) {
+          const abx = isItem1ChelatedAbx ? item1 : item2;
+          const minItem = isItem1ChelatedAbx ? item2 : item1;
+          const warning: ChronoSpacingWarning = {
+            rule_id: 'RULE_ANTIBIOTIC_MINERAL_CHELATION',
+            severity: 'critical',
+            message_en: `Oral ${abx.title_en} binds ${minItem.title_en} cations causing antibiotic malabsorption. Separate by >=2-4 hours (current gap: ${gapHours}h).`,
+            message_bn: `${abx.title_bn} এবং ${minItem.title_bn} একসাথে নিলে চিলেশনের কারণে ওষুধের শোষণ কমে যায়। কমপক্ষে ২-৪ ঘণ্টার ব্যবধান রাখুন।`,
+            required_gap_hours: 2.0,
+            actual_gap_hours: gapHours
+          };
+          item1.collision_detected = true;
+          item2.collision_detected = true;
+          item1.spacing_warnings = item1.spacing_warnings || [];
+          item2.spacing_warnings = item2.spacing_warnings || [];
+          item1.spacing_warnings.push(warning);
+          item2.spacing_warnings.push(warning);
+          conflicts.push({
+            item1_title: abx.title_en,
+            item2_title: minItem.title_en,
+            time1: abx.time,
+            time2: minItem.time,
+            min_interval_hours: 2.0,
+            actual_interval_hours: gapHours,
+            severity: 'critical',
+            warning_en: warning.message_en,
+            warning_bn: warning.message_bn,
+            recommendation_en: `Separate ${minItem.title_en} at least 2-4 hours away from ${abx.title_en}.`,
+            recommendation_bn: `${minItem.title_bn} এবং ${abx.title_bn}-এর মধ্যে কমপক্ষে ২-৪ ঘণ্টা বিরতি রাখুন।`
+          });
+        }
+      }
+
       // Rule D: Calcium vs Iron Spacing (Competitive DMT1 transporter inhibition)
       const isItem1Iron = item1.category === 'supplement' && medMatches(item1.title_en, ['iron', 'ferrous', 'carbonyl iron', 'bisglycinate iron']);
       const isItem2Iron = item2.category === 'supplement' && medMatches(item2.title_en, ['iron', 'ferrous', 'carbonyl iron', 'bisglycinate iron']);
@@ -443,7 +509,7 @@ export function buildChronotherapyTimeline(
       const isItem2Cal = item2.category === 'supplement' && medMatches(item2.title_en, ['calcium', 'caltrate']);
 
       if ((isItem1Iron && isItem2Cal) || (isItem2Iron && isItem1Cal)) {
-        if (gapHours < 2.0) {
+        if (isTimingKnown && gapHours < 2.0) {
           const iron = isItem1Iron ? item1 : item2;
           const cal = isItem1Iron ? item2 : item1;
           const warning: ChronoSpacingWarning = {

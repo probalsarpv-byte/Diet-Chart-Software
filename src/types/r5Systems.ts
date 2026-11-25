@@ -312,6 +312,14 @@ export interface MedicationNutritionRule {
   drug_category: 'diabetes_endocrine' | 'cardiovascular_renal' | 'psychiatric_neurological' | 'gastrointestinal' | 'antimicrobial_immune' | 'oncology_metabolic';
   generic_patterns: string[];
   severity: DrugNutritionSeverity;
+  affected_nutrient_ids?: string[];
+  interaction_mechanism?: string;
+  route_applicability?: string[];
+  timing_requirements?: string;
+  relevant_lab_markers?: string[];
+  evidence_grade?: 'A' | 'B' | 'C' | 'D';
+  rule_version?: string;
+  evidence_id?: string;
   trigger_criteria_en: string;
   trigger_criteria_bn: string;
   nutritional_consequence_en: string;
@@ -338,6 +346,24 @@ export interface DrugNutrientFinding {
   required_action_bn: string;
   evidence_source: string;
   affected_nutrients: string[];
+  affected_nutrient_ids?: string[];
+  relevant_lab_markers?: string[];
+  relevant_labs_status?: 'missing' | 'normal' | 'borderline_or_low' | 'elevated' | 'not_applicable';
+  intervention_state?:
+    | 'monitoring_consideration'
+    | 'lab_supported_abnormality'
+    | 'candidate_intervention'
+    | 'clinician_approved'
+    | 'contraindicated'
+    | 'historical_only';
+  monitoring_indication?: string;
+  evidence_grade?: 'A' | 'B' | 'C' | 'D';
+  evidence_id?: string;
+  rule_version?: string;
+  drug_status?: R5MedicationStatus;
+  source_verification_status?: R5MedicationRecord['verification_status'];
+  route?: string;
+  is_active_administration?: boolean;
 }
 
 // ── 8. Multimorbidity Conflict Priority Resolution ──────────────────

@@ -128,6 +128,7 @@ import { resolveMultimorbidityConflicts } from '@/engine/r5MultimorbidityEngine'
 import { analyzeInsulinRegimen } from '@/engine/r5InsulinEngine';
 import { evaluateMedicationNutritionInteractions } from '@/engine/r5MedicationNutritionEngine';
 import { adaptR5ContextToR4 } from '@/engine/r5ToR4Adapter';
+import { evaluateR7LaboratoryIntelligence } from '@/engine/r7/biomarkerIntelligence';
 
 export function generateCollisionResistantId(prefix: string): string {
   return generateEntityId(prefix);
@@ -1236,14 +1237,25 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }));
   }, [invalidateP2Approval]);
 
-  // Phase R5: Reactive Nutrition Adjustment Contract (Clinical Intelligence → Diet Engine Bridge)
+  // Phase R5 + R7: Reactive Nutrition Adjustment Contract (Clinical Intelligence → Diet Engine Bridge)
   const r5NutritionContract = useMemo((): R5NutritionAdjustmentContract => {
     const pathwayIds = r5Pathways?.selected_pathways || [];
     const contraindications: R5NutritionAdjustmentContract['absolute_contraindications'] = [];
     const cautions: R5NutritionAdjustmentContract['conditional_cautions'] = [];
 
-    // 1. DNI Hard Stops & High-Risk Interventions
-    const dni = evaluateMedicationNutritionInteractions(r5Medications || []);
+    const activeVisitIdForLabs = patient.current_visit_id || currentVisit?.visit_id || currentVisit?.id;
+    const labAssessmentKey = patient?.id ? `shuddho_assessment_${patient.id}_${activeVisitIdForLabs || 'default_visit'}` : '';
+    const storedAssessmentLabs = labAssessmentKey ? safeStorage.getItem<any>(labAssessmentKey)?.labEntries : undefined;
+    const r7LabSummary = evaluateR7LaboratoryIntelligence({
+      patient,
+      visitId: activeVisitIdForLabs,
+      structuredEntries: storedAssessmentLabs
+    });
+
+    // 1. DNI Hard Stops & High-Risk Interventions (lab-qualified in R7)
+    const dni = evaluateMedicationNutritionInteractions(r5Medications || [], patient, {
+      labSummary: r7LabSummary
+    });
     for (const d of dni) {
       if (d.severity === 'critical_hard_stop') {
         contraindications.push({
@@ -1268,8 +1280,14 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     let sodiumLimit: number | undefined = undefined;
 
     const labsAny = (patient.labs || {}) as any;
-    const serumK = extractLabNumericValue(labsAny.serum_potassium ?? labsAny.potassium) ?? 0;
-    const egfr = extractLabNumericValue(labsAny.egfr) ?? 100;
+    const serumK =
+      r7LabSummary.observations.serum_potassium?.normalized_value ??
+      extractLabNumericValue(labsAny.serum_potassium ?? labsAny.potassium) ??
+      0;
+    const egfr =
+      r7LabSummary.observations.egfr?.normalized_value ??
+      extractLabNumericValue(labsAny.egfr) ??
+      100;
 
     const clinicalReviewFlags: Array<{
       parameter: string;
@@ -1328,6 +1346,25 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         clinician_review_required: true,
         affected_diet_components: ['high_potassium_foods', 'fluid_intake']
       });
+    } else if (r7LabSummary.blocks_patient_release) {
+      const topCritical = r7LabSummary.critical_findings[0];
+      acuteEscalation = {
+        required: true,
+        trigger: topCritical ? `R7_${topCritical.canonical_marker_id.toUpperCase()}_SAFETY_GATE` : 'R7_LAB_SAFETY_GATE',
+        priority: topCritical?.category === 'urgent_verification_required' ? 'HIGH_REVIEW' : 'CRITICAL_URGENT',
+        message_en: r7LabSummary.blocking_reasons_en.join(' | '),
+        message_bn: r7LabSummary.blocking_reasons_bn.join(' | '),
+        block_release: true
+      };
+      for (const cf of r7LabSummary.critical_findings) {
+        clinicalReviewFlags.push({
+          parameter: cf.canonical_marker_id,
+          flag: cf.category === 'urgent_verification_required' ? 'CLINICAL_REVIEW_REQUIRED' : 'HARD_CONTRAINDICATION',
+          rationale_en: cf.action_required_en,
+          rationale_bn: cf.action_required_bn,
+          evidence_status: cf.verification_status === 'clinician_verified' || cf.verification_status === 'lab_document_reviewed' ? 'LAB_SUPPORTED' : 'CLINICAL_REVIEW_REQUIRED'
+        });
+      }
     }
 
     const patientPrescriptions = (patient as any).prescriptions;
@@ -1732,6 +1769,26 @@ export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         is_diet_plan_dirty: true,
         assessment_last_updated_at: new Date().toISOString()
       };
+    });
+
+    // R7-D: Safety-relevant laboratory updates invalidate prior approved R4 supplement/lifestyle protocols
+    setR4Protocol(prevProto => {
+      if (prevProto && (prevProto.is_approved || prevProto.status === 'active')) {
+        return {
+          ...prevProto,
+          is_approved: false,
+          status: 'draft',
+          approved_by: undefined,
+          approved_at: undefined,
+          invalidated_at: new Date().toISOString(),
+          previous_approved_version: prevProto.version,
+          approval_notes:
+            (prevProto.approval_notes ? prevProto.approval_notes + ' | ' : '') +
+            'Invalidated due to laboratory biomarker modification; requires clinician re-evaluation.',
+          approval_metadata: undefined
+        } as R4ProtocolStudioData;
+      }
+      return prevProto;
     });
   }, [applyCalculations, invalidateP2Approval]);
 
@@ -2775,6 +2832,11 @@ function createTypedPlanningContextFallback(
     const labEntries = persistedAssessment?.labEntries || patient.labs || {};
     const ffqHabits = persistedAssessment?.ffqHabits;
 
+    const r7LabSummary = evaluateR7LaboratoryIntelligence({
+      patient,
+      visitId: targetVisitId,
+      structuredEntries: persistedAssessment?.labEntries
+    });
     const matrixInput = adaptAssessmentEvidenceToMatrixInput(
       patient,
       assessmentAnswers,
@@ -2783,8 +2845,9 @@ function createTypedPlanningContextFallback(
       r5Pathways.selected_pathways,
       r5Medications
     );
+    (matrixInput as any).r7_lab_summary = r7LabSummary;
     const matrix = evaluateFunctionalMatrix(matrixInput);
-    const graph = buildSystemsNetworkGraph(matrix, r5Pathways.selected_pathways, r5Medications);
+    const graph = buildSystemsNetworkGraph(matrix, r5Pathways.selected_pathways, r5Medications, r7LabSummary);
     const conflicts = resolveMultimorbidityConflicts({
       pathway_ids: r5Pathways.selected_pathways,
       medications: r5Medications,
@@ -2792,9 +2855,9 @@ function createTypedPlanningContextFallback(
       is_on_dialysis: Boolean((patient as any).is_on_dialysis)
     });
     const insulin = analyzeInsulinRegimen(r5Medications);
-    const dni = evaluateMedicationNutritionInteractions(r5Medications);
+    const dni = evaluateMedicationNutritionInteractions(r5Medications, patient, { labSummary: r7LabSummary });
 
-    const payload: R5ClinicalContextPayload = {
+    const payload: R5ClinicalContextPayload & { r7_lab_summary?: any } = {
       population: pop,
       pathways: r5Pathways,
       functional_findings: Object.values(matrix.domains).flat(),
@@ -2803,6 +2866,7 @@ function createTypedPlanningContextFallback(
       dni_findings: dni,
       multimorbidity_resolutions: conflicts,
       systems_graph: graph,
+      r7_lab_summary: r7LabSummary,
       stale_r4_sections: [],
       generated_at: new Date().toISOString()
     };

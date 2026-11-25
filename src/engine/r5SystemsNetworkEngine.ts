@@ -24,6 +24,9 @@ import {
   ExpandedClinicalPathwayId,
   R5MedicationRecord
 } from '../types/r5Systems';
+import { R7LabIntelligenceSummary } from '../types/r7Laboratory';
+import { evaluateR7LaboratoryIntelligence } from './r7/biomarkerIntelligence';
+import { normalizeSingleLabEntry } from './r7/labFoundation';
 
 export interface MatrixEvaluationInput {
   pathway_ids: ExpandedClinicalPathwayId[];
@@ -272,7 +275,7 @@ export interface NormalizedLabRecord {
 
 /**
  * Normalizes mixed raw laboratory entries (plain numbers, strings, or StructuredLabEntry objects)
- * into a typed, consistent lookup structure.
+ * into a typed, consistent lookup structure using R7 analyte-specific canonical unit conversion.
  */
 export function normalizeStructuredLabEntries(
   rawLabs: Record<string, any>
@@ -287,18 +290,44 @@ export function normalizeStructuredLabEntries(
       const unit = typeof rawEntry === 'object' ? rawEntry.unit : undefined;
       const status = typeof rawEntry === 'object' ? rawEntry.status : undefined;
       const date = typeof rawEntry === 'object' ? rawEntry.test_date : undefined;
+      const isStructured = typeof rawEntry === 'object' && ('marker_id' in rawEntry || 'unit' in rawEntry);
+      const r7Obs = isStructured
+        ? normalizeSingleLabEntry({
+            marker_id: rawEntry.marker_id || key,
+            category: rawEntry.category || 'glycemic',
+            name_en: rawEntry.name_en || key,
+            name_bn: rawEntry.name_bn || key,
+            status: status || 'previously_tested',
+            unit: unit || '',
+            numeric_value: num,
+            original_value: rawEntry.original_value ?? num,
+            original_unit: rawEntry.original_unit ?? unit,
+            test_date: date,
+            verification_status: rawEntry.verification_status
+          } as any)
+        : undefined;
+
+      const resolvedVal = r7Obs?.normalized_value !== undefined ? r7Obs.normalized_value : num;
+      const resolvedUnit = r7Obs?.canonical_unit || unit;
       const isAbnormal = status === 'abnormal' || status === 'critical' || Boolean(typeof rawEntry === 'object' && rawEntry.is_abnormal);
-      normalized[key] = {
-        value: num,
-        unit,
+
+      const rec: NormalizedLabRecord = {
+        value: resolvedVal,
+        unit: resolvedUnit,
         status,
         test_date: date,
         is_abnormal: isAbnormal
       };
+      normalized[key] = rec;
+      if (r7Obs?.canonical_marker_id && !normalized[r7Obs.canonical_marker_id]) {
+        normalized[r7Obs.canonical_marker_id] = rec;
+      }
       if (key === 'serum_potassium' && !normalized.potassium) normalized.potassium = normalized[key];
       if (key === 'potassium' && !normalized.serum_potassium) normalized.serum_potassium = normalized[key];
       if (key === 'hs_crp' && !normalized.crp) normalized.crp = normalized[key];
       if (key === 'fasting_blood_glucose' && !normalized.fasting_glucose) normalized.fasting_glucose = normalized[key];
+      if (key === 'fbs' && !normalized.fasting_glucose) normalized.fasting_glucose = normalized[key];
+      if (key === 'sgpt_alt' && !normalized.alt) normalized.alt = normalized[key];
     }
   }
   return normalized;
@@ -982,6 +1011,93 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
     atm.antecedents.push(antObsQ);
   }
 
+  // R7-D: Canonical Biomarker & Multi-System Intelligence Integration
+  // Normal labs NEVER inject false dysfunction; unverified observations NEVER promote to verified facts;
+  // abnormal / threshold-meeting biomarkers populate across ALL affected physiological systems with observation_id provenance.
+  const r7Summary: R7LabIntelligenceSummary | undefined =
+    (input as any).r7_lab_summary ||
+    (input.lab_entries && Object.keys(input.lab_entries).length > 0
+      ? evaluateR7LaboratoryIntelligence({
+          patient: {
+            id: input.patient_id || 'temp_matrix_pt',
+            age: (input as any).age ?? 35,
+            gender: (input as any).sex || 'unspecified',
+            population_group: (input as any).population_group
+          } as any,
+          visitId: input.visit_id,
+          structuredEntries: input.lab_entries
+        })
+      : undefined);
+
+  if (r7Summary) {
+    for (const evalItem of r7Summary.evaluations) {
+      const obs = evalItem.observation;
+      const isAbnormalRef =
+        evalItem.reference_status === 'below_reference_interval' ||
+        evalItem.reference_status === 'above_reference_interval' ||
+        evalItem.reference_status === 'critical_low' ||
+        evalItem.reference_status === 'critical_high';
+      const isDecisionMet = Boolean(evalItem.layer2_decision_threshold?.met);
+      const isOutsideExploratory = evalItem.exploratory_functional_status === 'outside_exploratory_zone';
+
+      // Guardrail D01: Normal within-range & non-threshold labs must NOT trigger dysfunction findings!
+      if (!isAbnormalRef && !isDecisionMet && !isOutsideExploratory) {
+        continue;
+      }
+
+      const isVerified =
+        obs.verification_status === 'clinician_verified' ||
+        obs.verification_status === 'lab_document_reviewed';
+
+      const targetDomains: FunctionalMatrixDomain[] =
+        evalItem.related_systems && evalItem.related_systems.length > 0
+          ? evalItem.related_systems
+          : ['communication'];
+
+      const atmCategory: ATMType = isAbnormalRef || isDecisionMet ? 'mediator' : 'trigger';
+      const valDisplay = `${obs.normalized_value ?? obs.original_value ?? '—'} ${obs.canonical_unit || obs.original_unit || ''}`.trim();
+
+      for (const dom of targetDomains) {
+        if (!domains[dom]) continue;
+        // Avoid duplicating legacy entry if same observation already recorded in domain
+        if (domains[dom].some(existing => existing.observation_id === obs.observation_id || existing.id === `R7_${obs.observation_id}_${dom}`)) {
+          continue;
+        }
+        const fObs: FunctionalObservation = {
+          id: `R7_${obs.observation_id}_${dom}`,
+          observation_id: obs.observation_id,
+          patient_id: input.patient_id,
+          visit_id: input.visit_id,
+          domain: dom,
+          clinical_domain: evalItem.panel,
+          observation_type: 'biomarker',
+          atm_type: atmCategory,
+          title_en: `${evalItem.marker_label_en}: ${valDisplay} (${isAbnormalRef || isDecisionMet ? evalItem.reference_status.replace(/_/g, ' ') : 'exploratory context'})`,
+          title_bn: `${evalItem.marker_label_bn}: ${valDisplay}`,
+          description_en: evalItem.insight_en,
+          description_bn: evalItem.insight_bn,
+          confidence_status: !isVerified
+            ? 'PATIENT_REPORTED'
+            : isAbnormalRef || isDecisionMet
+            ? 'LAB_SUPPORTED'
+            : 'PLAUSIBLE_HYPOTHESIS',
+          evidence_source: `r7_lab:${obs.canonical_marker_id}`,
+          source_type: isVerified ? 'biomarker_lab' : 'intake_self_report',
+          clinician_verified: isVerified,
+          related_systems: targetDomains,
+          potential_nutrition_implication: evalItem.is_critical_finding
+            ? 'Critical clinical review & safety hold required prior to dietary/supplement adjustment.'
+            : 'Review multi-system dietary & micronutrient implications without isolated single-marker diagnosis.',
+          recorded_at: now
+        };
+        domains[dom].push(fObs);
+        if (dom === targetDomains[0]) {
+          atm.mediators.push(fObs);
+        }
+      }
+    }
+  }
+
   let totalObs = 0;
   for (const dom of Object.values(domains)) {
     totalObs += dom.length;
@@ -990,8 +1106,9 @@ export function evaluateFunctionalMatrix(input: MatrixEvaluationInput): Function
   return {
     domains,
     atm,
-    total_observations: totalObs
-  };
+    total_observations: totalObs,
+    r7_lab_summary: r7Summary
+  } as FunctionalMatrixState;
 }
 
 /**
@@ -1012,11 +1129,13 @@ function deriveSystemNodeConfidence(observations: FunctionalObservation[]): 'ver
 export function buildSystemsNetworkGraph(
   matrixState: FunctionalMatrixState,
   pathwayIds: ExpandedClinicalPathwayId[],
-  medications: R5MedicationRecord[]
+  medications: R5MedicationRecord[],
+  r7LabSummary?: R7LabIntelligenceSummary
 ): SystemsNetworkGraph {
   const nodes: SystemsNetworkNode[] = [];
   const edges: SystemsNetworkEdge[] = [];
   const now = new Date().toISOString();
+  const effectiveR7Summary = r7LabSummary || (matrixState as any).r7_lab_summary as R7LabIntelligenceSummary | undefined;
 
   // 1. Create Core Functional System Nodes with Evidence-Gated Confidence
   for (const [domKey, meta] of Object.entries(FUNCTIONAL_DOMAINS_META)) {
@@ -1116,6 +1235,67 @@ export function buildSystemsNetworkGraph(
       uncertainty_flag: false,
       last_evaluated: now
     });
+  }
+
+  // 3. R7 LaboratoryObservation, SafetyConstraint & NutrientExposure Nodes with Explicit Provenance
+  if (effectiveR7Summary) {
+    for (const evalItem of effectiveR7Summary.evaluations) {
+      const obs = evalItem.observation;
+      const isVerified = obs.verification_status === 'clinician_verified' || obs.verification_status === 'lab_document_reviewed';
+      const labNodeId = `NODE_LAB_${obs.canonical_marker_id}_${obs.observation_id}`;
+      const isAbnormal =
+        evalItem.reference_status !== 'within_reference_interval' &&
+        evalItem.reference_status !== 'indeterminate' &&
+        evalItem.reference_status !== 'not_applicable';
+
+      nodes.push({
+        id: labNodeId,
+        type: 'LaboratoryObservation',
+        label_en: `${evalItem.marker_label_en}: ${obs.normalized_value ?? '—'} ${obs.canonical_unit || ''}`.trim(),
+        label_bn: `${evalItem.marker_label_bn}: ${obs.normalized_value ?? '—'} ${obs.canonical_unit || ''}`.trim(),
+        functional_domains: evalItem.related_systems,
+        confidence: isVerified ? 'verified_fact' : obs.verification_status === 'patient_reported' ? 'patient_reported' : 'unconfirmed',
+        data_payload: {
+          observation_id: obs.observation_id,
+          canonical_marker_id: obs.canonical_marker_id,
+          verification_status: obs.verification_status,
+          reference_status: evalItem.reference_status
+        }
+      });
+
+      if (isAbnormal || evalItem.layer2_decision_threshold?.met) {
+        for (const dom of evalItem.related_systems) {
+          edges.push({
+            id: `EDGE_LAB_${obs.observation_id}_${dom}`,
+            source_node_id: labNodeId,
+            target_node_id: `NODE_DOM_${dom}`,
+            relationship: evalItem.is_critical_finding ? 'CONFLICTS_WITH' : 'ASSOCIATED_WITH',
+            clinical_relevance: evalItem.is_critical_finding ? 'critical_safety' : 'high_priority',
+            evidence_citation: evalItem.evidence_ids.join(', ') || 'R7 Biomarker Evaluation',
+            rationale_en: evalItem.insight_en,
+            rationale_bn: evalItem.insight_bn,
+            uncertainty_flag: !isVerified,
+            last_evaluated: now
+          });
+        }
+      }
+    }
+
+    for (const cf of effectiveR7Summary.critical_findings) {
+      const constraintId = `NODE_CRIT_${cf.finding_id}`;
+      nodes.push({
+        id: constraintId,
+        type: 'SafetyConstraint',
+        label_en: `Critical Safety Gate: ${cf.marker_label_en} (${cf.value_display})`,
+        label_bn: `জরুরি নিরাপত্তা গেট: ${cf.marker_label_bn} (${cf.value_display})`,
+        functional_domains: ['transport'],
+        confidence: cf.verification_status === 'clinician_verified' || cf.verification_status === 'lab_document_reviewed' ? 'verified_fact' : 'unconfirmed',
+        data_payload: {
+          observation_id: cf.observation_id,
+          blocks_patient_release: cf.blocks_patient_release
+        }
+      });
+    }
   }
 
   return {

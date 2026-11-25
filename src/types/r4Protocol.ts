@@ -183,8 +183,12 @@ export type SupplementFrequency =
   | 'twice_daily'
   | 'thrice_daily'
   | 'weekly'
+  | 'twice_weekly'
+  | 'three_times_weekly'
   | 'alternate_days'
-  | 'as_needed';
+  | 'single_bolus'
+  | 'as_needed'
+  | 'unknown';
 
 export type FoodRelationship =
   | 'empty_stomach_waking'
@@ -194,31 +198,112 @@ export type FoodRelationship =
   | 'with_fatty_meal'
   | 'between_meals'
   | 'before_bed'
-  | 'independent_of_meals';
+  | 'independent_of_meals'
+  | 'unknown';
+
+export interface SupplementIngredient {
+  id?: string;
+  nutrient_id: string; // canonical key: 'magnesium', 'vitamin_d3', 'vitamin_k2', 'iron', 'calcium', etc.
+  nutrient_name: string;
+  chemical_form?: string;
+  elemental_amount_per_unit?: number;
+  amount_unit?: 'mg' | 'mcg' | 'IU' | 'g' | 'mEq' | 'billion_cfu';
+  prescribed_units_per_dose?: number;
+  compound_amount_text?: string;
+  is_standardized: boolean;
+  is_elemental_known: boolean;
+}
+
+export interface SupplementBrandVerificationMetadata {
+  product_identity_verified: boolean;
+  formulation_verified: boolean;
+  regulatory_status: 'registered_dgda' | 'otc_supplement' | 'imported_unregistered' | 'unverified';
+  retail_availability_status: 'verified_available' | 'unverified_availability' | 'discontinued_or_scarce' | 'not_checked';
+  verification_source?: string;
+  verification_date?: string;
+  manufacturer?: string;
+}
+
+export interface R7NutrientExposureBucket {
+  nutrient_id: string;
+  nutrient_name: string;
+  unit: string;
+  current_approved_daily: number;
+  proposed_candidate_daily: number;
+  fortified_diet_daily: number;
+  combined_daily: number;
+  max_single_admin_dose: number;
+  tolerable_upper_limit?: number;
+  ul_life_stage?: string;
+  ul_reference_id?: string;
+  exceeds_ul: boolean;
+  exceeds_single_dose_threshold: boolean;
+  is_incomplete_exposure: boolean;
+  incomplete_reasons: string[];
+  contributing_items: Array<{
+    item_id: string;
+    label: string;
+    approval_status: string;
+    daily_contribution: number;
+    single_dose_contribution: number;
+    is_incomplete: boolean;
+  }>;
+}
+
+export interface R7SupplementExposureSummary {
+  exposures_by_nutrient: Record<string, R7NutrientExposureBucket>;
+  overlaps: SupplementOverlapWarning[];
+  incomplete_items: string[];
+  physical_duplicates: Array<{
+    physical_key: string;
+    item_ids: string[];
+    label: string;
+  }>;
+  safety_blocks: string[];
+  safety_reviews: string[];
+}
 
 export interface SupplementProtocolItem {
   id: string;
   catalog_id?: string;
+  physical_product_key?: string;
   generic_nutrient: string;
   chemical_form: string;
   brand_name?: string;
-  brand_verification_status: 'verified_bd_market' | 'unverified_brand' | 'generic_prescription_only' | 'imported';
+  brand_verification_status:
+    | 'verified_bd_market'
+    | 'unverified_brand'
+    | 'generic_prescription_only'
+    | 'imported'
+    | 'catalog_unverified';
+  brand_verification_metadata?: SupplementBrandVerificationMetadata;
+  ingredients?: SupplementIngredient[];
   indication_en: string;
   indication_bn: string;
   evidence_category: EvidenceGrade;
+  product_strength_text?: string;
+  prescribed_units_per_dose?: number;
   elemental_dose_numeric?: number;
   elemental_dose_unit?: string; // 'mg' | 'mcg' | 'IU'
   total_compound_dose: string;
+  route?: 'oral' | 'sublingual' | 'intramuscular' | 'intravenous' | 'topical' | 'other';
   frequency: SupplementFrequency;
-  administration_time: string; // HH:mm format
+  administration_time: string; // HH:mm format or 'UNKNOWN'
   relationship_to_food: FoodRelationship;
-  duration_weeks: number;
+  duration_weeks?: number;
+  is_dose_unknown?: boolean;
+  is_frequency_unknown?: boolean;
+  is_timing_unknown?: boolean;
+  is_current_baseline_intake?: boolean;
   monitoring_parameters: string[];
+  monitoring_indication?: string;
   contraindications: string[];
   known_interactions: string[];
+  linked_lab_marker_ids?: string[];
+  linked_dni_rule_ids?: string[];
   clinician_rationale?: string;
   approval_status: 'draft_candidate' | 'clinician_approved' | 'rejected' | 'discontinued';
-  source: 'dni_auto_candidate' | 'condition_targeted' | 'clinician_manual_entry';
+  source: 'dni_auto_candidate' | 'condition_targeted' | 'clinician_manual_entry' | 'patient_baseline_intake';
 }
 
 // ── 6. Visual 24-Hour Chronotherapy Timeline ────────────────────────

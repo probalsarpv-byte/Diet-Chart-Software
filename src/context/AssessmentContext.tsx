@@ -43,6 +43,7 @@ import { calculateVikriti } from "../engine/assessment/vikritiEngine";
 import { calculateAgni } from "../engine/assessment/agniEngine";
 import { analyzeDietaryFrequency, FFQ_FOOD_DEFINITIONS } from "../engine/assessment/ffqEngine";
 import { MASANUMASIKA_MONTH_FRAMEWORKS, calculatePregnancyMonth, getTrimesterFromWeeks } from "../questionnaire/masanumasikaData";
+import { buildR7CatalogEntries } from "../engine/r7/labFoundation";
 
 export interface FullAssessmentPersistedState {
   version: string;
@@ -236,8 +237,11 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
     setVikritiAnswers({});
     setAgniAnswers({});
     const initLabs: Record<string, StructuredLabEntry> = {};
-    for (const m of STANDARD_LAB_MARKERS) {
+    for (const m of buildR7CatalogEntries(true)) {
       initLabs[m.marker_id] = { ...m };
+    }
+    for (const m of STANDARD_LAB_MARKERS) {
+      if (!initLabs[m.marker_id]) initLabs[m.marker_id] = { ...m };
     }
     setLabEntries(initLabs);
     setPopulationData({});
@@ -390,8 +394,11 @@ export const AssessmentProvider = ({ children }: { children: ReactNode }) => {
     setVikritiAnswers({});
     setAgniAnswers({});
     const initLabs: Record<string, StructuredLabEntry> = {};
-    for (const m of STANDARD_LAB_MARKERS) {
+    for (const m of buildR7CatalogEntries(true)) {
       initLabs[m.marker_id] = { ...m };
+    }
+    for (const m of STANDARD_LAB_MARKERS) {
+      if (!initLabs[m.marker_id]) initLabs[m.marker_id] = { ...m };
     }
     setLabEntries(initLabs);
     setPopulationData({});

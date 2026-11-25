@@ -16,6 +16,7 @@ import {
   PopulationSpecificData,
   LabAssessmentData
 } from '../../types/assessment';
+import { normalizeSingleLabEntry } from '../r7/labFoundation';
 
 export interface P2HandoffPackage {
   patient: PatientProfile;
@@ -610,23 +611,32 @@ export function buildP2ClinicalObservations(
         }
       }
 
+      const normObs = normalizeSingleLabEntry(entry as any, {
+        patientId: assessment.patient_id,
+        visitId: assessment.visit_id
+      });
+      const resolvedStatus: ClinicalObservation['verificationStatus'] =
+        entry.verification_status === 'clinician_verified' || entry.verification_status === 'lab_document_reviewed'
+          ? 'lab_confirmed'
+          : 'unverified';
+
       observations.push({
         id: `obs_lab_${markerId}`,
         patientId: assessment.patient_id,
         visitId: assessment.visit_id,
         category: 'lab',
         sourceLabMarker: markerId,
-        observedValue: val,
-        unit: entry.unit,
-        title_en: `${entry.name_en}: ${val} ${entry.unit}`,
-        title_bn: `${entry.name_bn}: ${val} ${entry.unit}`,
+        observedValue: normObs.normalized_value ?? val,
+        unit: normObs.canonical_unit || entry.unit,
+        title_en: `${entry.name_en}: ${normObs.normalized_value ?? val} ${normObs.canonical_unit || entry.unit}`,
+        title_bn: `${entry.name_bn}: ${normObs.normalized_value ?? val} ${normObs.canonical_unit || entry.unit}`,
         date: entry.test_date || now,
         associatedDomains: domains,
         severity: severity as any,
         tags,
-        dataSource: 'measured',
-        verificationStatus: 'lab_confirmed',
-        provenance: 'p1_laboratory_assessment',
+        dataSource: entry.verification_status === 'patient_reported' ? 'patient_reported' : 'measured',
+        verificationStatus: resolvedStatus,
+        provenance: entry.source_type || 'p1_laboratory_assessment',
       });
     }
   }
@@ -664,13 +674,20 @@ export function buildFlattenedAnswersForP2(assessment: ClinicalAssessment): Reco
     flat['pregnancy_month'] = assessment.population_data.pregnancy.pregnancy_month;
   }
 
-  // Overlay Structured Tested Labs
+  // Overlay Structured Tested Labs (R7 normalized canonical units!)
   if (assessment.labs?.entries) {
     for (const [markerId, entry] of Object.entries(assessment.labs.entries)) {
       if (entry.status === 'previously_tested' && entry.numeric_value !== undefined) {
-        flat[`lab_${markerId}`] = entry.numeric_value;
-        if (markerId === 'fbs') flat['fasting_glucose'] = entry.numeric_value;
-        if (markerId === 'hba1c') flat['hba1c'] = entry.numeric_value;
+        const normObs = normalizeSingleLabEntry(entry as any, {
+          patientId: assessment.patient_id,
+          visitId: assessment.visit_id
+        });
+        const effVal = normObs.normalized_value ?? entry.numeric_value;
+        const cid = normObs.canonical_marker_id || markerId;
+        flat[`lab_${markerId}`] = effVal;
+        flat[`lab_${cid}`] = effVal;
+        if (markerId === 'fbs' || cid === 'fasting_glucose') flat['fasting_glucose'] = effVal;
+        if (markerId === 'hba1c' || cid === 'hba1c') flat['hba1c'] = effVal;
       }
     }
   }

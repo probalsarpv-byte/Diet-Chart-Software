@@ -36,7 +36,11 @@ import {
   PatientFoodExchangeItem,
   R6PrescriptionMasterPayload
 } from '@/types/r6Prescription';
-import { R4ProtocolStudioData, SupplementProtocolItem } from '@/types/r4Protocol';
+import { R4ProtocolStudioData, R7SupplementExposureSummary, SupplementProtocolItem } from '@/types/r4Protocol';
+import { R7LabIntelligenceSummary } from '@/types/r7Laboratory';
+import { StructuredLabEntry } from '@/types/assessment';
+import { evaluateR7LaboratoryIntelligence } from '@/engine/r7/biomarkerIntelligence';
+import { calculateR7SupplementExposure } from '@/engine/r7/supplementIntelligence';
 import { 
   compose6ColumnMedicationProtocol, 
   evaluateMedicationSafetyContract,
@@ -209,6 +213,8 @@ export interface ClinicianReportPayload {
     depletions: any[];
   };
   supplement_considerations: any[];
+  r7_lab_intelligence?: R7LabIntelligenceSummary;
+  r7_supplement_exposure?: R7SupplementExposureSummary;
   clinical_disclaimers: {
     en: string;
     bn: string;
@@ -367,6 +373,8 @@ export function validateReportReleaseEligibility(options: {
   r4Protocol?: R4ProtocolStudioData | null;
   supplements?: any[];
   isR4ProtocolDirty?: boolean;
+  r7LabSummary?: R7LabIntelligenceSummary;
+  structuredLabEntries?: Record<string, StructuredLabEntry>;
 }): ReleaseEligibilityResult {
   const {
     patient,
@@ -576,6 +584,25 @@ export function validateReportReleaseEligibility(options: {
     }
   }
 
+  // Check 14: R7 Critical Laboratory & Unresolved Lab Reconciliation Gate (Non-bypassable)
+  const r7LabSummary: R7LabIntelligenceSummary | undefined = (options as any).r7LabSummary || (
+    patient && patient.id
+      ? evaluateR7LaboratoryIntelligence({
+          patient,
+          visitId: effectiveVisitId,
+          structuredEntries: (options as any).structuredLabEntries
+        })
+      : undefined
+  );
+  if (r7LabSummary?.blocks_patient_release) {
+    for (const reason of r7LabSummary.blocking_reasons_en) {
+      if (!blockingReasons.includes(reason)) blockingReasons.push(reason);
+    }
+    for (const reasonBn of r7LabSummary.blocking_reasons_bn) {
+      if (!blockingReasons_bn.includes(reasonBn)) blockingReasons_bn.push(reasonBn);
+    }
+  }
+
   return {
     isEligible: blockingReasons.length === 0,
     blockingReasons,
@@ -596,6 +623,9 @@ export function buildClinicianReportProjection(options: {
   visit?: ClinicalVisit | null;
   includeAllDays?: boolean;
   activeDayNumber?: number;
+  r4Protocol?: R4ProtocolStudioData | null;
+  r7LabSummary?: R7LabIntelligenceSummary;
+  structuredLabEntries?: Record<string, StructuredLabEntry>;
 }): ClinicianReportPayload {
   const { 
     patient, 
@@ -842,6 +872,26 @@ export function buildClinicianReportProjection(options: {
     }
   };
 
+  const r7LabSummary: R7LabIntelligenceSummary | undefined =
+    (options as any).r7LabSummary ||
+    evaluateR7LaboratoryIntelligence({
+      patient,
+      visitId,
+      structuredEntries: (options as any).structuredLabEntries
+    });
+
+  const activeSupplementsForExposure: SupplementProtocolItem[] =
+    (options as any).r4Protocol?.supplements ||
+    (Array.isArray(candidateSupplements) ? candidateSupplements : []);
+  const r7SupplementExposure =
+    activeSupplementsForExposure.length > 0
+      ? calculateR7SupplementExposure({
+          supplements: activeSupplementsForExposure,
+          patient,
+          labSummary: r7LabSummary
+        })
+      : undefined;
+
   return {
     report_type: 'CLINICIAN_FULL_DOSSIER',
     schema_version: 1,
@@ -916,6 +966,8 @@ export function buildClinicianReportProjection(options: {
       depletions: dniResult?.depletions || []
     },
     supplement_considerations: candidateSupplements || [],
+    r7_lab_intelligence: r7LabSummary,
+    r7_supplement_exposure: r7SupplementExposure,
     clinical_disclaimers: {
       en: 'CONFIDENTIAL CLINICAL NUTRITION DOSSIER. For licensed healthcare provider analysis only. Contains raw biochemical, Atwater, and drug-nutrient interaction calculations.',
       bn: 'গোপনীয় ক্লিনিক্যাল নিউট্রিশন ডসিয়ার। শুধুমাত্র লাইসেন্সধারী স্বাস্থ্যসেবা প্রদানকারীর মূল্যায়নের জন্য। এতে বায়োকেমিক্যাল হিসাব, অ্যাটওয়াটার রেশিও এবং ড্রাগ-নিউট্রিয়েন্ট ইন্টারঅ্যাকশন সংক্রান্ত তথ্য রয়েছে।'

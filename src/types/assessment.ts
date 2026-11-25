@@ -16,6 +16,12 @@ import {
   MedicationReconciliationOverallStatus,
 } from './index';
 import { ClinicalPathway, FeedingStatus, DoshaProfile, AyurvedicAssessmentContext } from './clinical';
+import type {
+  LabVerificationStatus,
+  LabSourceType,
+  LabSpecimenType,
+  R7ReferenceProvenance
+} from './r7Laboratory';
 
 // ── 1. Assessment Modes & Navigation Steps ──────────────────────────
 export type AssessmentMode = 'quick' | 'comprehensive' | 'followup';
@@ -317,22 +323,48 @@ export type LabCategory =
   | 'thyroid'
   | 'hematology_iron'
   | 'vitamins_minerals'
-  | 'inflammatory_markers';
+  | 'inflammatory_markers'
+  | 'custom';
 
 export interface StructuredLabEntry {
   marker_id: string;
+  observation_id?: string;
+  canonical_marker_id?: string;
+  patient_id?: string;
+  visit_id?: string;
+  lab_report_id?: string;
   category: LabCategory;
   name_en: string;
   name_bn: string;
-  status: 'previously_tested' | 'pending_result' | 'not_tested' | 'declined_unavailable';
+  status: 'previously_tested' | 'pending_result' | 'not_tested' | 'declined_unavailable' | 'invalid' | 'superseded';
   numeric_value?: number;
   text_value?: string;
   unit: string;
+  original_value?: number | string;
+  original_unit?: string;
+  normalized_value?: number;
+  canonical_unit?: string;
+  inequality_operator?: '<' | '<=' | '>' | '>=';
+  qualitative_result?: string;
+  specimen_type?: LabSpecimenType;
+  fasting_status?: 'fasting' | 'nonfasting' | 'unknown';
   conventional_low?: number;
   conventional_high?: number;
+  lab_ref_low?: number;
+  lab_ref_high?: number;
   functional_low?: number;
   functional_high?: number;
+  ref_interval_provenance?: R7ReferenceProvenance;
+  verification_status?: LabVerificationStatus;
+  source_type?: LabSourceType;
+  assay_method?: string;
+  verified_by?: string;
+  verified_at?: string;
+  supersedes_observation_id?: string;
   test_date?: string;
+  report_date?: string;
+  is_critical_lab_flag?: boolean;
+  clinical_notes?: string;
   notes?: string;
 }
 

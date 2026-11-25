@@ -14,6 +14,13 @@
 
 import { MedicationNutritionRule, DrugNutrientFinding, R5MedicationRecord } from '@/types/r5Systems';
 import { PatientProfile } from '@/types';
+import { R7LabIntelligenceSummary } from '@/types/r7Laboratory';
+import {
+  inferNutrientIdsAndLabelsFromRule,
+  isRouteApplicableForRule,
+  evaluateLabQualifiedDniState,
+  R7_DNI_RULE_METADATA
+} from './r7/medicationNutritionIntelligence';
 
 export const MEDICATION_NUTRITION_RULES: MedicationNutritionRule[] = [
   // ── 1. Diabetes & Endocrine ───────────────────────────────────────
@@ -409,26 +416,35 @@ export const MEDICATION_NUTRITION_RULES: MedicationNutritionRule[] = [
 
 /**
  * Evaluates active patient medications against comprehensive medication-nutrition rules.
+ * Phase R7: Route-aware, status-isolated, explicit nutrient-ID mapping & optional lab qualification.
  */
 export function evaluateMedicationNutritionInteractions(
   medications: R5MedicationRecord[],
-  patient?: Partial<PatientProfile>
+  patient?: Partial<PatientProfile>,
+  options?: {
+    labSummary?: R7LabIntelligenceSummary;
+    includeHistorical?: boolean;
+  }
 ): DrugNutrientFinding[] {
   const findings: DrugNutrientFinding[] = [];
   const seenRules = new Set<string>();
 
   medications.forEach(med => {
-    if (med.status === 'discontinued') return;
+    const status = med.status || 'active';
+    if (status === 'discontinued') return;
+    const isHistoricalOrHeld =
+      Boolean(med.is_historical) ||
+      status === 'historical' ||
+      status === 'completed' ||
+      status === 'held';
+    if (isHistoricalOrHeld && !options?.includeHistorical) return;
 
-    const medNameLower = (med.generic_name || med.brand_name || '').toLowerCase();
+    const medNameLower = `${med.generic_name || ''} ${med.brand_name || ''}`.toLowerCase();
 
     MEDICATION_NUTRITION_RULES.forEach(rule => {
-      // Safety filter: Oral bisphosphonate rules do not apply to IV/injection formulations
-      if (rule.rule_id === 'RULE_BISPHOSPHONATE_POSTURE') {
-        const routeLower = (med.route || '').toLowerCase();
-        if (routeLower.includes('iv') || routeLower.includes('intravenous') || routeLower.includes('injection')) {
-          return;
-        }
+      // Explicit route-aware gating (IV vs Oral bisphosphonates, inhaled vs systemic steroids, IV vs Oral chelation)
+      if (!isRouteApplicableForRule(med, rule.rule_id, rule)) {
+        return;
       }
 
       const matches = rule.generic_patterns.some(pattern => medNameLower.includes(pattern));
@@ -438,22 +454,21 @@ export function evaluateMedicationNutritionInteractions(
         if (!seenRules.has(key)) {
           seenRules.add(key);
 
-          // Extract affected nutrients from title/consequence
-          const affected: string[] = [];
-          if (rule.rule_id.includes('B12')) affected.push('Vitamin B12');
-          if (rule.rule_id.includes('POTASSIUM')) affected.push('Potassium');
-          if (rule.rule_id.includes('TYRAMINE')) affected.push('Tyramine');
-          if (rule.rule_id.includes('SODIUM')) affected.push('Sodium', 'Fluid');
-          if (rule.rule_id.includes('VITAMIN_K')) affected.push('Vitamin K');
-          if (rule.rule_id.includes('COQ10')) affected.push('Coenzyme Q10');
-          if (rule.rule_id.includes('MINERAL')) affected.push('Calcium', 'Iron', 'Magnesium');
-          if (rule.rule_id.includes('FOLATE')) affected.push('Folic Acid');
-          if (rule.rule_id.includes('B6')) affected.push('Vitamin B6');
+          const { ids: nutrientIds, labels: nutrientLabels } = inferNutrientIdsAndLabelsFromRule(rule);
+          const meta = R7_DNI_RULE_METADATA[rule.rule_id];
+          const relevantLabs = rule.relevant_lab_markers || meta?.relevant_lab_markers || [];
+          const labQual = evaluateLabQualifiedDniState(
+            nutrientIds,
+            relevantLabs,
+            rule.severity,
+            status,
+            options?.labSummary
+          );
 
           findings.push({
             rule_id: rule.rule_id,
             drug_name: med.brand_name ? `${med.brand_name} (${med.generic_name})` : med.generic_name,
-            severity: rule.severity,
+            severity: isHistoricalOrHeld ? 'monitoring_advisory' : rule.severity,
             title_en: rule.title_en,
             title_bn: rule.title_bn,
             rationale_en: rule.mechanism_rationale_en,
@@ -461,7 +476,19 @@ export function evaluateMedicationNutritionInteractions(
             required_action_en: rule.required_action_en,
             required_action_bn: rule.required_action_bn,
             evidence_source: rule.evidence_source,
-            affected_nutrients: affected
+            affected_nutrients: nutrientLabels,
+            affected_nutrient_ids: nutrientIds,
+            relevant_lab_markers: relevantLabs,
+            relevant_labs_status: labQual.relevant_labs_status,
+            intervention_state: labQual.intervention_state,
+            monitoring_indication: labQual.monitoring_indication,
+            evidence_grade: rule.evidence_grade || meta?.evidence_grade || 'B',
+            evidence_id: rule.evidence_id || meta?.evidence_id,
+            rule_version: rule.rule_version || meta?.rule_version || 'r7.1',
+            drug_status: status,
+            source_verification_status: med.verification_status,
+            route: med.route || 'Oral',
+            is_active_administration: !isHistoricalOrHeld
           });
         }
       }

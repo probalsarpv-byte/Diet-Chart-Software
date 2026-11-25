@@ -332,6 +332,7 @@ export const ProtocolStudioTab: React.FC = () => {
             supplements={r4Protocol.supplements}
             onChange={handleSupplementsChange}
             language={language}
+            patient={patient}
           />
         )}
 

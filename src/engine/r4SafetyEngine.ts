@@ -22,6 +22,7 @@ import {
 } from '../types/r4Protocol';
 import { PatientProfile, SupplementOverlapWarning } from '../types';
 import { checkAdvancedSupplementOverlaps } from './supplementEngine';
+import { calculateR7SupplementExposure } from './r7/supplementIntelligence';
 
 export function evaluateR4ProtocolSafety(
   lifestyle: LifestyleProtocol,
@@ -126,6 +127,56 @@ export function evaluateR4ProtocolSafety(
   });
 
   const overlapWarnings = checkAdvancedSupplementOverlaps(activeSupplements, patient);
+  const r7Exposure = calculateR7SupplementExposure({
+    supplements: activeSupplements,
+    patient
+  });
+
+  for (const blk of r7Exposure.safety_blocks) {
+    hard_stops.push({
+      code: 'R7_SUPPLEMENT_CONTRAINDICATION',
+      severity: 'critical',
+      title_en: 'Supplement Clinical Contraindication (Lab / Renal Gate)',
+      title_bn: 'ল্যাব ও কিডনি নিরাপত্তা গেট: সাপ্লিমেন্ট নিষিদ্ধ',
+      rationale_en: blk,
+      rationale_bn: blk,
+      recommended_action_en: 'Discontinue or withhold the contraindicated nutrient supplement until underlying electrolyte/iron/renal safety clears.',
+      recommended_action_bn: 'সংশ্লিষ্ট ল্যাব ও কিডনি ঝুঁকি সমাধান না হওয়া পর্যন্ত এই সাপ্লিমেন্ট স্থগিত রাখুন।'
+    });
+  }
+
+  for (const inc of r7Exposure.incomplete_items) {
+    if (!reviews_required.some(r => r.rationale_en.includes(inc))) {
+      reviews_required.push({
+        code: 'R7_INCOMPLETE_SUPPLEMENT_EXPOSURE',
+        severity: 'high',
+        title_en: 'Incomplete Supplement Composition / Unverified Dose',
+        title_bn: 'সাপ্লিমেন্টের অসম্পূর্ণ উপাদান বা অজ্ঞাত মাত্রা',
+        rationale_en: inc,
+        rationale_bn: inc,
+        recommended_action_en: 'Specify structured elemental amount per ingredient and administration frequency before final approval.',
+        recommended_action_bn: 'অনুমোদনের আগে প্রতিটি উপাদানের এলিমেন্টাল মাত্রা এবং গ্রহণের নিয়ম নথিভুক্ত করুন।'
+      });
+    }
+  }
+
+  for (const rev of r7Exposure.safety_reviews) {
+    if (
+      rev.includes('single administration') &&
+      !reviews_required.some(r => r.rationale_en === rev)
+    ) {
+      reviews_required.push({
+        code: 'R7_SINGLE_DOSE_BOLUS_REVIEW',
+        severity: 'high',
+        title_en: 'High Single-Dose / Bolus Supplement Review',
+        title_bn: 'উচ্চ একক/বোলাস ডোজ সাপ্লিমেন্ট পর্যালোচনা',
+        rationale_en: rev,
+        rationale_bn: rev,
+        recommended_action_en: 'Verify divided dosing or confirm baseline lab deficiency and monitoring schedule for bolus regimen.',
+        recommended_action_bn: 'বোলাস ডোজের প্রয়োজন ও পর্যবেক্ষণ সূচি নিশ্চিত করুন।'
+      });
+    }
+  }
 
   overlapWarnings.forEach(w => {
     const isUndetermined = w.total_amount_estimated.includes('UNDETERMINED') || w.warning_en.includes('UNDETERMINED') || w.total_amount_estimated.includes('INCOMPATIBLE');

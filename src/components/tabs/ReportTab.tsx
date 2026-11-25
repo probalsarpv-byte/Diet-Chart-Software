@@ -154,6 +154,13 @@ export const ReportTab: React.FC = () => {
     return ((visitSnapshot?.medications?.reconciled_records as any) || []);
   }, [isCurrentActiveVisit, r5Medications, visitSnapshot]);
 
+  const effectiveR4ProtocolForReport = useMemo(() => {
+    if (isCurrentActiveVisit) {
+      return r4Protocol;
+    }
+    return (visitSnapshot as any)?.r4_protocol || undefined;
+  }, [isCurrentActiveVisit, r4Protocol, visitSnapshot]);
+
   // Build Authoritative Projections
   const clinicianPayload = useMemo(() => {
     return buildClinicianReportProjection({
@@ -166,16 +173,10 @@ export const ReportTab: React.FC = () => {
       candidateSupplements,
       visit: activeReportVisit,
       includeAllDays: !isSingleDayClinicianMode,
-      activeDayNumber: 1
+      activeDayNumber: 1,
+      r4Protocol: effectiveR4ProtocolForReport
     });
-  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeDisplayP2, candidateSupplements, activeReportVisit, isSingleDayClinicianMode]);
-
-  const effectiveR4ProtocolForReport = useMemo(() => {
-    if (isCurrentActiveVisit) {
-      return r4Protocol;
-    }
-    return (visitSnapshot as any)?.r4_protocol || undefined;
-  }, [isCurrentActiveVisit, r4Protocol, visitSnapshot]);
+  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeDisplayP2, candidateSupplements, activeReportVisit, isSingleDayClinicianMode, effectiveR4ProtocolForReport]);
 
   const patientPayload = useMemo(() => {
     return buildPatientReportProjection({
