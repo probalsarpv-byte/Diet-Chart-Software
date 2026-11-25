@@ -17,7 +17,10 @@ import {
   buildPatientReportProjection
 } from '../src/engine/reports/dualReportEngine';
 import { R5MedicationRecord } from '../src/types/r5Systems';
+import { R4ProtocolStudioData, SupplementProtocolItem } from '../src/types/r4Protocol';
 import { PatientProfile, WeeklyDietPlan } from '../src/types';
+import fs from 'node:fs';
+import path from 'node:path';
 
 function makeApprovedPatient(id: string = 'pt_cp_a1', overrides: Partial<PatientProfile> = {}): PatientProfile {
   return {
@@ -671,3 +674,330 @@ describe('CHECKPOINT B — Remove Fabricated Fluid Restriction & Preserve Clinic
     assert.strictEqual(projection.safety_instructions.hydration_guidelines_en, 'Fluid Restriction — Quantitative Limit Requires Clinician Confirmation');
   });
 });
+
+function makeSupplementItem(overrides: Partial<SupplementProtocolItem> = {}): SupplementProtocolItem {
+  return {
+    id: 'supp_vitd3',
+    brand_name: 'D-Rise 2000',
+    generic_nutrient: 'Cholecalciferol (Vitamin D3)',
+    chemical_form: 'Cholecalciferol',
+    brand_verification_status: 'verified_bd_market',
+    indication_en: 'Vitamin D insufficiency',
+    indication_bn: 'ভিটামিন ডি ঘাটতি',
+    evidence_category: 'clinical_guideline',
+    total_compound_dose: '2000 IU',
+    elemental_dose_numeric: 2000,
+    elemental_dose_unit: 'IU',
+    frequency: 'once_daily',
+    administration_time: '08:30',
+    relationship_to_food: 'with_breakfast',
+    duration_weeks: 12,
+    monitoring_parameters: ['25-OH Vitamin D'],
+    contraindications: ['Hypercalcemia'],
+    known_interactions: [],
+    approval_status: 'clinician_approved',
+    source: 'clinician_manual_entry',
+    clinician_rationale: 'Clinically indicated deficiency repletion',
+    ...overrides
+  };
+}
+
+function makeAuthorizedR4Protocol(
+  patientId: string,
+  visitId: string,
+  overrides: Partial<R4ProtocolStudioData> = {}
+): R4ProtocolStudioData {
+  return {
+    id: `r4_${patientId}_${visitId}`,
+    patient_id: patientId,
+    visit_id: visitId,
+    organization_id: 'org_shuddho',
+    version: 1,
+    status: 'active',
+    is_approved: true,
+    approved_by: 'Dr. Shahriar Ahmed',
+    approved_at: '2026-11-25T10:00:00Z',
+    supplements: [makeSupplementItem()],
+    ...overrides
+  };
+}
+
+describe('CHECKPOINT C — Strict R4 Supplement Authorization & Patient Isolation', () => {
+  it('C1. Approved R4 protocol for same patient & visit with clinician_approved supplement enters active_rows', () => {
+    const patient = makeApprovedPatient('pt_c1');
+    const visitId = patient.current_visit_id!;
+    const plan = makeApprovedWeeklyPlan(patient.id, visitId);
+    const r4 = makeAuthorizedR4Protocol(patient.id, visitId);
+
+    const rx = composeR6Prescription({
+      patient,
+      weeklyDietPlan: plan,
+      medications: [],
+      r4Protocol: r4,
+      supplements: r4.supplements
+    });
+
+    assert.strictEqual(rx.is_released, true);
+    assert.strictEqual(rx.medication_supplement_protocol.active_rows.length, 1);
+    assert.strictEqual(rx.medication_supplement_protocol.active_rows[0].item_type, 'supplement');
+    assert.strictEqual(rx.medication_supplement_protocol.active_rows[0].brand_name, 'D-Rise 2000');
+  });
+
+  it('C2. Unapproved draft R4 protocol (is_approved: false or status: draft/active without approval) NEVER enters active_rows', () => {
+    const patient = makeApprovedPatient('pt_c2');
+    const visitId = patient.current_visit_id!;
+    const plan = makeApprovedWeeklyPlan(patient.id, visitId);
+
+    // Even if status === 'active' or individual supplement says clinician_approved, unapproved protocol must be rejected
+    const unapprovedR4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+      status: 'active',
+      is_approved: false,
+      approved_by: undefined,
+      approved_at: undefined,
+      supplements: [makeSupplementItem({ approval_status: 'clinician_approved' })]
+    });
+
+    const proto = compose6ColumnMedicationProtocol(
+      [],
+      unapprovedR4.supplements,
+      [],
+      unapprovedR4,
+      { patientId: patient.id, visitId }
+    );
+    assert.strictEqual(proto.active_rows.length, 0, 'Unapproved R4 protocol must NEVER place supplements in active_rows');
+    assert.ok(proto.draft_candidates.length >= 1, 'Unapproved supplement must remain in draft_candidates');
+
+    const rx = composeR6Prescription({
+      patient,
+      weeklyDietPlan: plan,
+      medications: [],
+      r4Protocol: unapprovedR4,
+      supplements: unapprovedR4.supplements
+    });
+    assert.strictEqual(rx.medication_supplement_protocol.active_rows.length, 0);
+    assert.strictEqual(rx.is_released, false, 'Unapproved R4 protocol asserting clinician_approved supplements must block release');
+  });
+
+  it('C3. Candidate, draft_candidate, rejected, and discontinued supplements NEVER enter active_rows', () => {
+    const patient = makeApprovedPatient('pt_c3');
+    const visitId = patient.current_visit_id!;
+    const approvedR4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+      supplements: [
+        makeSupplementItem({ id: 's_draft', brand_name: 'DraftSupp', approval_status: 'draft_candidate' }),
+        makeSupplementItem({ id: 's_rej', brand_name: 'RejectedSupp', approval_status: 'rejected' }),
+        makeSupplementItem({ id: 's_disc', brand_name: 'DiscontinuedSupp', approval_status: 'discontinued' })
+      ]
+    });
+
+    const proto = compose6ColumnMedicationProtocol(
+      [],
+      [],
+      [{ id: 'cand_only', name: 'CandZinc', dosage: '20 mg', clinical_rationale: 'Candidate only' }],
+      approvedR4,
+      { patientId: patient.id, visitId }
+    );
+    assert.strictEqual(proto.active_rows.length, 0);
+    assert.strictEqual(proto.draft_candidates.some(r => r.brand_name === 'DraftSupp'), true);
+    assert.strictEqual(proto.draft_candidates.some(r => r.brand_name === 'CandZinc'), true);
+    assert.strictEqual(proto.draft_candidates.some(r => r.brand_name === 'RejectedSupp' || r.brand_name === 'DiscontinuedSupp'), false, 'Rejected/discontinued supplements should not clutter instructions or active rows');
+  });
+
+  it('C4. Missing r4Protocol does NOT treat independent supplements array as authorized', () => {
+    const patient = makeApprovedPatient('pt_c4');
+    const visitId = patient.current_visit_id!;
+    const plan = makeApprovedWeeklyPlan(patient.id, visitId);
+    const standaloneSupps = [makeSupplementItem({ approval_status: 'clinician_approved' })];
+
+    const proto = compose6ColumnMedicationProtocol([], standaloneSupps, [], null, { patientId: patient.id, visitId });
+    assert.strictEqual(proto.active_rows.length, 0, 'Missing r4Protocol must NEVER authorize standalone supplements');
+    assert.ok(proto.draft_candidates.length >= 1);
+
+    const rx = composeR6Prescription({
+      patient,
+      weeklyDietPlan: plan,
+      medications: [],
+      r4Protocol: null,
+      supplements: standaloneSupps
+    });
+    assert.strictEqual(rx.medication_supplement_protocol.active_rows.length, 0);
+    assert.strictEqual(rx.is_released, false, 'Standalone supplements without authorized r4Protocol provenance must block patient release');
+  });
+
+  it('C5. Superseded or archived R4 protocol (even if is_approved: true) NEVER enters active_rows and blocks release', () => {
+    const patient = makeApprovedPatient('pt_c5');
+    const visitId = patient.current_visit_id!;
+    const plan = makeApprovedWeeklyPlan(patient.id, visitId);
+
+    for (const staleStatus of ['superseded', 'archived'] as const) {
+      const staleR4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+        status: staleStatus,
+        is_approved: true
+      });
+      const rx = composeR6Prescription({
+        patient,
+        weeklyDietPlan: plan,
+        medications: [],
+        r4Protocol: staleR4
+      });
+      assert.strictEqual(rx.medication_supplement_protocol.active_rows.length, 0, `${staleStatus} R4 protocol must NEVER authorize active supplements`);
+      assert.strictEqual(rx.is_released, false, `${staleStatus} R4 protocol must block patient release`);
+    }
+  });
+
+  it('C6. Cross-patient and cross-visit R4 protocols are strictly isolated and blocked', () => {
+    const patientA = makeApprovedPatient('pt_c6_alpha');
+    const patientB = makeApprovedPatient('pt_c6_beta');
+    const visitA = patientA.current_visit_id!;
+    const planB = makeApprovedWeeklyPlan(patientB.id, patientB.current_visit_id!);
+
+    // Wrong patient_id
+    const r4FromPatientA = makeAuthorizedR4Protocol(patientA.id, visitA);
+    const rxCrossPatient = composeR6Prescription({
+      patient: patientB,
+      weeklyDietPlan: planB,
+      medications: [],
+      r4Protocol: r4FromPatientA
+    });
+    assert.strictEqual(rxCrossPatient.medication_supplement_protocol.active_rows.length, 0, 'Other patient R4 supplements must NEVER appear');
+    assert.strictEqual(rxCrossPatient.is_released, false, 'Cross-patient R4 protocol mismatch must block release');
+
+    // Same patient, wrong visit_id
+    const r4OtherVisit = makeAuthorizedR4Protocol(patientB.id, 'vis_old_unrelated');
+    const rxCrossVisit = composeR6Prescription({
+      patient: patientB,
+      weeklyDietPlan: planB,
+      medications: [],
+      r4Protocol: r4OtherVisit
+    });
+    assert.strictEqual(rxCrossVisit.medication_supplement_protocol.active_rows.length, 0, 'Other visit R4 supplements must NEVER appear');
+    assert.strictEqual(rxCrossVisit.is_released, false, 'Cross-visit R4 protocol mismatch must block release');
+  });
+
+  it('C7. Post-approval invalidation (missing provenance, invalidated notes, dirty flag, or HARD_STOP) blocks active supplements and release until re-approved', () => {
+    const patient = makeApprovedPatient('pt_c7');
+    const visitId = patient.current_visit_id!;
+    const plan = makeApprovedWeeklyPlan(patient.id, visitId);
+
+    // Invalidated after medication change (approved_by cleared / note set / is_approved false)
+    const invalidatedR4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+      status: 'draft',
+      is_approved: false,
+      previous_approved_version: 1,
+      approval_notes: 'Invalidated due to medication list modification; requires clinician re-review.',
+      approved_by: undefined,
+      approved_at: undefined
+    });
+    const rxInvalidated = composeR6Prescription({
+      patient,
+      weeklyDietPlan: plan,
+      medications: [],
+      r4Protocol: invalidatedR4
+    });
+    assert.strictEqual(rxInvalidated.medication_supplement_protocol.active_rows.length, 0);
+    assert.strictEqual(rxInvalidated.is_released, false);
+
+    // Missing sign-off provenance even if boolean accidentally true
+    const missingSignoffR4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+      approved_by: '',
+      approved_at: ''
+    });
+    const rxMissingSignoff = composeR6Prescription({
+      patient,
+      weeklyDietPlan: plan,
+      medications: [],
+      r4Protocol: missingSignoffR4
+    });
+    assert.strictEqual(rxMissingSignoff.medication_supplement_protocol.active_rows.length, 0);
+    assert.strictEqual(rxMissingSignoff.is_released, false);
+
+    // HARD_STOP safety evaluation blocks approval even if is_approved: true
+    const hardStopR4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+      safety_evaluation: {
+        overall_status: 'HARD_STOP',
+        can_approve: false,
+        hard_stops: [],
+        cautions: [],
+        evaluated_at: '2026-11-25T10:00:00Z'
+      }
+    });
+    const rxHardStop = composeR6Prescription({
+      patient,
+      weeklyDietPlan: plan,
+      medications: [],
+      r4Protocol: hardStopR4
+    });
+    assert.strictEqual(rxHardStop.medication_supplement_protocol.active_rows.length, 0);
+    assert.strictEqual(rxHardStop.is_released, false);
+  });
+
+  it('C8. Duplicate supplement entries across r4Protocol and synced lists are deduplicated cleanly', () => {
+    const patient = makeApprovedPatient('pt_c8');
+    const visitId = patient.current_visit_id!;
+    const dupA = makeSupplementItem({ id: 'supp_coq10', generic_nutrient: 'Coenzyme Q10 (Ubiquinol)', brand_name: 'Ubiquinol 100', administration_time: '08:30' });
+    const dupB = makeSupplementItem({ id: 'supp_coq10_sync2', generic_nutrient: 'Coenzyme Q10 (Ubiquinol)', brand_name: 'Ubiquinol 100', administration_time: '08:30' });
+
+    const r4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+      supplements: [dupA, dupB]
+    });
+    const proto = compose6ColumnMedicationProtocol([], [dupA, dupB], [], r4, { patientId: patient.id, visitId });
+    assert.strictEqual(proto.active_rows.length, 1, 'Duplicate supplements with same nutrient/time must deduplicate to 1 row');
+  });
+
+  it('C9. Approved supplement preserves exact dose, timing, duration, and food relationship instructions', () => {
+    const patient = makeApprovedPatient('pt_c9');
+    const visitId = patient.current_visit_id!;
+    const supp = makeSupplementItem({
+      brand_name: 'Neuro-B12',
+      generic_nutrient: 'Methylcobalamin (Vitamin B12)',
+      chemical_form: 'Methylcobalamin',
+      elemental_dose_numeric: 1000,
+      elemental_dose_unit: 'mcg',
+      administration_time: '07:45',
+      relationship_to_food: 'with_breakfast',
+      duration_weeks: 16
+    });
+    const r4 = makeAuthorizedR4Protocol(patient.id, visitId, { supplements: [supp] });
+    const proto = compose6ColumnMedicationProtocol([], [], [], r4, { patientId: patient.id, visitId });
+
+    assert.strictEqual(proto.active_rows.length, 1);
+    const row = proto.active_rows[0];
+    assert.strictEqual(row.sequence_time, '07:45');
+    assert.ok(row.dosage_display_en.includes('1000'));
+    assert.ok(row.dosage_display_en.toLowerCase().includes('mcg'));
+    assert.strictEqual(row.duration_en, '16 weeks');
+    assert.ok(row.clinical_instructions_en.toLowerCase().includes('breakfast'));
+  });
+
+  it('C10. Draft/candidate supplements stay inside no-print container in PatientDietReportView and Stage E gating requires authorized R4', () => {
+    const patient = makeApprovedPatient('pt_c10');
+    const visitId = patient.current_visit_id!;
+    const plan = makeApprovedWeeklyPlan(patient.id, visitId);
+    const draftOnlyR4 = makeAuthorizedR4Protocol(patient.id, visitId, {
+      is_approved: false,
+      status: 'draft',
+      supplements: [makeSupplementItem({ approval_status: 'draft_candidate' })],
+      sleep: {
+        bed_time: '22:30',
+        wake_time: '06:00',
+        target_sleep_hours: 7.5,
+        caffeine_curfew_time: '14:00',
+        last_meal_curfew_time: '19:30',
+        blue_light_cutoff_minutes: 60,
+        morning_sunlight_minutes: 20,
+        circadian_meal_anchors_bn: [],
+        circadian_meal_anchors_en: []
+      }
+    });
+
+    const rx = composeR6Prescription({ patient, weeklyDietPlan: plan, r4Protocol: draftOnlyR4, medications: [] });
+    assert.strictEqual(rx.lifestyle_support.sleep_circadian.is_prescribed, false, 'Unapproved R4 sleep must NOT be marked individually prescribed');
+    assert.strictEqual(rx.medication_supplement_protocol.active_rows.length, 0);
+    assert.strictEqual(rx.medication_supplement_protocol.draft_candidates.length, 1);
+
+    const viewSource = fs.readFileSync(path.join(process.cwd(), 'src/components/reports/PatientDietReportView.tsx'), 'utf-8');
+    const draftBlockMatch = viewSource.match(/\{payload\.medication_supplement_protocol\.draft_candidates\.length > 0 && \(\s*<div[^>]*>/);
+    assert.ok(draftBlockMatch, 'Draft candidates block should exist in PatientDietReportView');
+    assert.ok(draftBlockMatch[0].includes('no-print'), 'Draft candidates block must be marked no-print so drafts never print onto patient prescriptions');
+  });
+});
+
