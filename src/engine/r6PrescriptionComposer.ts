@@ -414,11 +414,150 @@ function sortProtocolRowsChronologically(rows: MedicationProtocolRow[]): void {
 /**
  * Module 5: 6-Column Chronological Medication & Supplementation Protocol Composer
  */
+export interface R4AuthorizationResult {
+  isAuthorized: boolean;
+  reason_en?: string;
+  reason_bn?: string;
+  hasClinicianApprovedSupplements: boolean;
+  isCrossPatientMismatch: boolean;
+  isCrossVisitMismatch: boolean;
+  isStaleStatus: boolean;
+  isHardStop: boolean;
+  isInvalidatedOrMissingProvenance: boolean;
+}
+
+/**
+ * Single Authoritative R4 Protocol Authorization Contract (Checkpoint C)
+ * Prevents unapproved drafts, stale/superseded versions, missing provenance,
+ * HARD_STOP protocols, cross-patient records, or cross-visit plans from entering
+ * active patient prescription instructions.
+ */
+export function validateR4ProtocolAuthorization(options: {
+  r4Protocol?: R4ProtocolStudioData | null;
+  standaloneSupplements?: any[];
+  patientId?: string;
+  visitId?: string;
+  isProtocolDirty?: boolean;
+}): R4AuthorizationResult {
+  const { r4Protocol, standaloneSupplements = [], patientId, visitId, isProtocolDirty } = options;
+  const r4Supps = r4Protocol?.supplements || [];
+  const hasClinicianApprovedSupplements = [...r4Supps, ...standaloneSupplements].some(
+    (s: any) => s?.approval_status === 'clinician_approved' || (s?.approval_status === 'approved' && s?.is_approved === true)
+  );
+
+  if (!r4Protocol) {
+    return {
+      isAuthorized: false,
+      reason_en: 'No clinician-approved R4 Protocol Studio record is attached.',
+      reason_bn: 'কোনো অনুমোদিত R4 প্রোটোকল রেকর্ড সংযুক্ত নেই।',
+      hasClinicianApprovedSupplements,
+      isCrossPatientMismatch: false,
+      isCrossVisitMismatch: false,
+      isStaleStatus: false,
+      isHardStop: false,
+      isInvalidatedOrMissingProvenance: false
+    };
+  }
+
+  const isCrossPatientMismatch = Boolean(
+    !r4Protocol.patient_id || (patientId && r4Protocol.patient_id !== patientId)
+  );
+
+  const hasKnownVisitContext = Boolean(visitId && visitId !== 'vis_current');
+  const isCrossVisitMismatch = Boolean(
+    (hasKnownVisitContext && (!r4Protocol.visit_id || r4Protocol.visit_id !== visitId)) ||
+    (visitId && r4Protocol.visit_id && r4Protocol.visit_id !== visitId)
+  );
+
+  const isStaleStatus = r4Protocol.status === 'superseded' || r4Protocol.status === 'archived';
+  const isHardStop = Boolean(
+    r4Protocol.safety_evaluation?.can_approve === false ||
+    r4Protocol.safety_evaluation?.overall_status === 'HARD_STOP'
+  );
+  const isExplicitlyInvalidated = Boolean(
+    (r4Protocol as any).invalidated_at ||
+    isProtocolDirty ||
+    /invalidated/i.test(r4Protocol.approval_notes || '')
+  );
+  const hasSignoffMetadata = Boolean(
+    r4Protocol.approved_by &&
+    r4Protocol.approved_by.trim() !== '' &&
+    r4Protocol.approved_at &&
+    r4Protocol.approved_at.trim() !== '' &&
+    (r4Protocol.version === undefined || r4Protocol.version >= 1)
+  );
+  const isProtocolApprovedState = Boolean(
+    r4Protocol.is_approved === true &&
+    r4Protocol.status !== 'draft'
+  );
+  const isInvalidatedOrMissingProvenance = Boolean(
+    isExplicitlyInvalidated ||
+    (r4Protocol.is_approved === true && !hasSignoffMetadata) ||
+    (!isProtocolApprovedState && Boolean(r4Protocol.previous_approved_version))
+  );
+
+  let reason_en: string | undefined;
+  let reason_bn: string | undefined;
+  if (isCrossPatientMismatch) {
+    reason_en = `R4 protocol patient mismatch (${r4Protocol.patient_id || 'missing'} vs ${patientId || 'unknown'}).`;
+    reason_bn = 'R4 প্রোটোকলের রোগী শনাক্তকারীর অমিল।';
+  } else if (isCrossVisitMismatch) {
+    reason_en = `R4 protocol visit mismatch (${r4Protocol.visit_id || 'missing'} vs ${visitId || 'unknown'}).`;
+    reason_bn = 'R4 প্রোটোকলের ভিজিট শনাক্তকারীর অমিল।';
+  } else if (isStaleStatus) {
+    reason_en = `R4 protocol status is ${r4Protocol.status} and cannot supply active instructions.`;
+    reason_bn = `R4 প্রোটোকলটি পুরনো বা আর্কাইভকৃত (${r4Protocol.status})।`;
+  } else if (isHardStop) {
+    reason_en = 'R4 protocol has an unresolved HARD_STOP safety evaluation.';
+    reason_bn = 'R4 প্রোটোকলে অমীমাংসিত সেফটি হার্ড স্টপ বিদ্যমান।';
+  } else if (isExplicitlyInvalidated || !isProtocolApprovedState || !hasSignoffMetadata) {
+    reason_en = 'R4 protocol is unapproved, invalidated, or missing clinician sign-off provenance.';
+    reason_bn = 'R4 প্রোটোকলটি অনুমোদিত নয় বা চিকিৎসকের স্বাক্ষর মেটাডাটা অনুপস্থিত।';
+  }
+
+  const isAuthorized = Boolean(
+    !isCrossPatientMismatch &&
+    !isCrossVisitMismatch &&
+    !isStaleStatus &&
+    !isHardStop &&
+    !isExplicitlyInvalidated &&
+    isProtocolApprovedState &&
+    hasSignoffMetadata
+  );
+
+  return {
+    isAuthorized,
+    reason_en,
+    reason_bn,
+    hasClinicianApprovedSupplements,
+    isCrossPatientMismatch,
+    isCrossVisitMismatch,
+    isStaleStatus,
+    isHardStop,
+    isInvalidatedOrMissingProvenance
+  };
+}
+
+function getSupplementDedupKey(s: any): string {
+  const generic = (s?.generic_nutrient || s?.generic_name || s?.name_en || s?.name || '').toString().trim().toLowerCase();
+  const form = (s?.chemical_form || '').toString().trim().toLowerCase();
+  const time = (s?.administration_time || 'UNKNOWN').toString().trim().toUpperCase();
+  if (generic) {
+    return `nutrient:${generic}|form:${form}|time:${time}`;
+  }
+  return s?.id ? `id:${s.id}` : `raw:${JSON.stringify(s)}`;
+}
+
 export function compose6ColumnMedicationProtocol(
   medications: R5MedicationRecord[] = [],
   supplements: any[] = [],
   candidateSupplements: any[] = [],
-  r4Protocol?: R4ProtocolStudioData | null
+  r4Protocol?: R4ProtocolStudioData | null,
+  context?: {
+    patientId?: string;
+    visitId?: string;
+    isProtocolDirty?: boolean;
+  }
 ): {
   columns: [
     'সময় (Time Sequence)',
@@ -558,21 +697,48 @@ export function compose6ColumnMedicationProtocol(
     }
   }
 
-  // 2. Process Approved R4 Supplements (Stage B: Canonical R4 Integration)
+  // 2. Process Approved R4 Supplements (Stage B & Checkpoint C: Strict R4 Authorization & Deduplication)
+  const protocolAuth = validateR4ProtocolAuthorization({
+    r4Protocol,
+    standaloneSupplements: supplements,
+    patientId: context?.patientId ?? r4Protocol?.patient_id,
+    visitId: context?.visitId,
+    isProtocolDirty: context?.isProtocolDirty
+  });
+
   const combinedSupplements: any[] = [];
+  const seenSupplementKeys = new Set<string>();
+  const seenSupplementIds = new Set<string>();
+
+  const registerSupplementIfUnique = (s: any) => {
+    if (!s) return;
+    if (s.id && seenSupplementIds.has(s.id)) return;
+    const semanticKey = getSupplementDedupKey(s);
+    if (seenSupplementKeys.has(semanticKey)) return;
+    if (s.id) seenSupplementIds.add(s.id);
+    seenSupplementKeys.add(semanticKey);
+    combinedSupplements.push(s);
+  };
+
   if (r4Protocol?.supplements && Array.isArray(r4Protocol.supplements)) {
-    combinedSupplements.push(...r4Protocol.supplements);
+    for (const s of r4Protocol.supplements) {
+      registerSupplementIfUnique(s);
+    }
   }
   for (const s of supplements) {
-    if (!combinedSupplements.some(x => (x.id && x.id === s.id) || (x.generic_nutrient && x.generic_nutrient === s.generic_nutrient))) {
-      combinedSupplements.push(s);
-    }
+    registerSupplementIfUnique(s);
   }
 
   for (const supp of combinedSupplements) {
-    const isClinicianApproved = supp.approval_status === 'clinician_approved' || (supp.approval_status === 'approved' && supp.is_approved === true);
-    const isProtocolApproved = !r4Protocol || r4Protocol.is_approved === true || r4Protocol.status === 'active';
-    const isFullyApproved = isClinicianApproved && isProtocolApproved;
+    // Strictly omit rejected or discontinued supplements
+    if (supp.approval_status === 'rejected' || supp.approval_status === 'discontinued') {
+      continue;
+    }
+
+    const isItemClinicianApproved =
+      supp.approval_status === 'clinician_approved' ||
+      (supp.approval_status === 'approved' && supp.is_approved === true);
+    const isFullyApproved = protocolAuth.isAuthorized && isItemClinicianApproved;
 
     if (isFullyApproved) {
       // Approved Supplement -> enters active_rows
@@ -669,9 +835,15 @@ export function compose6ColumnMedicationProtocol(
       };
       activeRows.push(row);
     } else {
-      // Stage B: Unapproved Supplement remains strictly in draft_candidates for clinician review
+      // Stage B & Checkpoint C: Unapproved or unauthorized supplement remains strictly in draft_candidates
+      const unauthReasonEn = (isItemClinicianApproved && !protocolAuth.isAuthorized && protocolAuth.reason_en)
+        ? `Authorization required (${protocolAuth.reason_en}) `
+        : '';
+      const unauthReasonBn = (isItemClinicianApproved && !protocolAuth.isAuthorized && protocolAuth.reason_bn)
+        ? `প্রোটোকল অনুমোদন আবশ্যক (${protocolAuth.reason_bn}) `
+        : '';
       const row: MedicationProtocolRow = {
-        id: supp.id || `cand_supp_${Math.random()}`,
+        id: supp.id || `cand_supp_${draftCandidates.length + 1}`,
         sequence_time: 'UNKNOWN',
         sequence_time_bn: 'খসড়া প্রস্তাবনা (অনুমোদন সাপেক্ষ)',
         sequence_time_en: 'Draft Candidate (Pending Approval)',
@@ -681,8 +853,8 @@ export function compose6ColumnMedicationProtocol(
         dosage_display_bn: supp.dosage_bn || supp.dosage || 'প্রস্তাবিত মাত্রা',
         duration_en: 'Clinician confirmation required',
         duration_bn: 'ক্লিনিক্যাল অনুমোদন প্রয়োজন',
-        clinical_instructions_en: supp.clinician_rationale || supp.clinical_rationale || 'Candidate micronutrient intervention pending clinician sign-off.',
-        clinical_instructions_bn: supp.clinical_rationale_bn || 'চিকিৎসক কর্তৃক অনুমোদনের অপেক্ষায় খসড়া পুষ্টি উপাদান।',
+        clinical_instructions_en: `${unauthReasonEn}${supp.clinician_rationale || supp.clinical_rationale || 'Candidate micronutrient intervention pending clinician sign-off.'}`.trim(),
+        clinical_instructions_bn: `${unauthReasonBn}${supp.clinical_rationale_bn || 'চিকিৎসক কর্তৃক অনুমোদনের অপেক্ষায় খসড়া পুষ্টি উপাদান।'}`.trim(),
         item_type: 'candidate_supplement',
         approval_status: 'draft_candidate',
         requires_clinician_verification: true
@@ -691,10 +863,17 @@ export function compose6ColumnMedicationProtocol(
     }
   }
 
-  // 3. Process Explicit Candidate Supplements
+  // 3. Process Explicit Candidate Supplements (deduplicated against protocol items)
   for (const cand of candidateSupplements) {
+    const semanticKey = getSupplementDedupKey(cand);
+    if ((cand.id && seenSupplementIds.has(cand.id)) || seenSupplementKeys.has(semanticKey)) {
+      continue;
+    }
+    if (cand.id) seenSupplementIds.add(cand.id);
+    seenSupplementKeys.add(semanticKey);
+
     const row: MedicationProtocolRow = {
-      id: cand.id || `cand_${Math.random()}`,
+      id: cand.id || `cand_${draftCandidates.length + 1}`,
       sequence_time: 'UNKNOWN',
       sequence_time_bn: 'খসড়া প্রস্তাবনা (অনুমোদন সাপেক্ষ)',
       sequence_time_en: 'Draft Candidate (Pending Approval)',
@@ -1022,14 +1201,12 @@ export function evaluateR6HydrationAndFluidSafety(
     selectedConditions.includes('ckd_dialysis') ||
     selectedConditions.includes('heart_failure');
 
-  const isR4ApprovedForPatientAndVisit = Boolean(
-    r4Protocol &&
-    r4Protocol.is_approved === true &&
-    r4Protocol.status !== 'superseded' &&
-    r4Protocol.status !== 'archived' &&
-    (!r4Protocol.patient_id || r4Protocol.patient_id === patient.id) &&
-    (!visitId || !r4Protocol.visit_id || r4Protocol.visit_id === visitId)
-  );
+  const protocolAuthForHydration = validateR4ProtocolAuthorization({
+    r4Protocol,
+    patientId: patient?.id,
+    visitId
+  });
+  const isR4ApprovedForPatientAndVisit = protocolAuthForHydration.isAuthorized;
 
   // Explicit clinician-confirmed quantitative limit
   const patientPrescribedLimit =
