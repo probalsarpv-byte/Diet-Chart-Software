@@ -10,6 +10,7 @@ import {
   FoodCategory,
   TrafficLightResult
 } from '../types';
+import { evaluateFoodSubstitutions } from './r8/substitutionEngine';
 
 export function getCookedDisplay(food: FoodItem, rawGrams: number, cookedGrams: number): { bn: string; en: string } {
   const n = (food.name_en + ' ' + food.name_bn).toLowerCase();
@@ -121,53 +122,58 @@ export function generateExchangesForFood(
   allFoods: FoodItem[],
   greenFoodIds: Set<string>,
   redFoodIds: Set<string> = new Set(),
-  yellowFoodIds: Set<string> = new Set()
+  yellowFoodIds: Set<string> = new Set(),
+  patient?: Partial<PatientProfile>
 ): FoodExchangeItem[] {
-  const targetKcal = ((food.per_100g.kcal ?? 0) * rawGrams) / 100;
-  const targetProtein = ((food.per_100g.protein_g ?? 0) * rawGrams) / 100;
+  const mode =
+    food.exchange_group === 'lean_protein' || food.exchange_group === 'fatty_protein'
+      ? 'protein_matched'
+      : 'energy_matched';
 
-  // Candidates: Same exchange group, NOT red, NOT current food
-  const candidates = allFoods.filter(f => 
-    f.id !== food.id &&
-    f.exchange_group === food.exchange_group &&
-    !redFoodIds.has(f.id) &&
-    (greenFoodIds.has(f.id) || yellowFoodIds.has(f.id) || (greenFoodIds.size === 0 && !redFoodIds.has(f.id)))
+  const r8Resp = evaluateFoodSubstitutions(
+    {
+      original_food_id: food.id,
+      original_raw_grams: rawGrams,
+      patient: (patient || {}) as PatientProfile,
+      mode,
+      max_results: 4,
+      tolerance_pct: 35,
+      traffic_light: {
+        green: Array.from(greenFoodIds).map(id => ({ id })),
+        yellow: Array.from(yellowFoodIds).map(id => ({ id })),
+        red: Array.from(redFoodIds).map(id => ({ id })),
+      },
+    },
+    allFoods
   );
 
-  const exchanges: FoodExchangeItem[] = [];
-
-  for (const cand of candidates.slice(0, 4)) {
-    let scaledGrams = 100;
-    const candKcal = cand.per_100g.kcal ?? 0;
-    const candProtein = cand.per_100g.protein_g ?? 0;
-    if (food.exchange_group === 'grain' && candKcal > 0) {
-      scaledGrams = Math.round((targetKcal / candKcal) * 100);
-    } else if ((food.exchange_group === 'lean_protein' || food.exchange_group === 'fatty_protein') && candProtein > 0) {
-      scaledGrams = Math.round((targetProtein / candProtein) * 100);
-    } else if (candKcal > 0) {
-      scaledGrams = Math.round((targetKcal / candKcal) * 100);
-    }
-
-    if (scaledGrams > 0 && scaledGrams < 500) {
-      const cookedGrams = Math.round(scaledGrams * cand.raw_to_cooked_ratio);
-      const display = getCookedDisplay(cand, scaledGrams, cookedGrams);
-      const status: 'GREEN' | 'YELLOW' = greenFoodIds.has(cand.id) ? 'GREEN' : 'YELLOW';
-
-      exchanges.push({
-        food_id: cand.id,
-        name_bn: cand.name_bn,
-        name_en: cand.name_en,
-        raw_weight_g: scaledGrams,
-        cooked_display_bn: display.bn,
-        cooked_display_en: display.en,
-        kcal: Math.round(((cand.per_100g.kcal ?? 0) * scaledGrams) / 100),
-        protein_g: Math.round((((cand.per_100g.protein_g ?? 0) * scaledGrams) / 100) * 10) / 10,
-        traffic_status: status
-      });
-    }
-  }
-
-  return exchanges;
+  return r8Resp.ranked_candidates.map(c => {
+    const cand = c.candidate_food;
+    const status: 'GREEN' | 'YELLOW' = greenFoodIds.has(cand.id)
+      ? 'GREEN'
+      : c.traffic_status === 'GREEN'
+      ? 'GREEN'
+      : 'YELLOW';
+    const cookedGrams = Math.round(c.proposed_raw_grams * (cand.raw_to_cooked_ratio || 1));
+    const display = getCookedDisplay(cand, c.proposed_raw_grams, cookedGrams);
+    return {
+      food_id: cand.id,
+      name_bn: cand.name_bn,
+      name_en: cand.name_en,
+      raw_weight_g: Math.round(c.proposed_raw_grams),
+      cooked_display_bn: display.bn,
+      cooked_display_en: display.en,
+      kcal:
+        cand.per_100g.kcal !== null && cand.per_100g.kcal !== undefined
+          ? Math.round((cand.per_100g.kcal * c.proposed_raw_grams) / 100)
+          : 0,
+      protein_g:
+        cand.per_100g.protein_g !== null && cand.per_100g.protein_g !== undefined
+          ? Math.round(((cand.per_100g.protein_g * c.proposed_raw_grams) / 100) * 10) / 10
+          : 0,
+      traffic_status: status,
+    };
+  });
 }
 
 interface SafeSelectionResult {

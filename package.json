@@ -43,8 +43,10 @@
     "test:r6:browser": "tsx test/r6_browser_e2e.test.ts",
     "test:r7": "tsx test/r7_lab_supplement_intelligence.test.ts",
     "test:r7:browser": "tsx test/r7_browser_e2e.test.ts",
-    "test:e2e": "tsx test/step01_browser_e2e.test.ts && tsx test/step02_browser_e2e.test.ts && tsx test/step03_browser_e2e.test.ts && tsx test/step04_browser_e2e.test.ts && tsx test/step05_browser_e2e.test.ts && tsx test/step06_real_structural_redesign_v3.test.ts && tsx test/r1_print_export_acceptance.test.ts && tsx test/r3_browser_e2e.test.ts && tsx test/r4_browser_e2e.test.ts && tsx test/r5_browser_e2e.test.ts && tsx test/r6_browser_e2e.test.ts && tsx test/r7_browser_e2e.test.ts",
-    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate && npm run test:master && npm run test:step01 && npm run test:step02 && npm run test:step03 && npm run test:step04 && npm run test:step05 && npm run test:expansion && npm run test:r1 && npm run test:r2 && npm run test:r3 && npm run test:r4 && npm run test:r5 && npm run test:r6 && npm run test:r7"
+    "test:r8": "tsx test/r8_food_nutrition_intelligence.test.ts",
+    "test:r8:browser": "tsx test/r8_browser_e2e.test.ts",
+    "test:e2e": "tsx test/step01_browser_e2e.test.ts && tsx test/step02_browser_e2e.test.ts && tsx test/step03_browser_e2e.test.ts && tsx test/step04_browser_e2e.test.ts && tsx test/step05_browser_e2e.test.ts && tsx test/step06_real_structural_redesign_v3.test.ts && tsx test/r1_print_export_acceptance.test.ts && tsx test/r3_browser_e2e.test.ts && tsx test/r4_browser_e2e.test.ts && tsx test/r5_browser_e2e.test.ts && tsx test/r6_browser_e2e.test.ts && tsx test/r7_browser_e2e.test.ts && tsx test/r8_browser_e2e.test.ts",
+    "test": "npm run test:p0 && npm run test:p1 && npm run test:p2 && npm run test:p2:advanced && npm run test:p2:gate && npm run test:master && npm run test:step01 && npm run test:step02 && npm run test:step03 && npm run test:step04 && npm run test:step05 && npm run test:expansion && npm run test:r1 && npm run test:r2 && npm run test:r3 && npm run test:r4 && npm run test:r5 && npm run test:r6 && npm run test:r7 && npm run test:r8"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.2",

@@ -37,6 +37,7 @@ import {
 } from './reports/dualReportEngine';
 import { CLINICAL_PHASES } from './phaseProgression';
 import foodsData from '../data/foods.json';
+import { evaluateFoodSubstitutions } from './r8/substitutionEngine';
 
 /**
  * Standard Bangladeshi Food Exchange Definitions with Local Household Measures
@@ -998,36 +999,35 @@ export function buildPatientSpecificFoodExchanges(
     const rawG = item.raw_weight_g || 100;
     const origHousehold = getHouseholdPortion(group, rawG, ratio);
 
-    let candidateAlternatives: FoodItem[] = [];
-    if (item.alternatives && item.alternatives.length > 0) {
-      for (const alt of item.alternatives) {
-        const f = allFoodsList.find(x => x.id === (alt.food_id || alt.id));
-        if (f) candidateAlternatives.push(f);
-      }
-    }
+    // Delegate substitution ranking & portion scaling directly to R8-E engine
+    const r8Response = evaluateFoodSubstitutions(
+      {
+        original_food_id: origFood.id,
+        original_raw_grams: rawG,
+        patient: patient || ({} as PatientProfile),
+        mode:
+          group.includes('protein') || group.includes('legume') || group.includes('fish')
+            ? 'protein_matched'
+            : 'energy_matched',
+        max_results: 3,
+        tolerance_pct: 30,
+        traffic_light: trafficLight,
+      },
+      allFoodsList
+    );
 
-    if (candidateAlternatives.length === 0) {
-      candidateAlternatives = allFoodsList.filter(f => {
-        if (f.id === origId) return false;
-        const fGroup = (f.exchange_group || f.category || '').toLowerCase();
-        if (fGroup !== group) return false;
-        if (redFoodIds.has(f.id)) return false;
-        const nameLower = (f.name_en || '').toLowerCase();
-        if ([...confirmedAllergies].some(a => nameLower.includes(a))) return false;
-        if ([...disallowed].some(d => nameLower.includes(d) || f.id.toLowerCase() === d)) return false;
-        return true;
-      }).slice(0, 2);
-    }
+    const candList =
+      r8Response.ranked_candidates.length > 0
+        ? r8Response.ranked_candidates
+        : [];
 
-    for (const altFood of candidateAlternatives) {
-      if (redFoodIds.has(altFood.id)) continue;
-      const altNameLower = (altFood.name_en || '').toLowerCase();
-      const altNameBn = (altFood.name_bn || '').toLowerCase();
-      if ([...confirmedAllergies].some(a => altNameLower.includes(a) || altNameBn.includes(a) || altFood.id.toLowerCase() === a)) continue;
-      if ([...disallowed].some(d => altNameLower.includes(d) || altFood.id.toLowerCase() === d || altNameBn.includes(d))) continue;
-      const altRatio = altFood.raw_to_cooked_ratio || 1;
-      const altRawG = rawG;
-      const altHousehold = getHouseholdPortion(group, altRawG, altRatio);
+    for (const r8Cand of candList) {
+      const altFood = r8Cand.candidate_food;
+      const altRawG = Math.round(r8Cand.proposed_raw_grams);
+      const altHousehold = {
+        bn: r8Cand.household_portion_bn,
+        en: r8Cand.household_portion_en,
+      };
 
       let groupLabelBn = 'সাধারণ খাদ্য';
       let groupLabelEn = 'General Food';

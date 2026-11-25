@@ -18,6 +18,7 @@ import { ReportTab } from '@/components/tabs/ReportTab';
 import { ClinicalIntelligenceTab } from '@/components/p2/ClinicalIntelligenceTab';
 import { ProtocolStudioTab } from '@/components/protocol-studio/ProtocolStudioTab';
 import { R5SystemsDashboard } from '@/components/r5/R5SystemsDashboard';
+import { FoodKnowledgeWorkspace } from '@/components/tabs/FoodKnowledgeWorkspace';
 import { deriveR5PopulationProfile } from '@/engine/r5PopulationEngine';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
 import { Lock, LogIn, ShieldAlert, Loader2, Stethoscope, ArrowRight } from 'lucide-react';
@@ -153,6 +154,7 @@ export default function Home() {
           {activeTab === 'conditions' && <ConditionsTab />}
           {activeTab === 'dni' && <DNITab />}
           {activeTab === 'protocol_studio' && <ProtocolStudioTab />}
+          {activeTab === 'food_knowledge' && <FoodKnowledgeWorkspace />}
           {activeTab === 'systems_intelligence' && (
             <R5SystemsDashboard
               populationProfile={deriveR5PopulationProfile(patient)}

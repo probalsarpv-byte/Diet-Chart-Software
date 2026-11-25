@@ -224,7 +224,7 @@
 - **Benchmark / Inspiration:** That Clean Life, Nutrium.
 - **Primary Phase Owner:** **R8** (Food, Nutrient & Recipe Knowledge Base)
 - **Dependencies:** F08, U02
-- **Current Status:** `PARTIALLY IMPLEMENTED` (Nutrient tags exist in `foods.json`; visual translation map in R8)
+- **Current Status:** `IMPLEMENTED` (`src/data/r8KnowledgeData.ts`, `src/engine/r8/knowledgeNetwork.ts`, `src/components/tabs/FoodKnowledgeWorkspace.tsx` — bidirectional food/nutrient/bioactive/mechanism/system/lab network with evidence tiers & patient safety filtering)
 - **Input Data:** Therapeutic mechanism target (e.g., Nrf2 activation, Sirt1 stimulation).
 - **Output Data:** List of local foods richest in required bioactive compounds with edible yield calculations.
 - **Clinical Safety Considerations:** Cross-references patient allergies and disease contraindications before suggesting foods.
@@ -263,7 +263,7 @@
 - **Benchmark / Inspiration:** Nutrium, That Clean Life.
 - **Primary Phase Owner:** **R8** (Food, Nutrient & Recipe Knowledge Base)
 - **Dependencies:** F01, F08
-- **Current Status:** `IMPLEMENTED` (`src/components/tabs/DietChartTab.tsx` alternative swap modal)
+- **Current Status:** `IMPLEMENTED` (`src/engine/r8/substitutionEngine.ts`, `src/engine/mealScaler.ts`, `src/engine/r6PrescriptionComposer.ts`, `src/components/tabs/DietChartTab.tsx` R8 smart swap modal)
 - **Input Data:** Target meal item to replace, patient condition profile, calorie/carb ceiling.
 - **Output Data:** Ranked list of verified alternative foods within ±10% macro variance.
 - **Clinical Safety Considerations:** Filter strictly suppresses any candidate item marked RED in the active safety matrix.

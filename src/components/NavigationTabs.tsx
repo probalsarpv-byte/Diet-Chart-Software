@@ -13,7 +13,8 @@ import {
   ClipboardList,
   TrafficCone,
   Pill,
-  ChevronDown
+  ChevronDown,
+  BookOpen
 } from 'lucide-react';
 
 export const NavigationTabs: React.FC = () => {
@@ -91,6 +92,14 @@ export const NavigationTabs: React.FC = () => {
       label_en: '7. Reports',
       badge: 'A4 Hub',
       badgeColor: 'bg-blue-500/15 text-blue-500'
+    },
+    {
+      id: 'food_knowledge' as const,
+      icon: BookOpen,
+      label_bn: '৮. খাদ্য ও পুষ্টি নলেজ (R8)',
+      label_en: '8. Food & Mechanism KB',
+      badge: 'R8 KB',
+      badgeColor: 'bg-emerald-500/15 text-emerald-500'
     }
   ];
 

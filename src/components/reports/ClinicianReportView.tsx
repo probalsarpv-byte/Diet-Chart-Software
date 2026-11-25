@@ -572,6 +572,20 @@ export const ClinicianReportView: React.FC<ClinicianReportViewProps> = ({
           </div>
         )}
 
+        {/* R8 Food Composition & Evidence Provenance Note (Clinician-Only) */}
+        <div className="p-3.5 rounded-xl border border-emerald-500/25 bg-emerald-500/5 text-[11px] space-y-1 avoid-break" data-testid="r8-clinician-report-provenance">
+          <div className="font-bold text-foreground">
+            {bn
+              ? 'R8 খাদ্য উপাদান ও প্রমাণ-ভিত্তিক মেকানিজম সারসংক্ষেপ (ক্লিনিশিয়ান রেফারেন্স)'
+              : 'R8 Food Composition, Substitution & Evidence Provenance (Clinician-Only)'}
+          </div>
+          <p className="text-muted-foreground">
+            {bn
+              ? 'খাদ্য পুষ্টিমান FCTB V6-এর ভোজ্য অংশের ওপর ভিত্তি করে গণনা করা হয়েছে; অনুপস্থিত মান শূন্য হিসেবে ধরা হয়নি এবং খাদ্য-বদল R8-E ইঞ্জিনের মাধ্যমে অ্যালার্জি ও ট্রাফিক লাইট ফিল্টারিং সহ যাচাইকৃত।'
+              : 'Dietary nutrient totals and food exchanges are computed via R8 FCTB V6 canonical basis (missing values preserved as incomplete, never zero-coerced) with patient allergy, Traffic Light, and culinary-vs-extract evidence qualification.'}
+          </p>
+        </div>
+
         {/* Clinician Sign-Off & Confidentiality Block */}
         <div className="pt-4 border-t border-border flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4 text-xs avoid-break">
           <div className="text-[10px] text-muted-foreground max-w-md space-y-1">

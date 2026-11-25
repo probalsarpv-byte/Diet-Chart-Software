@@ -163,8 +163,8 @@ export interface PracticeContextType {
   setLanguage: (lang: 'bn' | 'en') => void;
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
-  activeTab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence';
-  setActiveTab: (tab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence') => void;
+  activeTab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence' | 'food_knowledge';
+  setActiveTab: (tab: 'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence' | 'food_knowledge') => void;
 
   r5Pathways: PatientPathwayState;
   r5Medications: R5MedicationRecord[];
@@ -474,7 +474,7 @@ function createInitialSeedPatient(): PatientProfile {
 export const PracticeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguage] = useState<'bn' | 'en'>('bn');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'patients' | 'assessment' | 'clinical_intelligence' | 'diet' | 'followup' | 'report' | 'intake' | 'conditions' | 'dni' | 'protocol_studio' | 'systems_intelligence' | 'food_knowledge'>('dashboard');
 
   const [r4Protocol, setR4Protocol] = useState<R4ProtocolStudioData | null>(null);
   const [isR4ProtocolDirty, setIsR4ProtocolDirty] = useState<boolean>(false);

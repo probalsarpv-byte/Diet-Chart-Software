@@ -21,7 +21,8 @@ import {
   Sparkles,
   X,
   Menu,
-  Compass
+  Compass,
+  BookOpen
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -121,6 +122,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen = false, onMobileCl
       label_en: '9. Systems Intelligence (R5)',
       badge: 'R5 Systems',
       badgeColor: 'bg-teal-500/15 text-teal-600 dark:text-teal-400'
+    },
+    {
+      id: 'food_knowledge' as const,
+      icon: BookOpen,
+      label_bn: '১০. খাদ্য ও পুষ্টি নলেজ (R8)',
+      label_en: '10. Food & Mechanism KB (R8)',
+      badge: 'R8 KB',
+      badgeColor: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
     }
   ];
 

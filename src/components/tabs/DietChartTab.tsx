@@ -34,6 +34,8 @@ import {
   Flame
 } from 'lucide-react';
 import { FoodExchangeItem, FoodItem } from '@/types';
+import { evaluateFoodSubstitutions } from '@/engine/r8/substitutionEngine';
+import { R8SubstitutionMode } from '@/types/r8FoodKnowledge';
 
 export const DietChartTab: React.FC = () => {
   const { 
@@ -94,6 +96,45 @@ export const DietChartTab: React.FC = () => {
   const [clinicianIdInput, setClinicianIdInput] = useState<string>('DR_NUTRITION_01');
   const [clinicianNotesInput, setClinicianNotesInput] = useState<string>('');
   const [approvalFeedback, setApprovalFeedback] = useState<string | null>(null);
+
+  // R8 Smart Substitution Modal state
+  const [r8SwapTarget, setR8SwapTarget] = useState<{
+    mealId: string;
+    itemId: string;
+    foodId: string;
+    foodName: string;
+    rawGrams: number;
+  } | null>(null);
+  const [r8SwapMode, setR8SwapMode] = useState<R8SubstitutionMode>('energy_matched');
+
+  const activeDayPlan = weeklyDietPlan?.days?.find(d => d.day_number === activeDayNumber);
+
+  const r8SwapResponse = useMemo(() => {
+    if (!r8SwapTarget || !patient) return null;
+    const currentMeal = activeDayPlan?.meals?.find(m => m.id === r8SwapTarget.mealId);
+    const currentMealItems = (currentMeal?.items || []).map(i => ({
+      food_id: i.food_id,
+      raw_weight_g: i.raw_weight_g,
+    }));
+    const currentDailyItems = (activeDayPlan?.meals || []).flatMap(m =>
+      (m.items || []).map(i => ({ food_id: i.food_id, raw_weight_g: i.raw_weight_g }))
+    );
+    return evaluateFoodSubstitutions(
+      {
+        original_food_id: r8SwapTarget.foodId,
+        original_raw_grams: r8SwapTarget.rawGrams,
+        meal_id: r8SwapTarget.mealId,
+        patient,
+        mode: r8SwapMode,
+        tolerance_pct: 25,
+        max_results: 6,
+        current_meal_items: currentMealItems,
+        current_daily_items: currentDailyItems,
+        traffic_light: trafficLight,
+      },
+      allFoods
+    );
+  }, [r8SwapTarget, r8SwapMode, patient, activeDayPlan, trafficLight, allFoods]);
 
   // Auto-generate weekly plan if not loaded
   useEffect(() => {
@@ -800,26 +841,38 @@ export const DietChartTab: React.FC = () => {
 
                           {/* Food Exchange Alternatives */}
                           <td className="py-3 px-3">
-                            {item.alternatives && item.alternatives.length > 0 ? (
-                              <div className="flex flex-wrap gap-1.5">
-                                {item.alternatives.slice(0, 3).map((alt, aIdx) => (
-                                  <button
-                                    key={aIdx}
-                                    type="button"
-                                    onClick={() => swapDayMealItemAlternative(activeDayNumber, meal.id, item.id, alt)}
-                                    title={bn ? `${alt.name_bn} (${alt.cooked_display_bn}) দিয়ে বদলান` : `Swap with ${alt.name_en}`}
-                                    className="px-2.5 py-0.5 rounded-lg border border-border/80 bg-background/80 hover:bg-emerald-500/10 hover:border-emerald-500/30 text-[10px] text-muted-foreground hover:text-emerald-600 transition-all flex items-center gap-1 shadow-2xs"
-                                  >
-                                    <RefreshCw className="h-2.5 w-2.5 text-emerald-500" />
-                                    <span>{bn ? alt.name_bn : alt.name_en} ({alt.raw_weight_g}g)</span>
-                                  </button>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground italic">
-                                {bn ? 'অনন্য উপাদান' : 'Standard staple'}
-                              </span>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {item.alternatives && item.alternatives.length > 0 && item.alternatives.slice(0, 2).map((alt, aIdx) => (
+                                <button
+                                  key={aIdx}
+                                  type="button"
+                                  onClick={() => swapDayMealItemAlternative(activeDayNumber, meal.id, item.id, alt)}
+                                  title={bn ? `${alt.name_bn} (${alt.cooked_display_bn}) দিয়ে বদলান` : `Swap with ${alt.name_en}`}
+                                  className="px-2.5 py-0.5 rounded-lg border border-border/80 bg-background/80 hover:bg-emerald-500/10 hover:border-emerald-500/30 text-[10px] text-muted-foreground hover:text-emerald-600 transition-all flex items-center gap-1 shadow-2xs"
+                                >
+                                  <RefreshCw className="h-2.5 w-2.5 text-emerald-500" />
+                                  <span>{bn ? alt.name_bn : alt.name_en} ({alt.raw_weight_g}g)</span>
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                data-testid={`r8-smart-swap-btn-${item.id}`}
+                                onClick={() => {
+                                  setR8SwapMode('energy_matched');
+                                  setR8SwapTarget({
+                                    mealId: meal.id,
+                                    itemId: item.id,
+                                    foodId: item.food_id,
+                                    foodName: bn ? item.food_name_bn : item.food_name_en,
+                                    rawGrams: item.raw_weight_g,
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-[10px] font-semibold text-primary transition-all flex items-center gap-1"
+                              >
+                                <Sliders className="h-2.5 w-2.5" />
+                                <span>{bn ? 'স্মার্ট বদল (R8)' : 'Smart Swap (R8)'}</span>
+                              </button>
+                            </div>
                           </td>
 
                           {/* Item Lock Toggle */}
@@ -1720,6 +1773,147 @@ export const DietChartTab: React.FC = () => {
                 {bn ? 'চূড়ান্ত অনুমোদন প্রদান' : 'Approve & Sign-Off'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* R8 Smart Substitution Modal */}
+      {r8SwapTarget && r8SwapResponse && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4" data-testid="r8-swap-modal">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-border pb-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-primary">
+                  R8 Clinical Food Substitution Engine (U11)
+                </div>
+                <h3 className="text-base font-bold text-foreground mt-0.5">
+                  {bn ? 'স্মার্ট বিকল্প নির্বাচন:' : 'Smart Substitution for:'} {r8SwapTarget.foodName} ({r8SwapTarget.rawGrams}g raw)
+                </h3>
+              </div>
+              <button
+                type="button"
+                data-testid="r8-swap-modal-close"
+                onClick={() => setR8SwapTarget(null)}
+                className="px-2.5 py-1 rounded-lg border border-border text-xs font-semibold hover:bg-muted"
+              >
+                {bn ? 'বন্ধ করুন' : 'Close'}
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-xs font-semibold text-muted-foreground">
+                {bn ? 'ম্যাচিং মোড:' : 'Matching Mode:'}
+              </label>
+              <select
+                data-testid="r8-swap-mode-select"
+                value={r8SwapMode}
+                onChange={e => setR8SwapMode(e.target.value as R8SubstitutionMode)}
+                className="px-3 py-1.5 rounded-xl border border-border bg-background text-xs font-semibold"
+              >
+                <option value="energy_matched">Energy-Matched (kcal)</option>
+                <option value="carb_matched">Carbohydrate-Matched (g)</option>
+                <option value="protein_matched">Protein-Matched (g)</option>
+                <option value="multinutrient_balanced">Multi-Nutrient Balanced</option>
+                <option value="clinical_restriction_aware">Clinical Restriction-Aware</option>
+                <option value="manual_clinician_review">Manual Clinician Review</option>
+              </select>
+            </div>
+
+            {r8SwapResponse.ranked_candidates.length === 0 ? (
+              <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-700 dark:text-amber-300">
+                {r8SwapResponse.no_match_reason_en || 'No suitable safe equivalent found.'}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {r8SwapResponse.ranked_candidates.map((cand, idx) => {
+                  const kcalDelta = cand.nutrient_deltas.find(d => d.nutrient_id === 'energy');
+                  const protDelta = cand.nutrient_deltas.find(d => d.nutrient_id === 'protein');
+                  const kDelta = cand.nutrient_deltas.find(d => d.nutrient_id === 'potassium');
+                  return (
+                    <div
+                      key={cand.candidate_food.id}
+                      data-testid={`r8-swap-candidate-${cand.candidate_food.id}`}
+                      className="p-3.5 rounded-xl border border-border bg-background/70 space-y-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-bold text-foreground">
+                            #{idx + 1} {cand.candidate_food.name_en} ({Math.round(cand.proposed_raw_grams)}g raw)
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {cand.candidate_food.name_bn} · {cand.household_portion_en}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              cand.traffic_status === 'GREEN'
+                                ? 'bg-emerald-500/15 text-emerald-600'
+                                : 'bg-amber-500/15 text-amber-600'
+                            }`}
+                          >
+                            {cand.traffic_status}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/15 text-primary">
+                            Score {cand.nutritional_similarity_score}%
+                          </span>
+                          <button
+                            type="button"
+                            data-testid={`r8-confirm-swap-${cand.candidate_food.id}`}
+                            onClick={() => {
+                              const exchange: FoodExchangeItem = {
+                                food_id: cand.candidate_food.id,
+                                name_bn: cand.candidate_food.name_bn,
+                                name_en: cand.candidate_food.name_en,
+                                raw_weight_g: Math.round(cand.proposed_raw_grams),
+                                cooked_display_bn: cand.household_portion_bn,
+                                cooked_display_en: cand.household_portion_en,
+                                kcal: Math.round(kcalDelta?.candidate_amount ?? 0),
+                                protein_g: Math.round((protDelta?.candidate_amount ?? 0) * 10) / 10,
+                                traffic_status: cand.traffic_status === 'GREEN' ? 'GREEN' : 'YELLOW',
+                              };
+                              swapDayMealItemAlternative(
+                                activeDayNumber,
+                                r8SwapTarget.mealId,
+                                r8SwapTarget.itemId,
+                                exchange
+                              );
+                              setR8SwapTarget(null);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+                          >
+                            {bn ? 'বদল নিশ্চিত করুন' : 'Confirm Swap'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-3 text-[11px] font-mono text-muted-foreground">
+                        <span>
+                          Energy: {kcalDelta?.candidate_amount ?? 'N/A'} kcal (Δ {kcalDelta?.absolute_diff ?? 'N/A'})
+                        </span>
+                        <span>
+                          Protein: {protDelta?.candidate_amount ?? 'N/A'} g (Δ {protDelta?.absolute_diff ?? 'N/A'})
+                        </span>
+                        <span>
+                          K+: {kDelta?.candidate_amount ?? 'Unavailable'} mg
+                        </span>
+                      </div>
+
+                      {cand.conditional_instructions_en.length > 0 && (
+                        <div className="text-[11px] text-amber-600">
+                          • {cand.conditional_instructions_en.join(' | ')}
+                        </div>
+                      )}
+                      {cand.impact && cand.impact.constraint_violations_en.length > 0 && (
+                        <div className="text-[11px] text-rose-600 font-semibold">
+                          • Impact Alert: {cand.impact.constraint_violations_en.join(' ')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
