@@ -717,6 +717,24 @@ function makeAuthorizedR4Protocol(
     is_approved: true,
     approved_by: 'Dr. Shahriar Ahmed',
     approved_at: '2026-11-25T10:00:00Z',
+    mode: 'manual_created',
+    lifestyle: {} as any,
+    exercise: {} as any,
+    sleep: {} as any,
+    hydration: {} as any,
+    chronotherapy_timeline: [],
+    safety_evaluation: {
+      overall_status: 'SAFE',
+      can_approve: true,
+      hard_stops: [],
+      reviews_required: [],
+      cautions: [],
+      nutrient_overlaps: [],
+      timing_conflicts: [],
+      evaluated_at: '2026-11-25T10:00:00Z'
+    },
+    created_at: '2026-11-25T09:00:00Z',
+    updated_at: '2026-11-25T10:00:00Z',
     supplements: [makeSupplementItem()],
     ...overrides
   };
@@ -916,7 +934,10 @@ describe('CHECKPOINT C — Strict R4 Supplement Authorization & Patient Isolatio
         overall_status: 'HARD_STOP',
         can_approve: false,
         hard_stops: [],
+        reviews_required: [],
         cautions: [],
+        nutrient_overlaps: [],
+        timing_conflicts: [],
         evaluated_at: '2026-11-25T10:00:00Z'
       }
     });
@@ -981,12 +1002,8 @@ describe('CHECKPOINT C — Strict R4 Supplement Authorization & Patient Isolatio
         wake_time: '06:00',
         target_sleep_hours: 7.5,
         caffeine_curfew_time: '14:00',
-        last_meal_curfew_time: '19:30',
-        blue_light_cutoff_minutes: 60,
-        morning_sunlight_minutes: 20,
-        circadian_meal_anchors_bn: [],
-        circadian_meal_anchors_en: []
-      }
+        last_meal_curfew_time: '19:30'
+      } as any
     });
 
     const rx = composeR6Prescription({ patient, weeklyDietPlan: plan, r4Protocol: draftOnlyR4, medications: [] });

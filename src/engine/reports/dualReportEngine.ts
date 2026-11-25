@@ -41,6 +41,7 @@ import {
   compose6ColumnMedicationProtocol, 
   evaluateMedicationSafetyContract,
   evaluateR6HydrationAndFluidSafety,
+  validateR4ProtocolAuthorization,
   evaluateFastingSafety, 
   STANDARD_BANGLADESHI_EXCHANGES,
   composeR6Prescription
@@ -364,6 +365,8 @@ export function validateReportReleaseEligibility(options: {
   r5NutritionContract?: any;
   medications?: R5MedicationRecord[];
   r4Protocol?: R4ProtocolStudioData | null;
+  supplements?: any[];
+  isR4ProtocolDirty?: boolean;
 }): ReleaseEligibilityResult {
   const {
     patient,
@@ -532,6 +535,44 @@ export function validateReportReleaseEligibility(options: {
     if (hydrationSafety.requires_clinician_confirmation) {
       blockingReasons.push('Fluid restriction or fluid-sensitive diagnosis requires an explicit clinician-confirmed quantitative daily fluid limit (mL/day) before patient release.');
       blockingReasons_bn.push('তরল সীমাবদ্ধতা বা তরল-সংবেদনশীল রোগের জন্য চিকিৎসকের নিশ্চিতকৃত দৈনিক সুনির্দিষ্ট তরল সীমা (মি.লি.) আবশ্যক।');
+    }
+  }
+
+  // Check 13: Strict R4 Protocol & Supplement Authorization Gate (Checkpoint C)
+  const standaloneSupplements = options.supplements || [];
+  if (options.r4Protocol || standaloneSupplements.length > 0) {
+    const r4Auth = validateR4ProtocolAuthorization({
+      r4Protocol: options.r4Protocol,
+      standaloneSupplements,
+      patientId: patient?.id,
+      visitId: effectiveVisitId,
+      isProtocolDirty: options.isR4ProtocolDirty
+    });
+
+    if (!r4Auth.isAuthorized) {
+      const hasStandaloneClaimWithoutR4 = !options.r4Protocol && r4Auth.hasClinicianApprovedSupplements;
+      const hasActiveOrInvalidatedR4 = Boolean(
+        options.r4Protocol && (
+          r4Auth.hasClinicianApprovedSupplements ||
+          r4Auth.isCrossPatientMismatch ||
+          r4Auth.isCrossVisitMismatch ||
+          r4Auth.isStaleStatus ||
+          r4Auth.isHardStop ||
+          r4Auth.isInvalidatedOrMissingProvenance ||
+          options.r4Protocol.status === 'active'
+        )
+      );
+
+      if (hasStandaloneClaimWithoutR4 || hasActiveOrInvalidatedR4) {
+        blockingReasons.push(
+          r4Auth.reason_en ||
+          'R4 supplement/lifestyle protocol requires current clinician sign-off for this patient and visit before release.'
+        );
+        blockingReasons_bn.push(
+          r4Auth.reason_bn ||
+          'এই রোগী ও ভিজিটের জন্য R4 সাপ্লিমেন্ট/জীবনযাপন প্রোটোকল চিকিৎসকের অনুমোদন আবশ্যক।'
+        );
+      }
     }
   }
 

@@ -2747,17 +2747,20 @@ function createTypedPlanningContextFallback(
       };
     });
 
-    // Invalidate previously approved R4 protocol if medications change (P1-007: preserve history)
+    // Invalidate previously approved R4 protocol if medications change (P1-007: preserve history & clear stale sign-off)
     setR4Protocol(prevProto => {
       if (prevProto && (prevProto.is_approved || prevProto.status === 'active')) {
         return {
           ...prevProto,
           is_approved: false,
           status: 'draft',
+          approved_by: undefined,
+          approved_at: undefined,
+          invalidated_at: new Date().toISOString(),
           previous_approved_version: prevProto.version,
           approval_notes: (prevProto.approval_notes ? prevProto.approval_notes + ' | ' : '') + 'Invalidated due to medication list modification; requires clinician re-approval.',
           approval_metadata: undefined
-        };
+        } as R4ProtocolStudioData;
       }
       return prevProto;
     });
@@ -2806,9 +2809,25 @@ function createTypedPlanningContextFallback(
 
     const res = adaptR5ContextToR4(payload, r4Protocol || undefined);
     if (r4Protocol) {
+      // Merge & deduplicate supplements across repeated R5->R4 sync calls
+      const existingSupps = r4Protocol.supplements || [];
+      const mergedSupps = [...existingSupps];
+      for (const incoming of (res.updated_draft.supplements || [])) {
+        const alreadyPresent = mergedSupps.some(
+          s =>
+            s.id === incoming.id ||
+            ((s.generic_nutrient || '').trim().toLowerCase() === (incoming.generic_nutrient || '').trim().toLowerCase() &&
+              (s.chemical_form || '').trim().toLowerCase() === (incoming.chemical_form || '').trim().toLowerCase())
+        );
+        if (!alreadyPresent) {
+          mergedSupps.push(incoming);
+        }
+      }
       updateR4Protocol({
         ...r4Protocol,
-        ...res.updated_draft
+        ...res.updated_draft,
+        supplements: mergedSupps,
+        status: r4Protocol.is_approved ? 'active' : 'draft'
       });
     }
   }, [patient, currentVisit, r5Pathways, r5Medications, r4Protocol, updateR4Protocol]);
@@ -4486,6 +4505,10 @@ function createTypedPlanningContextFallback(
         approval_status: idx === 0 ? 'clinician_approved' : s.approval_status
       }))
     };
+
+    // Persist demo R4 protocol under visit key BEFORE setPatient so loadProtocol useEffect does not overwrite it
+    safeStorage.setItem(`shuddho_lifestyle_plan_${seed.id}_${followUpVisitId}`, demoR4Protocol);
+    safeStorage.setItem(`shuddho_lifestyle_plan_${seed.id}`, demoR4Protocol);
 
     setPatient(seedPatient);
     setVisits(demoVisits);

@@ -239,9 +239,14 @@ export class LocalDemoRepository implements IPracticeRepository {
       const key = `shuddho_lifestyle_plan_${patientId}${visitId ? `_${visitId}` : ''}`;
       const data = localStorage.getItem(key);
       if (data) return JSON.parse(data);
-      // Fallback without visit
+      // Fallback without visit only when caller did not request a distinct visit, or when fallback matches visitId
       const fallback = localStorage.getItem(`shuddho_lifestyle_plan_${patientId}`);
-      if (fallback) return JSON.parse(fallback);
+      if (fallback) {
+        const parsed = JSON.parse(fallback) as R4ProtocolStudioData;
+        if (!visitId || parsed.visit_id === visitId) {
+          return parsed;
+        }
+      }
       return null;
     } catch {
       return null;

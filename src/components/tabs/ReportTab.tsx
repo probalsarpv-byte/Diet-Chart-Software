@@ -170,6 +170,13 @@ export const ReportTab: React.FC = () => {
     });
   }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeDisplayP2, candidateSupplements, activeReportVisit, isSingleDayClinicianMode]);
 
+  const effectiveR4ProtocolForReport = useMemo(() => {
+    if (isCurrentActiveVisit) {
+      return r4Protocol;
+    }
+    return (visitSnapshot as any)?.r4_protocol || undefined;
+  }, [isCurrentActiveVisit, r4Protocol, visitSnapshot]);
+
   const patientPayload = useMemo(() => {
     return buildPatientReportProjection({
       patient: effectivePatientForReport,
@@ -183,11 +190,11 @@ export const ReportTab: React.FC = () => {
       isDietPlanDirty: isCurrentActiveVisit ? isDietPlanDirty : false,
       r5NutritionContract: isCurrentActiveVisit ? r5NutritionContract : undefined,
       medications: effectiveMedicationsForReport,
-      r4Protocol: isCurrentActiveVisit ? r4Protocol : undefined,
-      supplements: isCurrentActiveVisit ? (r4Protocol?.supplements?.filter(s => s.approval_status === 'clinician_approved') || []) : undefined,
+      r4Protocol: effectiveR4ProtocolForReport,
+      supplements: [],
       candidateSupplements: isCurrentActiveVisit ? candidateSupplements : undefined
     });
-  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, r5NutritionContract, effectiveMedicationsForReport, r4Protocol, candidateSupplements]);
+  }, [effectivePatientForReport, effectiveDietChart, effectiveWeeklyDietPlan, dniResult, trafficLight, activeReportVisit, isCurrentActiveVisit, clinicalSafetyEvaluation, isDietPlanDirty, r5NutritionContract, effectiveMedicationsForReport, effectiveR4ProtocolForReport, candidateSupplements]);
 
   // Authoritative Release Eligibility derived directly from Master Prescription Composer
   const releaseEligibility = useMemo(() => ({

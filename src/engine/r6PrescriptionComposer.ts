@@ -1341,7 +1341,7 @@ export function composeR6Prescription(options: {
     duration_weeks: 'Weeks 1–4'
   };
 
-  // 1. Release Gating (Authoritative across Medication, Diet Plan, Fluid, Safety)
+  // 1. Release Gating (Authoritative across Medication, Diet Plan, Fluid, R4 Protocol, Safety)
   const eligibility = validateReportReleaseEligibility({
     patient,
     plan: weeklyDietPlan || dietChart,
@@ -1351,7 +1351,8 @@ export function composeR6Prescription(options: {
     isDietPlanDirty: isDietPlanDirty ?? patient.is_diet_plan_dirty,
     r5NutritionContract,
     medications,
-    r4Protocol
+    r4Protocol,
+    supplements
   });
 
   const isApproved = Boolean(weeklyDietPlan && weeklyDietPlan.status === 'approved' && weeklyDietPlan.is_approved === true);
@@ -1360,12 +1361,16 @@ export function composeR6Prescription(options: {
   // 2. Structured 7-Food-Group Guide
   const sevenFoodGroupGuide = buildStructuredTrafficLightGuide(trafficLight);
 
-  // 3. 6-Column Chronological Medication Protocol (Stage B & C)
+  // 3. 6-Column Chronological Medication Protocol (Stage B, Stage C & Checkpoint C)
   const medicationProtocol = compose6ColumnMedicationProtocol(
     medications,
     supplements,
     candidateSupplements,
-    r4Protocol
+    r4Protocol,
+    {
+      patientId: patient.id,
+      visitId
+    }
   );
 
   // 4. Fasting Safety
@@ -1445,6 +1450,12 @@ export function composeR6Prescription(options: {
   const hydrationEn = hydrationSafety.instructions_en;
   const isHydrationPrescribed = hydrationSafety.is_prescribed;
 
+  const r4StageEAuth = validateR4ProtocolAuthorization({
+    r4Protocol,
+    patientId: patient.id,
+    visitId
+  });
+
   // Exercise
   let exerciseTargetBn = 'ব্যক্তিগতভাবে নির্ধারিত নয়';
   let exerciseTargetEn = 'Not individually prescribed';
@@ -1452,7 +1463,7 @@ export function composeR6Prescription(options: {
   let exerciseSafetyEn = 'Consult physician before initiating structured exercise.';
   let isExercisePrescribed = false;
 
-  if (r4Protocol?.exercise && r4Protocol.exercise.items && r4Protocol.exercise.items.length > 0) {
+  if (r4StageEAuth.isAuthorized && r4Protocol?.exercise && r4Protocol.exercise.items && r4Protocol.exercise.items.length > 0) {
     const approvedExercises = r4Protocol.exercise.items.filter(i => i.approval_status === 'approved');
     if (approvedExercises.length > 0) {
       isExercisePrescribed = true;
@@ -1461,7 +1472,7 @@ export function composeR6Prescription(options: {
       exerciseSafetyBn = approvedExercises.map(e => (e.stop_conditions_bn || []).join(', ')).filter(Boolean).join('; ') || 'বুকে ব্যথা বা মাথা ঘোরা দেখা দিলে তাৎক্ষণিক ব্যায়াম বন্ধ করুন।';
       exerciseSafetyEn = approvedExercises.map(e => (e.stop_conditions_en || []).join(', ')).filter(Boolean).join('; ') || 'Stop immediately if chest pain, severe dyspnea, or dizziness occurs.';
     }
-  } else if (r4Protocol?.exercise?.weekly_aerobic_minutes_target) {
+  } else if (r4StageEAuth.isAuthorized && r4Protocol?.exercise?.weekly_aerobic_minutes_target) {
     isExercisePrescribed = true;
     exerciseTargetBn = `সাপ্তাহিক অ্যারোবিক লক্ষ্যমাত্রা: ${r4Protocol.exercise.weekly_aerobic_minutes_target} মিনিট পরিমিত শারীরিক সক্রিয়তা।`;
     exerciseTargetEn = `Weekly aerobic target: ${r4Protocol.exercise.weekly_aerobic_minutes_target} minutes moderate physical activity.`;
@@ -1475,7 +1486,7 @@ export function composeR6Prescription(options: {
   let sleepEn = 'Not individually prescribed';
   let isSleepPrescribed = false;
 
-  if (r4Protocol?.sleep) {
+  if (r4StageEAuth.isAuthorized && r4Protocol?.sleep) {
     isSleepPrescribed = true;
     sleepHours = r4Protocol.sleep.target_sleep_hours;
     caffeineCurfew = r4Protocol.sleep.caffeine_curfew_time;

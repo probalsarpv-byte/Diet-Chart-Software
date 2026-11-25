@@ -150,7 +150,26 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
         }
       ];
 
-      const protocol = compose6ColumnMedicationProtocol([], approvedSupplements);
+      const authorizedR4 = {
+        id: 'r4_scen3',
+        patient_id: 'pt_scen3',
+        visit_id: 'vis_scen3',
+        organization_id: 'org_test',
+        version: 1,
+        status: 'active',
+        is_approved: true,
+        approved_by: 'Dr. Test Clinician',
+        approved_at: '2026-11-25T09:00:00Z',
+        supplements: approvedSupplements
+      } as unknown as R4ProtocolStudioData;
+
+      const protocol = compose6ColumnMedicationProtocol(
+        [],
+        approvedSupplements,
+        [],
+        authorizedR4,
+        { patientId: 'pt_scen3', visitId: 'vis_scen3' }
+      );
       assert.strictEqual(protocol.active_rows.length, 2);
       assert.strictEqual(protocol.active_rows[0].sequence_time, '08:30');
       assert.strictEqual(protocol.active_rows[0].brand_name, 'D-Rise 2000');
@@ -385,7 +404,26 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
         }
       ];
 
-      const protocol = compose6ColumnMedicationProtocol(meds, supps);
+      const authorizedR4 = {
+        id: 'r4_scen8',
+        patient_id: 'pt_scen8',
+        visit_id: 'vis_scen8',
+        organization_id: 'org_test',
+        version: 1,
+        status: 'active',
+        is_approved: true,
+        approved_by: 'Dr. Test Clinician',
+        approved_at: '2026-11-25T09:00:00Z',
+        supplements: supps
+      } as unknown as R4ProtocolStudioData;
+
+      const protocol = compose6ColumnMedicationProtocol(
+        meds,
+        supps,
+        [],
+        authorizedR4,
+        { patientId: 'pt_scen8', visitId: 'vis_scen8' }
+      );
       assert.strictEqual(protocol.active_rows.length, 2);
       assert.strictEqual(protocol.active_rows[0].sequence_time, '06:30');
       assert.strictEqual(protocol.active_rows[0].generic_name, 'Levothyroxine Sodium');
