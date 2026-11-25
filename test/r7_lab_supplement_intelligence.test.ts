@@ -60,6 +60,9 @@ import {
   evaluateFunctionalMatrix
 } from '../src/engine/r5SystemsNetworkEngine';
 import { buildP2ClinicalObservations, buildFlattenedAnswersForP2 } from '../src/engine/assessment/p2HandoffAdapter';
+import { runP2Analysis } from '../src/engine/p2';
+import { aggregateEvidence } from '../src/engine/p2/evidenceAggregator';
+import { analyzeMetabolicHealth } from '../src/engine/p2/metabolicAndGutEngines';
 import {
   buildClinicianReportProjection,
   buildPatientReportProjection,
@@ -1254,6 +1257,231 @@ describe('Phase R7 — Advanced Laboratory, Biomarker, DNI & Supplement Intellig
         r4FluidCheck.updated_draft.hydration?.clinician_fluid_limit_ml,
         undefined,
         'R5->R4 adapter does NOT fabricate 1500 mL fluid cap'
+      );
+    });
+  });
+
+  // ── CHECKPOINT F CLOSURE: Full P2 Pipeline HOMA-IR Eligibility & Timestamp Isolation ─
+  describe('Checkpoint F Closure: Full P2 Pipeline HOMA-IR Eligibility & Episode Integrity', () => {
+    it('F01-F10: Rejects same-day contradictory timestamps, prevents legacy scalar homa_ir lab_confirmed promotion & gates full runP2Analysis / analyzeMetabolicHealth', () => {
+      const pt = createSyntheticPatient({
+        id: 'pt_cp_f',
+        current_visit_id: 'vis_cp_f',
+        age: 44,
+        gender: 'male',
+        labs: {
+          fasting_glucose: 120,
+          fasting_insulin: 20,
+          homa_ir: 5.93,
+          lab_flags: []
+        }
+      });
+
+      // F05: Same calendar day with contradictory collection timestamps (08:00 vs 15:30) -> NOT paired
+      const sameDayContra = computeR7DerivedBiomarkers({
+        patient: pt,
+        population: buildR5PopulationProfile(pt),
+        observations: reconcilePatientLaboratories({
+          patient: pt,
+          visitId: 'vis_cp_f',
+          structuredEntries: [
+            makeStructuredLab('fbs', 6.5, 'mmol/L', {
+              patient_id: 'pt_cp_f',
+              visit_id: 'vis_cp_f',
+              fasting_status: 'fasting',
+              test_date: '2026-11-24T08:00:00Z'
+            }),
+            makeStructuredLab('fasting_insulin', 20, 'µIU/mL', {
+              patient_id: 'pt_cp_f',
+              visit_id: 'vis_cp_f',
+              fasting_status: 'fasting',
+              test_date: '2026-11-24T15:30:00Z'
+            })
+          ]
+        }).latestByCanonical
+      });
+      assert.equal(
+        sameDayContra.find(d => d.derived_id === 'homa_ir')?.eligibility_met,
+        false,
+        'F05: Same-day samples >2h apart must NOT auto-pair for HOMA-IR'
+      );
+
+      // F06: Legacy scalar patient.labs.homa_ir never becomes lab_confirmed in aggregateEvidence or analyzeMetabolicHealth
+      const legacyAgg = aggregateEvidence(pt, {});
+      const legacyHomaObs = legacyAgg.find(o => o.sourceLabMarker === 'homa_ir');
+      assert.ok(legacyHomaObs);
+      assert.notEqual(legacyHomaObs!.verificationStatus, 'lab_confirmed', 'F06: Legacy patient.labs.homa_ir never becomes lab_confirmed');
+
+      const legacyMeta = analyzeMetabolicHealth(pt, legacyAgg, {});
+      assert.equal(legacyMeta.homaIrAnalysis?.isValidated, false, 'F08: Unprovenanced legacy HOMA-IR is never validated');
+
+      // F07 & F10: Full runP2Analysis with ineligible R7 HOMA-IR (e.g. nonfasting) must NOT restore legacy HOMA-IR
+      const assessmentNonFasting: any = {
+        patient_id: pt.id,
+        visit_id: pt.current_visit_id,
+        assessment_id: 'assess_cp_f',
+        assessment_date: '2026-11-25',
+        questionnaire_version: '2.0',
+        mode: 'quick',
+        functional_answers: {},
+        population_data: {},
+        labs: {
+          entries: {
+            fbs: makeStructuredLab('fbs', 5.0, 'mmol/L', {
+              patient_id: pt.id,
+              visit_id: pt.current_visit_id,
+              fasting_status: 'nonfasting',
+              test_date: '2026-11-24'
+            }),
+            fasting_insulin: makeStructuredLab('fasting_insulin', 24, 'µIU/mL', {
+              patient_id: pt.id,
+              visit_id: pt.current_visit_id,
+              fasting_status: 'fasting',
+              test_date: '2026-11-24'
+            })
+          },
+          last_updated: '2026-11-25',
+          total_tested_count: 2,
+          pending_count: 0
+        }
+      };
+      const p2Ineligible = runP2Analysis({ patient: { ...pt, labs: { homa_ir: 5.93, lab_flags: [] } }, assessment: assessmentNonFasting });
+      assert.equal(
+        p2Ineligible.observations.find(o => o.sourceLabMarker === 'homa_ir'),
+        undefined,
+        'F07: runP2Analysis does not restore ineligible R7 HOMA-IR via legacy patient.labs.homa_ir'
+      );
+      assert.equal(
+        p2Ineligible.metabolicHealthAnalysis?.homaIrAnalysis,
+        undefined,
+        'F08: analyzeMetabolicHealth respects R7 ineligibility in full P2 pipeline'
+      );
+
+      // F01: Valid paired fasting verified samples produce eligible lab_confirmed HOMA-IR through full runP2Analysis
+      const assessmentValid: any = {
+        ...assessmentNonFasting,
+        labs: {
+          ...assessmentNonFasting.labs,
+          entries: {
+            fbs: makeStructuredLab('fbs', 7.0, 'mmol/L', {
+              patient_id: pt.id,
+              visit_id: pt.current_visit_id,
+              fasting_status: 'fasting',
+              test_date: '2026-11-24T08:00:00Z',
+              verification_status: 'clinician_verified'
+            }),
+            fasting_insulin: makeStructuredLab('fasting_insulin', 18, 'µIU/mL', {
+              patient_id: pt.id,
+              visit_id: pt.current_visit_id,
+              fasting_status: 'fasting',
+              test_date: '2026-11-24T08:15:00Z',
+              verification_status: 'clinician_verified'
+            })
+          }
+        }
+      };
+      const p2Valid = runP2Analysis({ patient: pt, assessment: assessmentValid });
+      const validHomaObs = p2Valid.observations.find(o => o.sourceLabMarker === 'homa_ir');
+      assert.equal(validHomaObs?.verificationStatus, 'lab_confirmed', 'F01: Valid paired fasting draws yield lab_confirmed HOMA-IR');
+      assert.equal(p2Valid.metabolicHealthAnalysis?.homaIrAnalysis?.isValidated, true);
+    });
+  });
+
+  // ── CHECKPOINT G CLOSURE: Calculated eGFR Verification Provenance & Clinical Applicability ─
+  describe('Checkpoint G Closure: Calculated eGFR Verification Provenance & Discordance', () => {
+    it('G01-G08: Preserves unverified creatinine provenance on calculated eGFR, blocks pregnancy/AKI applicability & flags reported/calculated discordance', () => {
+      // G02: Calculated eGFR from UNVERIFIED creatinine stays available_unverified and does NOT emit automatic CKD protein target
+      const ptUnverCr = createSyntheticPatient({
+        id: 'pt_cp_g1',
+        current_visit_id: 'vis_g1',
+        age: 62,
+        gender: 'male',
+        selected_conditions: ['hypertension_ckd']
+      });
+      const contractUnverEgfr = buildR5NutritionAdjustmentContract({
+        patient: ptUnverCr,
+        structuredLabEntries: {
+          serum_creatinine: makeStructuredLab('serum_creatinine', 1.8, 'mg/dL', {
+            patient_id: 'pt_cp_g1',
+            visit_id: 'vis_g1',
+            verification_status: 'unverified'
+          })
+        }
+      });
+      assert.equal(contractUnverEgfr.lab_safety_context?.egfr_source, 'calculated');
+      assert.equal(
+        contractUnverEgfr.lab_safety_context?.egfr_state,
+        'available_unverified',
+        'G02: Calculated eGFR from unverified creatinine MUST remain available_unverified'
+      );
+      assert.ok(
+        !contractUnverEgfr.adjustment_candidates?.some(a => a.id === 'adj_protein_ckd_conservative'),
+        'G06: Unverified calculated eGFR must NOT auto-generate renal protein prescription'
+      );
+      assert.ok(
+        contractUnverEgfr.clinical_review_flags?.some(f => f.parameter === 'egfr' && f.flag === 'CLINICAL_REVIEW_REQUIRED')
+      );
+
+      // G01: Calculated eGFR from VERIFIED creatinine retains available_verified
+      const contractVerEgfr = buildR5NutritionAdjustmentContract({
+        patient: ptUnverCr,
+        structuredLabEntries: {
+          serum_creatinine: makeStructuredLab('serum_creatinine', 1.8, 'mg/dL', {
+            patient_id: 'pt_cp_g1',
+            visit_id: 'vis_g1',
+            verification_status: 'clinician_verified'
+          })
+        }
+      });
+      assert.equal(contractVerEgfr.lab_safety_context?.egfr_state, 'available_verified');
+      assert.ok(contractVerEgfr.adjustment_candidates?.some(a => a.id === 'adj_protein_ckd_conservative'));
+
+      // Pregnancy -> calculated eGFR is clinically_ineligible
+      const ptPreg = createSyntheticPatient({
+        id: 'pt_cp_g_preg',
+        current_visit_id: 'vis_g_preg',
+        age: 29,
+        gender: 'female',
+        population_group: 'pregnancy',
+        selected_conditions: ['hypertension_ckd']
+      });
+      const contractPreg = buildR5NutritionAdjustmentContract({
+        patient: ptPreg,
+        structuredLabEntries: {
+          serum_creatinine: makeStructuredLab('serum_creatinine', 1.2, 'mg/dL', {
+            patient_id: 'pt_cp_g_preg',
+            visit_id: 'vis_g_preg',
+            verification_status: 'clinician_verified'
+          })
+        }
+      });
+      assert.equal(
+        contractPreg.lab_safety_context?.egfr_state,
+        'clinically_ineligible',
+        'G06: Pregnancy creatinine eGFR marked clinically_ineligible'
+      );
+
+      // G05: Discordant reported (82) vs calculated (38) eGFR triggers conflicting state + CLINICAL_REVIEW_REQUIRED
+      const contractDiscordant = buildR5NutritionAdjustmentContract({
+        patient: ptUnverCr,
+        structuredLabEntries: {
+          reported_egfr: makeStructuredLab('reported_egfr', 82, 'mL/min/1.73m²', {
+            patient_id: 'pt_cp_g1',
+            visit_id: 'vis_g1',
+            verification_status: 'clinician_verified'
+          }),
+          serum_creatinine: makeStructuredLab('serum_creatinine', 1.9, 'mg/dL', {
+            patient_id: 'pt_cp_g1',
+            visit_id: 'vis_g1',
+            verification_status: 'clinician_verified'
+          })
+        }
+      });
+      assert.equal(contractDiscordant.lab_safety_context?.egfr_state, 'conflicting', 'G05: Discordant reported vs calculated eGFR flagged conflicting');
+      assert.ok(contractDiscordant.lab_safety_context?.reported_egfr_ml_min !== undefined);
+      assert.ok(contractDiscordant.lab_safety_context?.calculated_egfr_ml_min !== undefined);
+      assert.ok(
+        contractDiscordant.clinical_review_flags?.some(f => f.parameter === 'egfr' && f.evidence_status === 'CONFLICTING_REQUIRES_RECONCILIATION')
       );
     });
   });

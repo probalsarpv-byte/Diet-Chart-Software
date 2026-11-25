@@ -58,6 +58,16 @@ function datesCompatibleForRatio(
   }
 
   if (maxDaysDiff === 0) {
+    const hasTime1 = /[T\s]\d{2}:\d{2}/.test(s1);
+    const hasTime2 = /[T\s]\d{2}:\d{2}/.test(s2);
+    if (hasTime1 && hasTime2) {
+      const t1 = Date.parse(s1);
+      const t2 = Date.parse(s2);
+      if (!isNaN(t1) && !isNaN(t2)) {
+        // Same-day draws with contradictory timestamps (> 2h apart) are distinct collection episodes
+        return Math.abs(t1 - t2) <= 2 * 60 * 60 * 1000;
+      }
+    }
     const day1 = s1.slice(0, 10);
     const day2 = s2.slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(day1) && /^\d{4}-\d{2}-\d{2}$/.test(day2)) {
@@ -1075,7 +1085,9 @@ export function computeR7DerivedBiomarkers(options: {
     if (cr) {
       const isAdult = population.age !== undefined && population.age >= 18;
       const hasKnownSex = population.sex === 'male' || population.sex === 'female';
-      if (!isAdult || !hasKnownSex || cr.normalized_value! <= 0) {
+      const isPregnant = patient.population_group === 'pregnancy' || (population as any).reproductive_status === 'pregnant';
+      const hasAki = Boolean((patient as any).aki_suspected || (patient as any).acute_kidney_injury);
+      if (!isAdult || !hasKnownSex || isPregnant || hasAki || cr.normalized_value! <= 0) {
         results.push({
           derived_id: 'calculated_egfr',
           name_en: 'Calculated eGFR (CKD-EPI 2021 Cr, Race-Free)',
@@ -1084,14 +1096,31 @@ export function computeR7DerivedBiomarkers(options: {
           formula_version: '2021',
           status: 'not_applicable',
           input_observation_ids: [cr.observation_id],
-          input_summary: [],
+          input_summary: [
+            {
+              marker_id: 'creatinine',
+              value: cr.display_normalized_value,
+              unit: 'mg/dL',
+              collection_datetime: cr.collection_datetime,
+              verification_status: cr.verification_status
+            }
+          ],
           eligibility_met: false,
           ineligibility_reason_en: !isAdult
             ? 'Adult CKD-EPI 2021 equation is inapplicable to pediatric (<18y) or unentered-age records.'
+            : isPregnant
+            ? 'CKD-EPI 2021 creatinine-based equation is clinically inapplicable in pregnancy due to gestational hyperfiltration.'
+            : hasAki
+            ? 'Creatinine-based steady-state eGFR is clinically invalid in suspected acute kidney injury.'
             : 'Explicit biological sex (male/female) required for CKD-EPI 2021 equation (never defaults unspecified sex).',
+          ineligibility_reason_bn: isPregnant
+            ? 'গর্ভাবস্থায় ক্রিয়েটিনিন-ভিত্তিক eGFR প্রযোজ্য নয়।'
+            : hasAki
+            ? 'তীব্র কিডনি আঘাতে (AKI) স্থির-অবস্থার eGFR গণনা প্রযোজ্য নয়।'
+            : 'শিশু বা লিঙ্গ অনির্ধারিত রোগীতে প্রযোজ্য নয়।',
           evidence_source_id: 'EVID_KDIGO_2024_CKD',
           limitations_en: 'Always inspect laboratory-reported eGFR separately if present.',
-          limitations_bn: 'শিশু বা লিঙ্গ অনির্ধারিত রোগীতে প্রযোজ্য নয়।'
+          limitations_bn: 'শিশু, গর্ভাবস্থা, তীব্র কিডনি আঘাত বা লিঙ্গ অনির্ধারিত রোগীতে প্রযোজ্য নয়।'
         });
       } else {
         const scr = cr.normalized_value!;

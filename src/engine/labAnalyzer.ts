@@ -41,7 +41,7 @@ export function analyzeFunctionalLabs(
     }
 
     flags.push({
-      marker: 'HOMA-IR (Calculated)',
+      marker: 'HOMA-IR (Unverified Arithmetic Estimate)',
       value: homa_ir,
       unit: 'Index',
       conventional_range: '< 2.5 (population-dependent)',
@@ -50,12 +50,12 @@ export function analyzeFunctionalLabs(
       is_diagnostic_threshold: false,
       insight_en:
         homa_ir < 1.4
-          ? 'Within normal fasting insulin sensitivity range (requires fasting compatibility and non-exogenous insulin).'
-          : 'Elevated HOMA-IR pattern; supports low-glycemic meal review alongside clinician evaluation (threshold varies by ethnicity/population).',
+          ? 'Unverified arithmetic screen only (requires paired same-episode fasting confirmation and non-exogenous insulin; not lab-confirmed).'
+          : 'Unverified arithmetic HOMA-IR screen only; requires documented paired same-episode fasting verification before clinical use (threshold varies by ethnicity/population).',
       insight_bn:
         homa_ir < 1.4
-          ? 'স্বাভাবিক ফাস্টিং ইনসুলিন সংবেদনশীলতা নির্দেশক।'
-          : 'ইনসুলিন রেজিস্ট্যান্স বৃদ্ধির প্রবণতা; লো-গ্লাইসেমিক খাদ্যতালিকা ও ক্লিনিক্যাল পর্যালোচনা প্রয়োজন।'
+          ? 'অযাচাইকৃত আনুমানিক গণনা (নিশ্চিতকরণের জন্য একই সময়ের ফাস্টিং নমুনা আবশ্যক)।'
+          : 'অযাচাইকৃত আনুমানিক HOMA-IR; ক্লিনিক্যাল সিদ্ধান্তের আগে ফাস্টিং ও জোড়া নমুনা যাচাই আবশ্যক।'
     });
   }
 

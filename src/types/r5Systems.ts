@@ -479,7 +479,7 @@ export interface R5NutritionAdjustmentContract {
   lab_safety_context?: {
     potassium_state: 'available_verified' | 'available_unverified' | 'conflicting' | 'invalid' | 'pending' | 'unavailable';
     serum_potassium_mmol_l?: number;
-    egfr_state: 'available_verified' | 'available_unverified' | 'conflicting' | 'invalid' | 'pending' | 'unavailable';
+    egfr_state: 'available_verified' | 'available_unverified' | 'clinically_ineligible' | 'conflicting' | 'invalid' | 'pending' | 'unavailable' | 'review_required';
     egfr_source: 'reported' | 'calculated' | 'unavailable';
     reported_egfr_ml_min?: number;
     calculated_egfr_ml_min?: number;

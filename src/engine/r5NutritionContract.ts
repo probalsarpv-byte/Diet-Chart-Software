@@ -120,15 +120,39 @@ export function buildR5NutritionAdjustmentContract(options: {
   const repEgfrEval = classifyMarkerState(repEgfrObs, labsAny.reported_egfr ?? labsAny.egfr);
   const reportedEgfr = repEgfrEval.value;
 
-  const calcEgfrDerived = r7LabSummary.derived_indices.find(
-    d => d.derived_id === 'calculated_egfr' && d.status === 'calculated' && d.eligibility_met
-  );
+  const crObs = r7LabSummary.observations.creatinine;
+  const crEval = classifyMarkerState(crObs, labsAny.serum_creatinine ?? labsAny.creatinine);
+
+  const calcEgfrAny = r7LabSummary.derived_indices.find(d => d.derived_id === 'calculated_egfr');
+  const calcEgfrDerived =
+    calcEgfrAny && calcEgfrAny.status === 'calculated' && calcEgfrAny.eligibility_met
+      ? calcEgfrAny
+      : undefined;
   const calculatedEgfr =
     calcEgfrDerived && typeof calcEgfrDerived.value === 'number' && Number.isFinite(calcEgfrDerived.value) && calcEgfrDerived.value > 0
       ? calcEgfrDerived.value
       : undefined;
 
-  const effectiveEgfr = reportedEgfr ?? calculatedEgfr;
+  const egfrDiscordant =
+    reportedEgfr !== undefined &&
+    calculatedEgfr !== undefined &&
+    Math.abs(reportedEgfr - calculatedEgfr) >= 15 &&
+    ((reportedEgfr < 60) !== (calculatedEgfr < 60) || (reportedEgfr < 30) !== (calculatedEgfr < 30));
+
+  type EgfrState = NonNullable<R5NutritionAdjustmentContract['lab_safety_context']>['egfr_state'];
+  let egfrState: EgfrState = 'unavailable';
+  if (egfrDiscordant) {
+    egfrState = 'conflicting';
+  } else if (repEgfrEval.state !== 'unavailable') {
+    egfrState = repEgfrEval.state;
+  } else if (calcEgfrAny?.status === 'not_applicable') {
+    egfrState = 'clinically_ineligible';
+  } else if (calculatedEgfr !== undefined) {
+    egfrState = crEval.verified ? 'available_verified' : 'available_unverified';
+  }
+
+  const effectiveEgfr = egfrDiscordant ? undefined : (reportedEgfr ?? calculatedEgfr);
+  const egfrVerified = egfrState === 'available_verified';
   const egfrSource: 'reported' | 'calculated' | 'unavailable' =
     reportedEgfr !== undefined ? 'reported' : calculatedEgfr !== undefined ? 'calculated' : 'unavailable';
 
@@ -258,12 +282,35 @@ export function buildR5NutritionAdjustmentContract(options: {
   // Protein targets derived from verified clinical diagnosis & dialysis status, NOT broad pathway or default eGFR
   const confirmedConditions = (patient.selected_conditions || []) as string[];
   const isDialysis = confirmedConditions.includes('ckd_dialysis') || (patient as any).is_on_dialysis === true;
-  const hasReducedEgfr = effectiveEgfr !== undefined && effectiveEgfr > 0 && effectiveEgfr < 60;
+  const hasReducedEgfr = egfrVerified && effectiveEgfr !== undefined && effectiveEgfr > 0 && effectiveEgfr < 60;
   const isCKDNonDialysis =
     confirmedConditions.includes('ckd_stage_1_3b') ||
     (confirmedConditions.includes('hypertension_ckd') && hasReducedEgfr);
 
-  if (confirmedConditions.includes('hypertension_ckd') && effectiveEgfr === undefined && !isDialysis) {
+  if (egfrDiscordant) {
+    clinicalReviewFlags.push({
+      parameter: 'egfr',
+      flag: 'CLINICAL_REVIEW_REQUIRED',
+      rationale_en: `Reported eGFR (${reportedEgfr!.toFixed(1)} mL/min/1.73m²) and calculated CKD-EPI eGFR (${calculatedEgfr!.toFixed(1)} mL/min/1.73m²) cross a clinical staging boundary. Clinician reconciliation required before automatic renal staging.`,
+      rationale_bn: `রিপোর্টেড ইজিএফআর (${reportedEgfr!.toFixed(1)}) এবং হিসাবকৃত ইজিএফআর (${calculatedEgfr!.toFixed(1)})-এর মধ্যে উল্লেখযোগ্য পার্থক্য রয়েছে; ক্লিনিক্যাল পর্যালোচনা প্রয়োজন।`,
+      evidence_status: 'CONFLICTING_REQUIRES_RECONCILIATION'
+    });
+  } else if (confirmedConditions.includes('hypertension_ckd') && !egfrVerified && !isDialysis) {
+    clinicalReviewFlags.push({
+      parameter: 'egfr',
+      flag: 'CLINICAL_REVIEW_REQUIRED',
+      rationale_en:
+        egfrState === 'available_unverified'
+          ? 'Calculated/reported eGFR relies on unverified laboratory input; verify creatinine/eGFR before establishing renal dietary prescriptions.'
+          : egfrState === 'clinically_ineligible'
+          ? 'Calculated eGFR is clinically ineligible (e.g., pregnancy, pediatric, AKI, or unspecified sex); obtain clinician renal assessment before protein restriction.'
+          : 'Hypertension/CKD selected without verified/calculated eGFR result; eGFR unavailable (not assumed normal). Obtain creatinine or reported eGFR before finalizing protein target.',
+      rationale_bn: 'হাইপারটেনশন/সিকেডি চিহ্নিত কিন্তু যাচাইকৃত ও উপযুক্ত ইজিএফআর তথ্য অনুপস্থিত; প্রোটিন মাত্রা চূড়ান্ত করার আগে ল্যাব ইজিএফআর যাচাই করুন।',
+      evidence_status: 'CLINICAL_REVIEW_REQUIRED'
+    });
+  }
+
+  if (false) {
     clinicalReviewFlags.push({
       parameter: 'egfr',
       flag: 'CLINICAL_REVIEW_REQUIRED',
@@ -423,7 +470,7 @@ export function buildR5NutritionAdjustmentContract(options: {
     lab_safety_context: {
       potassium_state: potEval.state,
       serum_potassium_mmol_l: serumK,
-      egfr_state: repEgfrEval.state !== 'unavailable' ? repEgfrEval.state : calculatedEgfr !== undefined ? 'available_verified' : 'unavailable',
+      egfr_state: egfrState,
       egfr_source: egfrSource,
       reported_egfr_ml_min: reportedEgfr,
       calculated_egfr_ml_min: calculatedEgfr

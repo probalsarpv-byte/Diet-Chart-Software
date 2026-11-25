@@ -27,24 +27,43 @@ export function analyzeMetabolicHealth(
     (patient.gender === 'female' && patient.waist_cm ? patient.waist_cm > 80 : false) ||
     observations.some(o => o.tags?.includes('central_adiposity'));
 
-  // HOMA-IR calculation
+  // HOMA-IR calculation — Checkpoint F: respect authoritative R7 derived HOMA-IR eligibility & verification provenance
   let homaIrAnalysis: MetabolicHealthAnalysisResult['homaIrAnalysis'] | undefined = undefined;
   const labs = patient.labs || {};
+  const onExogenousInsulin =
+    hypoglycemicMedicationActive &&
+    (patient.active_medications.some(m => /insulin/i.test(m)) ||
+      (patient.medication_records || []).some(m => m.status === 'active' && /insulin/i.test(m.generic_name || '')));
 
-  if (labs.homa_ir !== undefined) {
-    const val = labs.homa_ir;
+  const homaObs = observations.find(o => o.sourceLabMarker === 'homa_ir');
+  const hasStructuredLabPipeline = observations.some(
+    o => o.category === 'lab' && o.provenance !== 'legacy_unprovenanced_homa_ir_screen'
+  );
+
+  if (homaObs && typeof homaObs.observedValue === 'number' && !onExogenousInsulin) {
+    const val = homaObs.observedValue;
     homaIrAnalysis = {
       value: val,
       status: val < 1.4 ? 'normal' : val <= 1.9 ? 'borderline' : 'significant_insulin_resistance',
-      isValidated: true,
+      isValidated: homaObs.verificationStatus === 'lab_confirmed',
     };
-  } else if (labs.fasting_glucose !== undefined && labs.fasting_insulin !== undefined && labs.fasting_insulin > 0) {
-    const calculated = Math.round(((labs.fasting_glucose * labs.fasting_insulin) / 405) * 100) / 100;
-    homaIrAnalysis = {
-      value: calculated,
-      status: calculated < 1.4 ? 'normal' : calculated <= 1.9 ? 'borderline' : 'significant_insulin_resistance',
-      isValidated: true,
-    };
+  } else if (!hasStructuredLabPipeline && !onExogenousInsulin) {
+    // Legacy scalar fallback without paired fasting metadata: NEVER mark isValidated = true
+    if (labs.homa_ir !== undefined) {
+      const val = labs.homa_ir;
+      homaIrAnalysis = {
+        value: val,
+        status: val < 1.4 ? 'normal' : val <= 1.9 ? 'borderline' : 'significant_insulin_resistance',
+        isValidated: false,
+      };
+    } else if (labs.fasting_glucose !== undefined && labs.fasting_insulin !== undefined && labs.fasting_insulin > 0) {
+      const calculated = Math.round(((labs.fasting_glucose * labs.fasting_insulin) / 405) * 100) / 100;
+      homaIrAnalysis = {
+        value: calculated,
+        status: calculated < 1.4 ? 'normal' : calculated <= 1.9 ? 'borderline' : 'significant_insulin_resistance',
+        isValidated: false,
+      };
+    }
   }
 
   // Glycemic stability pattern
@@ -56,7 +75,7 @@ export function analyzeMetabolicHealth(
     patient.selected_conditions.includes('t2d_ir') ||
     (labs.fasting_glucose && labs.fasting_glucose >= 100) ||
     (labs.hba1c && labs.hba1c >= 5.7) ||
-    (homaIrAnalysis && homaIrAnalysis.status === 'significant_insulin_resistance');
+    (homaIrAnalysis && homaIrAnalysis.isValidated && homaIrAnalysis.status === 'significant_insulin_resistance');
 
   let glycemicStabilityPattern: MetabolicHealthAnalysisResult['glycemicStabilityPattern'] = 'uncertain';
   if (hasDysglycemiaMarkers) {

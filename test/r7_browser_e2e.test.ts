@@ -175,14 +175,16 @@ async function runR7BrowserE2E() {
     // Wait for debounced auto-save and R7 re-evaluation (> 1200ms)
     await page.waitForTimeout(1500);
 
-    // The Canonical: label appears when unit !== canonical_unit AND normalized_value is computed
+    // H1: Assert exact normalized mg/dL numerical value within rounding tolerance (~129.7 mg/dL for 7.2 mmol/L)
     const fbsTextBeforeReload = await fbsRow.innerText();
+    const normMatchBefore = fbsTextBeforeReload.match(/Canonical:\s*([0-9]+(?:\.[0-9]+)?)\s*mg\/dL/i);
+    const normValBefore = normMatchBefore ? parseFloat(normMatchBefore[1]) : NaN;
     assert(
-      fbsTextBeforeReload.includes('Canonical:') && fbsTextBeforeReload.includes('mg/dL'),
-      `E1: 7.2 mmol/L FBS normalizes to canonical mg/dL in UI (got: "${fbsTextBeforeReload.substring(0, 120)}")`
+      Number.isFinite(normValBefore) && Math.abs(normValBefore - 129.7) <= 0.3,
+      `H1: 7.2 mmol/L FBS normalizes to ~129.7 mg/dL in UI (got: ${normValBefore})`
     );
 
-    // Hard reload and confirm persistence
+    // Hard reload and confirm persistence of original value, original unit, normalized numeric value, canonical unit, and verification status
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(800);
     await page.locator('[data-testid="nav-tab-assessment"]').first().click();
@@ -194,54 +196,91 @@ async function runR7BrowserE2E() {
     const fbsRowReloaded = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
     await fbsRowReloaded.waitFor({ state: 'visible', timeout: 8000 });
     const persistedVal = await fbsRowReloaded.locator('input[type="number"]').first().inputValue();
-    assert(persistedVal === '7.2', `E1 Persistence: 7.2 mmol/L persisted across page reload (got "${persistedVal}")`);
-    assert((await fbsRowReloaded.innerText()).includes('mg/dL'), 'E1 Persistence: Canonical mg/dL normalization preserved after reload');
+    const persistedUnit = await fbsRowReloaded.locator('select[aria-label="Unit"]').inputValue();
+    const persistedVerif = await fbsRowReloaded.locator('select[aria-label="Verification status"]').inputValue();
+    const fbsTextAfterReload = await fbsRowReloaded.innerText();
+    const normMatchAfter = fbsTextAfterReload.match(/Canonical:\s*([0-9]+(?:\.[0-9]+)?)\s*mg\/dL/i);
+    const normValAfter = normMatchAfter ? parseFloat(normMatchAfter[1]) : NaN;
 
-    console.log('--- E2: Protocol Studio UL Overload Blocks Safety Sign-Off ---');
+    assert(persistedVal === '7.2', `H1 Persistence: Original value 7.2 persisted across reload (got "${persistedVal}")`);
+    assert(persistedUnit === 'mmol/L', `H1 Persistence: Original unit mmol/L persisted across reload (got "${persistedUnit}")`);
+    assert(persistedVerif === 'lab_document_reviewed', `H1 Persistence: Verification status persisted across reload (got "${persistedVerif}")`);
+    assert(
+      Number.isFinite(normValAfter) && Math.abs(normValAfter - 129.7) <= 0.3,
+      `H1 Persistence: Canonical ~129.7 mg/dL persisted across reload (got: ${normValAfter})`
+    );
+
+    console.log('--- E2 & H2: Actual Multi-Product Overlapping Nutrient Exposure Blocks Safety Sign-Off ---');
     await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
     await page.waitForTimeout(500);
     await page.locator('button:has-text("Supplements"), button:has-text("সাপ্লিমেন্ট")').first().click();
     await page.waitForTimeout(350);
 
-    // Add an unsafe 420 mg Magnesium multi-ingredient item
+    // Product 1 (Multi-ingredient): Magnesium + Zinc Complex (250 mg Mg + 15 mg Zn)
     await page.locator('[data-testid="r7-btn-add-supplement"]').click();
     await page.waitForTimeout(250);
-    const suppForm = page.locator('form').last();
-    await suppForm.locator('input[placeholder*="Magnesium Bisglycinate"]').fill('Magnesium Overload Complex');
-    await suppForm.locator('input[placeholder*="Optional brand"]').fill('UnverifiedTestBrand');
-    await suppForm.locator('input[placeholder="e.g. 200 mg elemental"]').fill('420 mg elemental');
-    await suppForm.locator('button:has-text("Add Ingredient")').click();
-    await page.waitForTimeout(150);
-    await suppForm.locator('input[placeholder="Elemental"]').last().fill('420');
-    await suppForm.locator('button[type="submit"]').click();
-    await page.waitForTimeout(400);
+    const prod1Form = page.locator('form').last();
+    await prod1Form.locator('input[placeholder*="Magnesium Bisglycinate"]').fill('Magnesium + Zinc Complex');
+    await prod1Form.locator('input[placeholder*="Optional brand"]').fill('UnverifiedMultiBrandA');
+    await prod1Form.locator('input[placeholder="e.g. 200 mg elemental"]').fill('250 mg Mg + 15 mg Zn');
+    await prod1Form.locator('button:has-text("Add Ingredient")').click();
+    await page.waitForTimeout(100);
+    await prod1Form.locator('input[placeholder="Elemental"]').last().fill('250');
+    await prod1Form.locator('button:has-text("Add Ingredient")').click();
+    await page.waitForTimeout(100);
+    await prod1Form.locator('input[placeholder*="Nutrient"]').last().fill('Zinc');
+    await prod1Form.locator('input[placeholder="Elemental"]').last().fill('15');
+    await prod1Form.locator('button[type="submit"]').click();
+    await page.waitForTimeout(350);
+
+    // Approve Product 1 (within 350 mg UL alone)
+    const prod1Card = page.locator('[data-testid^="r7-supplement-card-"]', { hasText: 'Magnesium + Zinc Complex' }).first();
+    await prod1Card.locator('button[title="Approve Supplement"], button[title="অনুমোদন করুন"]').first().click();
+    await page.waitForTimeout(300);
+
+    // Product 2 (Overlapping Magnesium): Magnesium Glycinate Night (150 mg Mg -> combined 250 + 150 = 400 mg > 350 mg UL!)
+    await page.locator('[data-testid="r7-btn-add-supplement"]').click();
+    await page.waitForTimeout(250);
+    const prod2Form = page.locator('form').last();
+    await prod2Form.locator('input[placeholder*="Magnesium Bisglycinate"]').fill('Magnesium Glycinate Night');
+    await prod2Form.locator('input[placeholder*="Optional brand"]').fill('UnverifiedMultiBrandB');
+    await prod2Form.locator('input[placeholder="e.g. 200 mg elemental"]').fill('150 mg elemental');
+    await prod2Form.locator('button:has-text("Add Ingredient")').click();
+    await page.waitForTimeout(100);
+    await prod2Form.locator('input[placeholder="Elemental"]').last().fill('150');
+    await prod2Form.locator('button[type="submit"]').click();
+    await page.waitForTimeout(350);
+
+    const prod2Card = page.locator('[data-testid^="r7-supplement-card-"]', { hasText: 'Magnesium Glycinate Night' }).first();
+    await prod2Card.locator('button[title="Approve Supplement"], button[title="অনুমোদন করুন"]').first().click();
+    await page.waitForTimeout(350);
 
     const exposurePanel = page.locator('[data-testid="r7-supplement-exposure-panel"]');
-    assert((await exposurePanel.innerText()).includes('Exceeds Tolerable Upper Limit'), 'E2: 420 mg Magnesium flags UL exceedance');
+    const exposureText = await exposurePanel.innerText();
+    assert(exposureText.includes('400'), `H2: Combined multi-product Magnesium exposure calculated as 400 mg (250 + 150)`);
+    assert(exposureText.includes('Exceeds Tolerable Upper Limit'), 'H2: Combined 400 mg Magnesium flags UL exceedance across two products');
     assert((await page.innerText('body')).includes('Unverified Brand'), 'E2: Honest Unverified Brand provenance shown');
-
-    // Approve that unsafe supplement into candidate list, then navigate to Safety Review tab
-    const unsafeApproveBtn = page.locator('button[title="Approve Supplement"], button[title="অনুমোদন করুন"]').last();
-    await unsafeApproveBtn.click();
-    await page.waitForTimeout(300);
 
     const safetyTabBtn = page.locator('button:has-text("Safety & Sign-Off"), button:has-text("সেফটি ও সাইন-অফ")').first();
     await safetyTabBtn.click();
     await page.waitForTimeout(400);
 
     const safetyText = await page.innerText('body');
-    assert(safetyText.includes('HARD_STOP'), 'E2: UL breach triggers Safety Review HARD_STOP');
+    assert(safetyText.includes('HARD_STOP'), 'H2: Combined multi-product UL breach triggers Safety Review HARD_STOP');
     const approveLockBtn = page.locator('button:has-text("Approve & Lock Protocol"), button:has-text("Re-Approve & Bump Version"), button:has-text("প্রোটোকল অনুমোদন করুন")').first();
-    assert(await approveLockBtn.isDisabled(), 'E2: Safety Review gate disables formal protocol approval while HARD_STOP is active');
+    assert(await approveLockBtn.isDisabled(), 'H2: Safety Review gate disables formal protocol approval while combined UL HARD_STOP is active');
 
-    console.log('--- E3: Remove Overdose -> Approve Safe Supplement -> R6 Inclusion + Draft Exclusion ---');
+    console.log('--- E3: Remove Overlapping Second Product -> Approve Safe Supplement -> R6 Inclusion + Draft Exclusion ---');
     await page.locator('button:has-text("Supplements"), button:has-text("সাপ্লিমেন্ট")').first().click();
     await page.waitForTimeout(350);
 
-    // Delete Magnesium Overload Complex (find its card and click Delete)
-    const mgCard = page.locator('[data-testid^="r7-supplement-card-"]', { hasText: 'Magnesium Overload Complex' }).first();
-    await mgCard.locator('button[title="Delete"], button[title="মুছে ফেলুন"]').first().click();
-    await page.waitForTimeout(350);
+    // Delete BOTH temporary H2 products or delete Magnesium Glycinate Night + Magnesium + Zinc Complex, then test Vit D3
+    const prod2CardDel = page.locator('[data-testid^="r7-supplement-card-"]', { hasText: 'Magnesium Glycinate Night' }).first();
+    await prod2CardDel.locator('button[title="Delete"], button[title="মুছে ফেলুন"]').first().click();
+    await page.waitForTimeout(300);
+    const prod1CardDel = page.locator('[data-testid^="r7-supplement-card-"]', { hasText: 'Magnesium + Zinc Complex' }).first();
+    await prod1CardDel.locator('button[title="Delete"], button[title="মুছে ফেলুন"]').first().click();
+    await page.waitForTimeout(300);
 
     // Add Safe Approved Supplement: Vitamin D3 Support (1000 IU = 25 mcg, timing 13:30, duration 8 weeks)
     await page.locator('[data-testid="r7-btn-add-supplement"]').click();
@@ -362,48 +401,18 @@ async function runR7BrowserE2E() {
       `E7: Approved A4 PDF verified (${approvedPdfMeta.byteLength} bytes, ${approvedPdfMeta.pageCount} pages, ${approvedPdfMeta.decompressedStreamCount} decompressed streams)`
     );
 
-    console.log('--- E4: Structured UI Lab Edit Invalidates Approved R4 & Weekly Diet Plan ---');
-    await page.locator('[data-testid="nav-tab-assessment"]').first().click();
-    await page.waitForTimeout(500);
-    await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
-    await page.waitForTimeout(500);
-    // Re-search to bring FBS row back into filtered view (search is cleared on navigation)
-    await page.locator('[data-testid="r7-lab-search-input"]').fill('FBS');
-    await page.waitForTimeout(400);
-    // Re-acquire the FBS row locator (same canonical id as E1)
-    const fbsRowE4 = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
-    await fbsRowE4.waitFor({ state: 'visible', timeout: 8000 });
-    // The row is already 'previously_tested' from E1 — the numeric input should already be visible
-    const fbsNumE4 = fbsRowE4.locator('input[type="number"]').first();
-    await fbsNumE4.waitFor({ state: 'visible', timeout: 5000 });
-    await fbsNumE4.fill('6.8');
-    await page.waitForTimeout(600);
-
-    // Verify Weekly Diet Plan & R4 Protocol are invalidated immediately
-    await page.locator('[data-testid="nav-tab-diet"]').first().click();
-    await page.waitForTimeout(450);
-    assert((await page.locator('[data-testid="badge-approved-plan"]').count()) === 0, 'E4: Lab edit immediately invalidated approved Weekly Diet Plan');
-
-    await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
-    await page.waitForTimeout(400);
-    await page.locator('button:has-text("Safety & Sign-Off"), button:has-text("সেফটি ও সাইন-অফ")').first().click();
-    await page.waitForTimeout(350);
-    const postLabEditApproveText = await approveLockBtn.innerText();
-    assert(!postLabEditApproveText.includes('Re-Approve'), `E4: Approved R4 protocol reverted to draft state ("${postLabEditApproveText.trim()}")`);
-
-    console.log('--- E5 & E8: Critical Potassium Blocks Release & All 3 Print Entry Points + Blocked PDF Watermark ---');
+    console.log('--- H3, E5 & E8: Isolated Critical Potassium Blocks Release & All 3 Print Entry Points + Blocked PDF Watermark ---');
+    // Immediately from RELEASED E7 state, introduce ONLY K+ 6.4 (demonstrating R7 critical lab alone blocks a released prescription)
     await page.locator('[data-testid="nav-tab-assessment"]').first().click();
     await page.waitForTimeout(500);
     await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
     await page.waitForTimeout(500);
     await page.locator('[data-testid="r7-lab-search-input"]').fill('Potassium');
     await page.waitForTimeout(400);
-    // Potassium canonical_id is 'potassium'; legacy alias is 'serum_potassium'
     const kRow = page.locator('[data-testid="r7-lab-row-potassium"], [data-testid="r7-lab-row-serum_potassium"]').first();
     await kRow.waitFor({ state: 'visible', timeout: 8000 });
     await kRow.locator('select[aria-label="Result availability"]').selectOption('previously_tested');
     await page.waitForTimeout(400);
-    // Wait for numeric input (conditional on isTested)
     const kNumInput = kRow.locator('input[type="number"]').first();
     await kNumInput.waitFor({ state: 'visible', timeout: 5000 });
     await kNumInput.fill('6.4');
@@ -411,7 +420,7 @@ async function runR7BrowserE2E() {
     await kVerifSelect.waitFor({ state: 'visible', timeout: 5000 });
     await kVerifSelect.selectOption('unverified');
     await page.waitForTimeout(600);
-    assert((await page.locator('[data-testid="r7-critical-lab-banner"]').count()) > 0, 'E5: Unverified K+ 6.4 triggers Critical Escalation Banner');
+    assert((await page.locator('[data-testid="r7-critical-lab-banner"]').count()) > 0, 'H3/E5: Unverified K+ 6.4 triggers Critical Escalation Banner');
 
     await page.locator('[data-testid="nav-tab-report"]').first().click();
     await page.waitForTimeout(500);
@@ -421,7 +430,13 @@ async function runR7BrowserE2E() {
     const printBtnPatient = patientView.locator('[data-testid="btn-print-patient-report"]');
     const printBtnHub = page.locator('[data-testid="btn-print-report"]');
     const printBtnHeader = page.locator('[data-testid="btn-print"]');
-    assert((await patientView.locator('[data-testid="patient-release-blocked-alert"]').count()) > 0, 'E5: Patient Prescription shows release blocked alert');
+    const blockedAlertEl = patientView.locator('[data-testid="patient-release-blocked-alert"]');
+    assert((await blockedAlertEl.count()) > 0, 'H3/E5: Patient Prescription shows release blocked alert');
+    const blockedAlertText = await blockedAlertEl.innerText();
+    assert(
+      /(potassium|hyperkalemia|পটাশিয়াম|হাইপারক্যালেমিয়া|6\.4|৬\.৪)/i.test(blockedAlertText),
+      `H3: Release blocked alert specifically cites R7 critical potassium finding (got: "${blockedAlertText}")`
+    );
     assert((await patientView.locator('[data-testid="draft-watermark"]').count()) > 0, 'E8: Blocked report displays PROVISIONAL DRAFT watermark');
     assert(await printBtnPatient.isDisabled(), 'E5: Print entry #1 (Patient Report button) disabled on critical lab block');
     assert(await printBtnHub.isDisabled(), 'E5: Print entry #2 (Report Hub button) disabled on critical lab block');
@@ -440,9 +455,23 @@ async function runR7BrowserE2E() {
     const blockedPdfMeta = inspectPdfDocument(fs.readFileSync(blockedPdfPath));
     assert(blockedPdfMeta.validHeader && blockedPdfMeta.byteLength > 10000, `E8: Blocked PDF watermark export verified (${blockedPdfMeta.byteLength} bytes)`);
 
+    console.log('--- E4: Structured UI Lab Edit Invalidation Verification ---');
+    await page.locator('[data-testid="nav-tab-diet"]').first().click();
+    await page.waitForTimeout(450);
+    assert((await page.locator('[data-testid="badge-approved-plan"]').count()) === 0, 'E4: Lab edit immediately invalidated approved Weekly Diet Plan');
+
+    await page.locator('[data-testid="nav-tab-protocol_studio"]').first().click();
+    await page.waitForTimeout(400);
+    await page.locator('button:has-text("Safety & Sign-Off"), button:has-text("সেফটি ও সাইন-অফ")').first().click();
+    await page.waitForTimeout(350);
+    const postLabEditApproveText = await approveLockBtn.innerText();
+    assert(!postLabEditApproveText.includes('Re-Approve'), `E4: Approved R4 protocol reverted to draft state ("${postLabEditApproveText.trim()}")`);
+
     console.log('--- E6: Visit Isolation & Cross-Patient Isolation ---');
-    // Test Visit Isolation via "New Visit" flow (mandatory non-bypassed workflow)
-    const startVisitBtn = page.locator('button:has-text("নতুন ভিজিট"), button:has-text("New Visit")').first();
+    // Test Visit Isolation via visible "New Visit" flow (mandatory non-bypassed workflow)
+    await page.locator('[data-testid="nav-tab-report"]').first().click();
+    await page.waitForTimeout(350);
+    const startVisitBtn = page.locator('button:has-text("নতুন ভিজিট"):visible, button:has-text("New Visit"):visible').first();
     assert((await startVisitBtn.count()) > 0, 'E6: Persistent patient bar exposes New Visit trigger');
     await startVisitBtn.click();
     await page.waitForTimeout(300);

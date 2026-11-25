@@ -192,9 +192,12 @@ export function aggregateEvidence(
     ) ||
     (patient.active_medications || []).some(m => m.toLowerCase().includes('insulin'));
 
-  if (labs.homa_ir !== undefined) {
+  if (!onExogenousInsulin && labs.homa_ir !== undefined) {
+    // Legacy scalar patient.labs.homa_ir lacks R7 paired-fasting & episode provenance: NEVER stamp 'lab_confirmed'
     const elevated = labs.homa_ir > 1.9;
-    const tags = elevated ? ['elevated_homa_ir', 'obs_homa_ir_elevated', 'central_adiposity'] : ['normal_homa_ir', 'obs_normal_homa_ir'];
+    const tags = elevated
+      ? ['elevated_homa_ir', 'obs_homa_ir_elevated', 'unverified_derived_homa_ir']
+      : ['normal_homa_ir', 'obs_normal_homa_ir', 'unverified_derived_homa_ir'];
     add({
       id: makeId(patient.id, 'lab', 'homa_ir'),
       patientId: patient.id,
@@ -204,10 +207,11 @@ export function aggregateEvidence(
       observedValue: labs.homa_ir,
       unit: 'index',
       date,
-      dataSource: 'measured',
-      verificationStatus: 'lab_confirmed',
+      dataSource: 'calculated',
+      verificationStatus: 'unverified',
       associatedDomains: domainsForTags(tags),
       tags,
+      provenance: 'legacy_unprovenanced_homa_ir_screen',
     });
   } else if (
     !onExogenousInsulin &&
