@@ -150,32 +150,49 @@ async function runR7BrowserE2E() {
     const labWorkspace = page.locator('[data-testid="r7-laboratory-workspace"]');
     assert((await labWorkspace.count()) > 0, 'Step 8 R7 Laboratory Workspace mounted');
 
-    await page.locator('[data-testid="r7-lab-search-input"]').fill('Fasting Blood Sugar');
-    await page.waitForTimeout(250);
-    const fbsRow = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
+    // Search using 'FBS' which matches the label_en 'Fasting Plasma Glucose (FPG / FBS)'
+    await page.locator('[data-testid="r7-lab-search-input"]').fill('FBS');
+    await page.waitForTimeout(400);
+    // The marker_id is canonical 'fasting_glucose' (initialized from canonical_id when no existing entry)
+    const fbsRow = page.locator('[data-testid="r7-lab-row-fasting_glucose"]');
+    await fbsRow.waitFor({ state: 'visible', timeout: 8000 });
     assert((await fbsRow.count()) > 0, 'FBS biomarker row present in Step 8');
 
+    // Set availability to previously_tested and wait for the number input to appear (conditional on isTested)
     await fbsRow.locator('select[aria-label="Result availability"]').selectOption('previously_tested');
-    await page.waitForTimeout(150);
-    await fbsRow.locator('input[type="number"]').first().fill('7.2');
-    await fbsRow.locator('select[aria-label="Unit"]').selectOption('mmol/L');
-    await fbsRow.locator('select[aria-label="Verification status"]').selectOption('lab_document_reviewed');
-    // Wait for debounced auto-save (> 800ms) before reload
-    await page.waitForTimeout(1100);
+    await page.waitForTimeout(400);
+    // The numeric value input only appears when isTested; wait for it
+    const fbsNumInput = fbsRow.locator('input[type="number"]').first();
+    await fbsNumInput.waitFor({ state: 'visible', timeout: 6000 });
+    await fbsNumInput.fill('7.2');
+    // The Unit select appears only when isTested AND supported_units.length > 1 (FBS: ['mg/dL', 'mmol/L'])
+    const fbsUnitSelect = fbsRow.locator('select[aria-label="Unit"]');
+    await fbsUnitSelect.waitFor({ state: 'visible', timeout: 5000 });
+    await fbsUnitSelect.selectOption('mmol/L');
+    const fbsVerifSelect = fbsRow.locator('select[aria-label="Verification status"]');
+    await fbsVerifSelect.waitFor({ state: 'visible', timeout: 5000 });
+    await fbsVerifSelect.selectOption('lab_document_reviewed');
+    // Wait for debounced auto-save and R7 re-evaluation (> 1200ms)
+    await page.waitForTimeout(1500);
 
+    // The Canonical: label appears when unit !== canonical_unit AND normalized_value is computed
     const fbsTextBeforeReload = await fbsRow.innerText();
-    assert(fbsTextBeforeReload.includes('Canonical:') && fbsTextBeforeReload.includes('mg/dL'), 'E1: 7.2 mmol/L FBS normalizes to canonical mg/dL in UI');
+    assert(
+      fbsTextBeforeReload.includes('Canonical:') && fbsTextBeforeReload.includes('mg/dL'),
+      `E1: 7.2 mmol/L FBS normalizes to canonical mg/dL in UI (got: "${fbsTextBeforeReload.substring(0, 120)}")`
+    );
 
     // Hard reload and confirm persistence
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(800);
     await page.locator('[data-testid="nav-tab-assessment"]').first().click();
-    await page.waitForTimeout(450);
+    await page.waitForTimeout(500);
     await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
-    await page.waitForTimeout(450);
-    await page.locator('[data-testid="r7-lab-search-input"]').fill('Fasting Blood Sugar');
-    await page.waitForTimeout(250);
-    const fbsRowReloaded = page.locator('[data-testid="r7-lab-row-fbs"], [data-testid="r7-lab-row-fasting_glucose"]').first();
+    await page.waitForTimeout(500);
+    await page.locator('[data-testid="r7-lab-search-input"]').fill('FBS');
+    await page.waitForTimeout(400);
+    const fbsRowReloaded = page.locator('[data-testid="r7-lab-row-fasting_glucose"]');
+    await fbsRowReloaded.waitFor({ state: 'visible', timeout: 8000 });
     const persistedVal = await fbsRowReloaded.locator('input[type="number"]').first().inputValue();
     assert(persistedVal === '7.2', `E1 Persistence: 7.2 mmol/L persisted across page reload (got "${persistedVal}")`);
     assert((await fbsRowReloaded.innerText()).includes('mg/dL'), 'E1 Persistence: Canonical mg/dL normalization preserved after reload');
@@ -342,13 +359,20 @@ async function runR7BrowserE2E() {
 
     console.log('--- E4: Structured UI Lab Edit Invalidates Approved R4 & Weekly Diet Plan ---');
     await page.locator('[data-testid="nav-tab-assessment"]').first().click();
-    await page.waitForTimeout(450);
-    await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
-    await page.waitForTimeout(450);
-    await page.locator('[data-testid="r7-lab-search-input"]').fill('Fasting Blood Sugar');
-    await page.waitForTimeout(200);
-    await fbsRow.locator('input[type="number"]').first().fill('6.8');
     await page.waitForTimeout(500);
+    await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
+    await page.waitForTimeout(500);
+    // Re-search to bring FBS row back into filtered view (search is cleared on navigation)
+    await page.locator('[data-testid="r7-lab-search-input"]').fill('FBS');
+    await page.waitForTimeout(400);
+    // Re-acquire the FBS row locator (same canonical id as E1)
+    const fbsRowE4 = page.locator('[data-testid="r7-lab-row-fasting_glucose"]');
+    await fbsRowE4.waitFor({ state: 'visible', timeout: 8000 });
+    // The row is already 'previously_tested' from E1 — the numeric input should already be visible
+    const fbsNumE4 = fbsRowE4.locator('input[type="number"]').first();
+    await fbsNumE4.waitFor({ state: 'visible', timeout: 5000 });
+    await fbsNumE4.fill('6.8');
+    await page.waitForTimeout(600);
 
     // Verify Weekly Diet Plan & R4 Protocol are invalidated immediately
     await page.locator('[data-testid="nav-tab-diet"]').first().click();
@@ -364,17 +388,24 @@ async function runR7BrowserE2E() {
 
     console.log('--- E5 & E8: Critical Potassium Blocks Release & All 3 Print Entry Points + Blocked PDF Watermark ---');
     await page.locator('[data-testid="nav-tab-assessment"]').first().click();
-    await page.waitForTimeout(450);
+    await page.waitForTimeout(500);
     await page.locator('[data-testid="assessment-step-nav-step_labs"]').first().click();
-    await page.waitForTimeout(450);
+    await page.waitForTimeout(500);
     await page.locator('[data-testid="r7-lab-search-input"]').fill('Potassium');
-    await page.waitForTimeout(250);
-    const kRow = page.locator('[data-testid="r7-lab-row-serum_potassium"], [data-testid="r7-lab-row-potassium"]').first();
+    await page.waitForTimeout(400);
+    // Potassium canonical_id is 'potassium'; legacy alias is 'serum_potassium'
+    const kRow = page.locator('[data-testid="r7-lab-row-potassium"], [data-testid="r7-lab-row-serum_potassium"]').first();
+    await kRow.waitFor({ state: 'visible', timeout: 8000 });
     await kRow.locator('select[aria-label="Result availability"]').selectOption('previously_tested');
-    await page.waitForTimeout(150);
-    await kRow.locator('input[type="number"]').first().fill('6.4');
-    await kRow.locator('select[aria-label="Verification status"]').selectOption('unverified');
-    await page.waitForTimeout(450);
+    await page.waitForTimeout(400);
+    // Wait for numeric input (conditional on isTested)
+    const kNumInput = kRow.locator('input[type="number"]').first();
+    await kNumInput.waitFor({ state: 'visible', timeout: 5000 });
+    await kNumInput.fill('6.4');
+    const kVerifSelect = kRow.locator('select[aria-label="Verification status"]');
+    await kVerifSelect.waitFor({ state: 'visible', timeout: 5000 });
+    await kVerifSelect.selectOption('unverified');
+    await page.waitForTimeout(600);
     assert((await page.locator('[data-testid="r7-critical-lab-banner"]').count()) > 0, 'E5: Unverified K+ 6.4 triggers Critical Escalation Banner');
 
     await page.locator('[data-testid="nav-tab-report"]').first().click();
