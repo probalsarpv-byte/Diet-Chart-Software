@@ -9,6 +9,7 @@
  */
 
 import { FoodItem, PatientProfile } from '../../types';
+import { R5NutritionAdjustmentContract } from '../../types/r5Systems';
 import { R8_PREPARATION_GUIDANCE, R8_REPRESENTATIVE_RECIPES } from '../../data/r8RecipesData';
 import {
   R8ComputedRecipeAnalysis,
@@ -18,6 +19,135 @@ import {
 } from '../../types/r8FoodKnowledge';
 import { aggregateFoodNutrients, R8_BASELINE_FOODS } from './foodFoundation';
 import { evaluatePatientFoodEligibility } from './knowledgeNetwork';
+
+export function validateRecipeQuantity(grams: number): { valid: boolean; reason?: string } {
+  if (typeof grams !== 'number' || !Number.isFinite(grams) || grams <= 0 || grams > 5000) {
+    return { valid: false, reason: `Invalid ingredient weight (${grams}); must be finite and between >0 and 5000g.` };
+  }
+  return { valid: true };
+}
+
+export function createRecipeDraftFromReference(
+  base: R8Recipe,
+  options?: { patientId?: string; visitId?: string; versionSuffix?: string }
+): R8Recipe {
+  return {
+    ...base,
+    version: options?.versionSuffix ? `${base.version}-${options.versionSuffix}` : base.version,
+    ingredients: base.ingredients.map(i => ({ ...i })),
+    provenance: options?.patientId
+      ? `${base.provenance} | Patient Draft (${options.patientId}${options.visitId ? ` / ${options.visitId}` : ''})`
+      : base.provenance,
+  };
+}
+
+export function addRecipeIngredient(
+  recipe: R8Recipe,
+  foodId: string,
+  rawWeightG: number,
+  foods: FoodItem[] = R8_BASELINE_FOODS
+): { ok: true; recipe: R8Recipe } | { ok: false; reason: string } {
+  const qtyCheck = validateRecipeQuantity(rawWeightG);
+  if (!qtyCheck.valid) return { ok: false, reason: qtyCheck.reason! };
+  if (!foods.some(f => f.id === foodId)) {
+    return { ok: false, reason: `Unrecognized food ID "${foodId}"; cannot verify composition.` };
+  }
+  return {
+    ok: true,
+    recipe: {
+      ...recipe,
+      ingredients: [
+        ...recipe.ingredients,
+        { food_id: foodId, raw_weight_g: Math.round(rawWeightG * 10) / 10, edible_portion_applied: true },
+      ],
+    },
+  };
+}
+
+export function removeRecipeIngredient(recipe: R8Recipe, index: number): R8Recipe {
+  if (index < 0 || index >= recipe.ingredients.length) return recipe;
+  return {
+    ...recipe,
+    ingredients: recipe.ingredients.filter((_, i) => i !== index),
+  };
+}
+
+export function updateRecipeIngredientQuantity(
+  recipe: R8Recipe,
+  index: number,
+  rawWeightG: number
+): { ok: true; recipe: R8Recipe } | { ok: false; reason: string } {
+  const qtyCheck = validateRecipeQuantity(rawWeightG);
+  if (!qtyCheck.valid) return { ok: false, reason: qtyCheck.reason! };
+  if (index < 0 || index >= recipe.ingredients.length) {
+    return { ok: false, reason: `Ingredient index ${index} out of bounds.` };
+  }
+  return {
+    ok: true,
+    recipe: {
+      ...recipe,
+      ingredients: recipe.ingredients.map((ing, i) =>
+        i === index ? { ...ing, raw_weight_g: Math.round(rawWeightG * 10) / 10 } : ing
+      ),
+    },
+  };
+}
+
+export function replaceRecipeIngredient(
+  recipe: R8Recipe,
+  index: number,
+  newFoodId: string,
+  foods: FoodItem[] = R8_BASELINE_FOODS
+): { ok: true; recipe: R8Recipe } | { ok: false; reason: string } {
+  if (!foods.some(f => f.id === newFoodId)) {
+    return { ok: false, reason: `Unrecognized replacement food ID "${newFoodId}".` };
+  }
+  if (index < 0 || index >= recipe.ingredients.length) {
+    return { ok: false, reason: `Ingredient index ${index} out of bounds.` };
+  }
+  return {
+    ok: true,
+    recipe: {
+      ...recipe,
+      ingredients: recipe.ingredients.map((ing, i) =>
+        i === index ? { ...ing, food_id: newFoodId } : ing
+      ),
+    },
+  };
+}
+
+export function adjustRecipeServings(
+  recipe: R8Recipe,
+  newServings: number,
+  mode: 'divide_fixed_batch' | 'scale_batch'
+): { ok: true; recipe: R8Recipe } | { ok: false; reason: string } {
+  if (typeof newServings !== 'number' || !Number.isFinite(newServings) || newServings < 1 || newServings > 24) {
+    return { ok: false, reason: 'Servings must be a finite number between 1 and 24.' };
+  }
+  const roundedServings = Math.round(newServings);
+  if (mode === 'divide_fixed_batch') {
+    return {
+      ok: true,
+      recipe: { ...recipe, servings: roundedServings },
+    };
+  }
+  const prevServings = Math.max(1, recipe.servings || 1);
+  const ratio = roundedServings / prevServings;
+  return {
+    ok: true,
+    recipe: {
+      ...recipe,
+      servings: roundedServings,
+      water_added_ml: Math.round((recipe.water_added_ml || 0) * ratio),
+      final_cooked_yield_g:
+        recipe.final_cooked_yield_g > 0 ? Math.round(recipe.final_cooked_yield_g * ratio) : 0,
+      ingredients: recipe.ingredients.map(ing => ({
+        ...ing,
+        raw_weight_g: Math.round(ing.raw_weight_g * ratio * 10) / 10,
+      })),
+    },
+  };
+}
 
 export function getPreparationGuidanceForMethod(
   method: R8Recipe['preparation_method']
@@ -30,6 +160,7 @@ export function computeRecipeAnalysis(
   options?: {
     foods?: FoodItem[];
     patient?: PatientProfile;
+    r5NutritionContract?: R5NutritionAdjustmentContract;
     trafficLight?: {
       green?: Array<{ id: string }>;
       yellow?: Array<{ id: string; reasons?: any[] }>;
@@ -57,7 +188,10 @@ export function computeRecipeAnalysis(
 
   const totalRawIngredientG = resolvedItems.reduce((sum, x) => sum + x.raw_edible_g, 0);
   const servings = Math.max(1, Number(recipe.servings) || 1);
-  const perServingWeightG = Math.round(((recipe.final_cooked_yield_g || totalRawIngredientG) / servings) * 10) / 10;
+  const hasKnownYield = typeof recipe.final_cooked_yield_g === 'number' && Number.isFinite(recipe.final_cooked_yield_g) && recipe.final_cooked_yield_g > 0;
+  const perServingWeightG = hasKnownYield
+    ? Math.round((recipe.final_cooked_yield_g / servings) * 10) / 10
+    : Math.round((totalRawIngredientG / servings) * 10) / 10;
 
   const nutrients = aggregateFoodNutrients(resolvedItems, undefined, servings);
 
@@ -103,6 +237,28 @@ export function computeRecipeAnalysis(
       }
       eligibility.cautions_en.forEach(c => cautions.push(`${food.name_en}: ${c}`));
       eligibility.drug_interactions_en.forEach(d => cautions.push(`${food.name_en}: ${d}`));
+    }
+  }
+
+  if (options?.r5NutritionContract) {
+    const nc = options.r5NutritionContract.nutrient_constraints;
+    const perServK = nutrients['potassium']?.per_serving ?? 0;
+    const perServNa = nutrients['sodium']?.per_serving ?? 0;
+    const perServP = nutrients['phosphorus']?.per_serving ?? 0;
+    if (nc.potassium_mg_max && perServK > nc.potassium_mg_max) {
+      hardContraindications.push(
+        `Single serving potassium (${Math.round(perServK)} mg) exceeds patient authorized daily potassium ceiling (${nc.potassium_mg_max} mg).`
+      );
+    }
+    if (nc.sodium_mg_max && perServNa > nc.sodium_mg_max) {
+      hardContraindications.push(
+        `Single serving sodium (${Math.round(perServNa)} mg) exceeds patient authorized daily sodium ceiling (${nc.sodium_mg_max} mg).`
+      );
+    }
+    if (nc.phosphorus_mg_max && perServP > nc.phosphorus_mg_max) {
+      hardContraindications.push(
+        `Single serving phosphorus (${Math.round(perServP)} mg) exceeds patient authorized daily phosphorus ceiling (${nc.phosphorus_mg_max} mg).`
+      );
     }
   }
 

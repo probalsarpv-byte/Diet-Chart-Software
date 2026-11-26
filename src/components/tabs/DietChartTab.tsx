@@ -42,6 +42,7 @@ export const DietChartTab: React.FC = () => {
     patient, 
     currentVisit,
     p2AnalysisResult,
+    r5NutritionContract,
     dietChart, 
     isDietPlanDirty,
     recalculateDietPlan,
@@ -113,28 +114,32 @@ export const DietChartTab: React.FC = () => {
     if (!r8SwapTarget || !patient) return null;
     const currentMeal = activeDayPlan?.meals?.find(m => m.id === r8SwapTarget.mealId);
     const currentMealItems = (currentMeal?.items || []).map(i => ({
+      item_id: i.id,
       food_id: i.food_id,
       raw_weight_g: i.raw_weight_g,
     }));
     const currentDailyItems = (activeDayPlan?.meals || []).flatMap(m =>
-      (m.items || []).map(i => ({ food_id: i.food_id, raw_weight_g: i.raw_weight_g }))
+      (m.items || []).map(i => ({ item_id: i.id, meal_id: m.id, food_id: i.food_id, raw_weight_g: i.raw_weight_g }))
     );
     return evaluateFoodSubstitutions(
       {
         original_food_id: r8SwapTarget.foodId,
         original_raw_grams: r8SwapTarget.rawGrams,
+        target_day_number: activeDayNumber,
         meal_id: r8SwapTarget.mealId,
+        target_item_id: r8SwapTarget.itemId,
         patient,
+        visit_id: currentVisit?.visit_id || currentVisit?.id || patient.current_visit_id,
         mode: r8SwapMode,
-        tolerance_pct: 25,
         max_results: 6,
         current_meal_items: currentMealItems,
         current_daily_items: currentDailyItems,
         traffic_light: trafficLight,
+        r5_nutrition_contract: r5NutritionContract,
       },
       allFoods
     );
-  }, [r8SwapTarget, r8SwapMode, patient, activeDayPlan, trafficLight, allFoods]);
+  }, [r8SwapTarget, r8SwapMode, patient, currentVisit, activeDayPlan, activeDayNumber, trafficLight, r5NutritionContract, allFoods]);
 
   // Auto-generate weekly plan if not loaded
   useEffect(() => {
@@ -1860,6 +1865,7 @@ export const DietChartTab: React.FC = () => {
                           <button
                             type="button"
                             data-testid={`r8-confirm-swap-${cand.candidate_food.id}`}
+                            disabled={cand.match_status === 'clinically_contraindicated' || Boolean(cand.impact?.acute_release_blocked)}
                             onClick={() => {
                               const exchange: FoodExchangeItem = {
                                 food_id: cand.candidate_food.id,
@@ -1871,6 +1877,16 @@ export const DietChartTab: React.FC = () => {
                                 kcal: Math.round(kcalDelta?.candidate_amount ?? 0),
                                 protein_g: Math.round((protDelta?.candidate_amount ?? 0) * 10) / 10,
                                 traffic_status: cand.traffic_status === 'GREEN' ? 'GREEN' : 'YELLOW',
+                                is_nutrient_incomplete: cand.missing_nutrient_ids.length > 0,
+                                missing_nutrient_ids: cand.missing_nutrient_ids,
+                                matching_mode: cand.matching_mode,
+                                match_status: cand.match_status,
+                                requires_clinician_review: cand.requires_clinician_review,
+                                conditional_instructions_en: cand.conditional_instructions_en,
+                                conditional_instructions_bn: cand.conditional_instructions_bn,
+                                authorized_for_patient_id: patient?.id,
+                                authorized_for_visit_id: currentVisit?.visit_id || currentVisit?.id || patient?.current_visit_id,
+                                authorization_status: 'draft_candidate',
                               };
                               swapDayMealItemAlternative(
                                 activeDayNumber,
@@ -1880,7 +1896,7 @@ export const DietChartTab: React.FC = () => {
                               );
                               setR8SwapTarget(null);
                             }}
-                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition"
+                            className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition"
                           >
                             {bn ? 'বদল নিশ্চিত করুন' : 'Confirm Swap'}
                           </button>

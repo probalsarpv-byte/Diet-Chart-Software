@@ -426,6 +426,7 @@ export interface R5NutritionAdjustmentContract {
   nutrient_constraints: {
     potassium_mg_max?: number;
     sodium_mg_max?: number;
+    phosphorus_mg_max?: number;
     protein_g_per_kg?: number;
     fluid_ml_max?: number;
     carbohydrate_consistency_required: boolean;

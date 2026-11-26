@@ -46,6 +46,9 @@ import { analyzeFunctionalLabs } from '@/engine/labAnalyzer';
 import { resolveConflicts } from '@/engine/conflictResolver';
 import { evaluateDNIAndTimeline, DNIEngineResult, checkSupplementOverlaps } from '@/engine/dniEngine';
 import { buildAutoScaledDietChart, getCookedDisplay, generateExchangesForFood } from '@/engine/mealScaler';
+import { evaluatePatientFoodEligibility } from '@/engine/r8/knowledgeNetwork';
+import { computeRecipeAnalysis } from '@/engine/r8/recipeEngine';
+import { R8Recipe } from '@/types/r8FoodKnowledge';
 import { 
   generateWeeklyDietPlan, 
   regenerateDayInWeeklyPlan, 
@@ -300,6 +303,9 @@ export interface PracticeContextType {
   approveWeeklyPlan: (clinicianId: string, notes?: string) => boolean;
   weeklyPlanApprovalError: string | null;
   clearWeeklyPlanApprovalError: () => void;
+  r8RecipeDrafts: Record<string, R8Recipe>;
+  saveR8RecipeDraft: (recipe: R8Recipe) => void;
+  includeRecipeInDietPlan: (dayNumber: number, mealId: string, recipe: R8Recipe, prescribedServings?: number) => { ok: boolean; error?: string };
 
   // R2 Backend & Multi-Tenancy Authentication
   authState: AuthState;
@@ -1942,9 +1948,35 @@ function createTypedPlanningContextFallback(
   const swapDayMealItemAlternative = useCallback((dayNumber: number, mealId: string, itemId: string, alt: FoodExchangeItem) => {
     const food = foodMap.get(alt.food_id);
     if (!food) return;
+    if (alt.match_status === 'clinically_contraindicated') {
+      console.warn('[R8 Mutation Blocked] Clinically contraindicated candidate cannot be applied.');
+      return;
+    }
+    const elig = evaluatePatientFoodEligibility(food, patient, {
+      trafficLight,
+      r5NutritionContract,
+    });
+    if (!elig.is_safe_for_patient) {
+      console.warn('[R8 Mutation Blocked] Candidate failed patient eligibility:', elig.exclusion_reasons_en.join('; '));
+      return;
+    }
+    if (!Number.isFinite(alt.raw_weight_g) || alt.raw_weight_g <= 0) {
+      console.warn('[R8 Mutation Blocked] Invalid raw_weight_g:', alt.raw_weight_g);
+      return;
+    }
 
+    let didMutate = false;
     setWeeklyDietPlan(prev => {
       if (!prev) return prev;
+      if (prev.patient_id !== patient.id) return prev;
+      const targetDay = prev.days.find(d => d.day_number === dayNumber);
+      const targetMeal = targetDay?.meals.find(m => m.id === mealId);
+      const targetItem = targetMeal?.items.find(i => i.id === itemId);
+      if (!targetItem) {
+        console.warn(`[R8 Mutation Blocked] Target item "${itemId}" not found in day ${dayNumber} meal "${mealId}".`);
+        return prev;
+      }
+      didMutate = true;
       const updatedDays = prev.days.map(day => {
         if (day.day_number !== dayNumber) return day;
         const updatedMeals = day.meals.map(meal => {
@@ -1978,7 +2010,8 @@ function createTypedPlanningContextFallback(
                 allFoods, 
                 new Set(trafficLight.green.map(g => g.id)),
                 new Set(trafficLight.red.map(r => r.id)),
-                new Set(trafficLight.yellow.map(y => y.id))
+                new Set(trafficLight.yellow.map(y => y.id)),
+                patient
               ),
               traffic_status: alt.traffic_status,
               is_locked: item.is_locked
@@ -2226,6 +2259,125 @@ function createTypedPlanningContextFallback(
     return true;
   }, [weeklyDietPlan, patient, allFoods, trafficLight, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
+  const activeRecipeVisitId = currentVisit?.visit_id || currentVisit?.id || patient.current_visit_id || 'default_visit';
+  const recipeStorageKey = `shuddho_r8_recipes_${patient.id}_${activeRecipeVisitId}`;
+
+  const [r8RecipeDrafts, setR8RecipeDrafts] = useState<Record<string, R8Recipe>>({});
+
+  useEffect(() => {
+    const stored = safeStorage.getItem<Record<string, R8Recipe>>(recipeStorageKey);
+    setR8RecipeDrafts(stored || {});
+  }, [recipeStorageKey]);
+
+  const saveR8RecipeDraft = useCallback((recipe: R8Recipe) => {
+    setR8RecipeDrafts(prev => {
+      const next = { ...prev, [recipe.recipe_id]: recipe };
+      safeStorage.setItem(recipeStorageKey, next);
+      return next;
+    });
+  }, [recipeStorageKey]);
+
+  const includeRecipeInDietPlan = useCallback((
+    dayNumber: number,
+    mealId: string,
+    recipe: R8Recipe,
+    prescribedServings: number = 1
+  ): { ok: boolean; error?: string } => {
+    if (!patient || !patient.id) {
+      return { ok: false, error: 'No active patient selected.' };
+    }
+    const analysis = computeRecipeAnalysis(recipe, {
+      foods: allFoods,
+      patient,
+      r5NutritionContract,
+      trafficLight,
+    });
+    if (!analysis.safety.is_safe_for_patient) {
+      return {
+        ok: false,
+        error: analysis.safety.hard_contraindications_en.join('; ') || 'Recipe is unsafe for this patient.',
+      };
+    }
+
+    const mult = Math.max(0.25, prescribedServings);
+    const kcal = Math.round((analysis.nutrients['energy']?.per_serving ?? 0) * mult);
+    const protein_g = Math.round((analysis.nutrients['protein']?.per_serving ?? 0) * mult * 10) / 10;
+    const carbs_g = Math.round((analysis.nutrients['available_carbohydrate']?.per_serving ?? 0) * mult * 10) / 10;
+    const fat_g = Math.round((analysis.nutrients['total_fat']?.per_serving ?? 0) * mult * 10) / 10;
+    const fiber_g = Math.round((analysis.nutrients['dietary_fiber']?.per_serving ?? 0) * mult * 10) / 10;
+    const rawTotalG = Math.round((analysis.total_raw_ingredient_g / Math.max(1, recipe.servings)) * mult);
+    const cookedG = Math.round(analysis.per_serving_weight_g * mult);
+
+    const newItemId = `rec_item_${recipe.recipe_id}_${Date.now()}`;
+    const recipeMealItem: DietChartMealItem = {
+      id: newItemId,
+      food_id: recipe.ingredients[0]?.food_id || recipe.recipe_id,
+      food_name_bn: `${recipe.name_bn} (রেসিপি)`,
+      food_name_en: `${recipe.name_en} (Recipe)`,
+      category: 'vegetables_leafy' as any,
+      raw_weight_g: rawTotalG,
+      cooked_weight_g: cookedG,
+      cooked_display_bn: `${recipe.household_serving_bn} (${mult}x)`,
+      cooked_display_en: `${recipe.household_serving_en} (${mult}x)`,
+      kcal,
+      protein_g,
+      carbs_g,
+      fat_g,
+      fiber_g,
+      prep_note_bn: recipe.guidance_bn,
+      prep_note_en: recipe.guidance_en,
+      alternatives: [],
+      traffic_status: analysis.safety.traffic_status,
+      recipe_reference: {
+        recipe_id: recipe.recipe_id,
+        version: recipe.version,
+        prescribed_servings: mult,
+        ingredients_snapshot: recipe.ingredients.map(i => ({ food_id: i.food_id, raw_weight_g: i.raw_weight_g })),
+      },
+    };
+
+    saveR8RecipeDraft(recipe);
+
+    setWeeklyDietPlan(prev => {
+      if (!prev) return prev;
+      const updatedDays = prev.days.map(day => {
+        if (day.day_number !== dayNumber) return day;
+        const updatedMeals = day.meals.map(meal => {
+          if (meal.id !== mealId) return meal;
+          const updatedItems = [...meal.items, recipeMealItem];
+          return {
+            ...meal,
+            items: updatedItems,
+            ...calculateMealTotals(updatedItems, allFoods),
+          };
+        });
+        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, prev.target_macros);
+      });
+      const updatedPlan: WeeklyDietPlan = {
+        ...prev,
+        days: updatedDays,
+        updated_at: new Date().toISOString(),
+      };
+      const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updatedPlan, allFoods, p2AnalysisResult?.p3PlanningContext);
+      updatedPlan.overall_safety_status = safetyEval.overall_decision;
+      updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
+      const invalidated = invalidateWeeklyPlanApproval(updatedPlan, `Recipe "${recipe.name_en}" included in plan`);
+      if (dayNumber === 1 && updatedDays[0]) {
+        setDietChart(updatedDays[0].meals);
+      }
+      persistWeeklyPlan(invalidated);
+      return invalidated;
+    });
+
+    setPatient(prev => ({
+      ...prev,
+      is_diet_plan_dirty: true,
+      manual_edits_preserved: true,
+    }));
+
+    return { ok: true };
+  }, [patient, allFoods, r5NutritionContract, trafficLight, saveR8RecipeDraft, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan, recalculateDayPlanSummary]);
+
   const approveWeeklyPlan = useCallback((clinicianId: string, notes?: string): boolean => {
     // Step A — Clinical Governance & Identity Verification
     // 1. Patient & Visit Identity
@@ -2310,7 +2462,30 @@ function createTypedPlanningContextFallback(
     const targetVisitId = weeklyDietPlan.visit_id || activeVisitId;
     const planKey = `shuddho_weekly_plan_${weeklyDietPlan.patient_id}_${targetVisitId}`;
 
-    const approvedPlan = approveWeeklyDietPlan(weeklyDietPlan, clinicianId, notes);
+    const planWithAuthorizedAlts: WeeklyDietPlan = {
+      ...weeklyDietPlan,
+      days: weeklyDietPlan.days.map(day => ({
+        ...day,
+        meals: day.meals.map(meal => ({
+          ...meal,
+          items: meal.items.map(item => ({
+            ...item,
+            alternatives: (item.alternatives || []).map(alt => ({
+              ...alt,
+              authorized_for_patient_id: patient.id,
+              authorized_for_visit_id: targetVisitId,
+              authorization_status:
+                alt.match_status === 'clinically_contraindicated' ||
+                (alt.requires_clinician_review && alt.match_status !== 'equivalent_within_tolerance')
+                  ? 'draft_candidate'
+                  : 'authorized',
+            })),
+          })),
+        })),
+      })),
+    };
+
+    const approvedPlan = approveWeeklyDietPlan(planWithAuthorizedAlts, clinicianId, notes);
 
     // 1. Save to primary weekly plan storage
     const saveSucceeded = safeStorage.setItem(planKey, approvedPlan);
@@ -4402,6 +4577,9 @@ function createTypedPlanningContextFallback(
         toggleItemLockInDay,
         copyDayPlan,
         approveWeeklyPlan,
+        r8RecipeDrafts,
+        saveR8RecipeDraft,
+        includeRecipeInDietPlan,
         weeklyPlanApprovalError,
         clearWeeklyPlanApprovalError,
         authState,

@@ -11,8 +11,12 @@
  */
 
 import { FoodItem, PatientProfile } from '../../types';
+import { R5NutritionAdjustmentContract } from '../../types/r5Systems';
+import { R7LabIntelligenceSummary } from '../../types/r7Laboratory';
 import {
   R8ComputedNutrientSubtotal,
+  R8ConstraintComplianceStatus,
+  R8ConstraintEvaluationResult,
   R8MealAndDailyImpact,
   R8NutrientDelta,
   R8SubstitutionCandidateResult,
@@ -21,6 +25,7 @@ import {
   R8SubstitutionRequest,
   R8SubstitutionResponse,
 } from '../../types/r8FoodKnowledge';
+import { buildR5NutritionAdjustmentContract } from '../r5NutritionContract';
 import {
   aggregateFoodNutrients,
   extractFoodNutrientMeasurement,
@@ -29,6 +34,8 @@ import {
   resolveR8NutrientId,
 } from './foodFoundation';
 import { evaluatePatientFoodEligibility } from './knowledgeNetwork';
+
+export const R8_DEFAULT_MATCH_TOLERANCE_PCT = 15;
 
 function formatCookedPortionDisplay(food: FoodItem, rawGrams: number, cookedGrams: number): { bn: string; en: string } {
   const n = `${food.name_en} ${food.name_bn}`.toLowerCase();
@@ -74,8 +81,10 @@ const CORE_COMPARISON_NUTRIENTS = [
   'dietary_fiber',
   'potassium',
   'sodium',
+  'phosphorus',
   'iron',
   'calcium',
+  'magnesium',
 ];
 
 function getPracticalPortionBounds(food: FoodItem): { minG: number; maxG: number } {
@@ -168,37 +177,41 @@ export function previewSubstitutionImpact(options: {
   candidate_food: FoodItem;
   proposed_raw_grams: number;
   patient: Partial<PatientProfile>;
-  current_meal_items?: Array<{ food_id: string; raw_weight_g: number }>;
-  current_daily_items?: Array<{ food_id: string; raw_weight_g: number }>;
+  target_item_id?: string;
+  meal_id?: string;
+  current_meal_items?: Array<{ item_id?: string; food_id: string; raw_weight_g: number }>;
+  current_daily_items?: Array<{ item_id?: string; meal_id?: string; food_id: string; raw_weight_g: number }>;
+  r5_nutrition_contract?: R5NutritionAdjustmentContract;
+  r7_lab_summary?: R7LabIntelligenceSummary;
   foodPool?: FoodItem[];
 }): R8MealAndDailyImpact {
   const pool = options.foodPool || R8_BASELINE_FOODS;
   const foodMap = new Map(pool.map(f => [f.id, f]));
 
-  const resolveList = (list?: Array<{ food_id: string; raw_weight_g: number }>) =>
+  const resolveList = (list?: Array<{ item_id?: string; meal_id?: string; food_id: string; raw_weight_g: number }>) =>
     (list || [])
       .map(x => {
         const f = foodMap.get(x.food_id);
-        return f ? { food: f, raw_edible_g: x.raw_weight_g } : null;
+        return f ? { item_id: x.item_id, meal_id: x.meal_id, food: f, raw_edible_g: x.raw_weight_g } : null;
       })
-      .filter(Boolean) as Array<{ food: FoodItem; raw_edible_g: number }>;
+      .filter(Boolean) as Array<{ item_id?: string; meal_id?: string; food: FoodItem; raw_edible_g: number }>;
 
   const mealOrig = resolveList(options.current_meal_items);
   if (mealOrig.length === 0) {
-    mealOrig.push({ food: options.original_food, raw_edible_g: options.original_raw_grams });
+    mealOrig.push({ item_id: options.target_item_id, meal_id: options.meal_id, food: options.original_food, raw_edible_g: options.original_raw_grams });
   }
 
   let replacedMeal = false;
   const mealProp = mealOrig.map(item => {
-    if (!replacedMeal && item.food.id === options.original_food.id) {
+    const matchesTarget = options.target_item_id
+      ? item.item_id === options.target_item_id
+      : item.food.id === options.original_food.id;
+    if (!replacedMeal && matchesTarget) {
       replacedMeal = true;
-      return { food: options.candidate_food, raw_edible_g: options.proposed_raw_grams };
+      return { ...item, food: options.candidate_food, raw_edible_g: options.proposed_raw_grams };
     }
     return item;
   });
-  if (!replacedMeal) {
-    mealProp.push({ food: options.candidate_food, raw_edible_g: options.proposed_raw_grams });
-  }
 
   const dailyOrig = resolveList(options.current_daily_items);
   if (dailyOrig.length === 0) {
@@ -206,9 +219,12 @@ export function previewSubstitutionImpact(options: {
   }
   let replacedDaily = false;
   const dailyProp = dailyOrig.map(item => {
-    if (!replacedDaily && item.food.id === options.original_food.id) {
+    const matchesTarget = options.target_item_id
+      ? item.item_id === options.target_item_id && (!options.meal_id || !item.meal_id || item.meal_id === options.meal_id)
+      : item.food.id === options.original_food.id;
+    if (!replacedDaily && matchesTarget) {
       replacedDaily = true;
-      return { food: options.candidate_food, raw_edible_g: options.proposed_raw_grams };
+      return { ...item, food: options.candidate_food, raw_edible_g: options.proposed_raw_grams };
     }
     return item;
   });
@@ -218,41 +234,198 @@ export function previewSubstitutionImpact(options: {
   const original_daily_totals = aggregateFoodNutrients(dailyOrig, CORE_COMPARISON_NUTRIENTS);
   const proposed_daily_totals = aggregateFoodNutrients(dailyProp, CORE_COMPARISON_NUTRIENTS);
 
-  const violations: string[] = [];
+  const r5Contract =
+    options.r5_nutrition_contract ||
+    buildR5NutritionAdjustmentContract({ patient: options.patient as PatientProfile });
+
+  const evaluations: R8ConstraintEvaluationResult[] = [];
+  const hardLimitViolations: string[] = [];
+  const indeterminateReasons: string[] = [];
+  const reviewAdvisories: string[] = [];
+
+  // Target item resolution guard
+  if (options.target_item_id && (!replacedMeal || !replacedDaily)) {
+    const msg = `Target meal item "${options.target_item_id}" could not be uniquely resolved in meal/daily context.`;
+    hardLimitViolations.push(msg);
+    evaluations.push({
+      parameter: 'target_meal_item',
+      category: 'unresolved_safety_restriction',
+      is_incomplete: false,
+      missing_food_ids: [],
+      status: 'blocked_unresolved_safety',
+      message_en: msg,
+    });
+  }
+
+  // Acute laboratory / R5 release block
+  const acuteBlocked = Boolean(
+    r5Contract.acute_escalation?.block_release || options.r7_lab_summary?.blocks_patient_release
+  );
+  if (acuteBlocked) {
+    const msg =
+      r5Contract.acute_escalation?.message_en ||
+      options.r7_lab_summary?.blocking_reasons_en?.join(' | ') ||
+      'Critical R7/R5 laboratory safety gate blocks release pending urgent clinician review.';
+    hardLimitViolations.push(msg);
+    evaluations.push({
+      parameter: 'acute_lab_safety',
+      category: 'unresolved_safety_restriction',
+      is_incomplete: false,
+      missing_food_ids: [],
+      status: 'blocked_unresolved_safety',
+      message_en: msg,
+    });
+  }
+
+  // Check authoritative clinician-authorized numerical hard limits ONLY
+  const evaluateAuthorizedUpperLimit = (
+    paramKey: string,
+    label: string,
+    limit: number | undefined,
+    unit: string
+  ) => {
+    if (limit === undefined || !Number.isFinite(limit) || limit <= 0) return;
+    const origSub = original_daily_totals[paramKey];
+    const propSub = proposed_daily_totals[paramKey];
+    const baselineVal = origSub?.known_total ?? 0;
+    const proposedVal = propSub?.known_total ?? 0;
+    const isIncomplete = Boolean(propSub?.is_incomplete);
+    const missingIds = propSub?.missing_food_ids || [];
+
+    if (proposedVal > limit) {
+      let status: R8ConstraintComplianceStatus = 'non_compliant_unchanged';
+      if (baselineVal <= limit) status = 'non_compliant_worsened';
+      else if (proposedVal > baselineVal) status = 'non_compliant_worsened';
+      else if (proposedVal < baselineVal) status = 'non_compliant_improved';
+
+      const msg = `${label} exceeds clinician-authorized hard limit (${Math.round(proposedVal * 10) / 10} ${unit} > ${limit} ${unit}; baseline ${Math.round(baselineVal * 10) / 10} ${unit})${
+        status === 'non_compliant_improved' ? ' — improved vs baseline but STILL NON-COMPLIANT' : ''
+      }.`;
+      hardLimitViolations.push(msg);
+      evaluations.push({
+        parameter: paramKey,
+        category: 'clinician_authorized_hard_limit',
+        limit_value: limit,
+        unit,
+        baseline_value: baselineVal,
+        proposed_value: proposedVal,
+        is_incomplete: isIncomplete,
+        missing_food_ids: missingIds,
+        status,
+        message_en: msg,
+      });
+    } else if (isIncomplete) {
+      const msg = `${label} compliance is indeterminate: known subtotal (${Math.round(proposedVal * 10) / 10} ${unit}) is <= ${limit} ${unit}, but ${missingIds.length} food(s) lack ${label} data.`;
+      indeterminateReasons.push(msg);
+      evaluations.push({
+        parameter: paramKey,
+        category: 'clinician_authorized_hard_limit',
+        limit_value: limit,
+        unit,
+        baseline_value: baselineVal,
+        proposed_value: proposedVal,
+        is_incomplete: true,
+        missing_food_ids: missingIds,
+        status: 'indeterminate_incomplete_data',
+        message_en: msg,
+      });
+    } else {
+      evaluations.push({
+        parameter: paramKey,
+        category: 'clinician_authorized_hard_limit',
+        limit_value: limit,
+        unit,
+        baseline_value: baselineVal,
+        proposed_value: proposedVal,
+        is_incomplete: false,
+        missing_food_ids: [],
+        status: 'compliant',
+        message_en: `${label} (${Math.round(proposedVal * 10) / 10} ${unit}) within clinician-authorized limit (${limit} ${unit}).`,
+      });
+    }
+  };
+
+  evaluateAuthorizedUpperLimit('potassium', 'Potassium', r5Contract.nutrient_constraints.potassium_mg_max, 'mg');
+  evaluateAuthorizedUpperLimit('sodium', 'Sodium', r5Contract.nutrient_constraints.sodium_mg_max, 'mg');
+  evaluateAuthorizedUpperLimit('phosphorus', 'Phosphorus', r5Contract.nutrient_constraints.phosphorus_mg_max, 'mg');
+
+  if (
+    r5Contract.nutrient_constraints.protein_g_per_kg !== undefined &&
+    options.patient.weight_kg &&
+    options.patient.weight_kg > 0
+  ) {
+    const proteinLimitG = Math.round(r5Contract.nutrient_constraints.protein_g_per_kg * options.patient.weight_kg * 10) / 10;
+    evaluateAuthorizedUpperLimit('protein', 'Protein', proteinLimitG, 'g');
+  }
+
+  // Non-hard guideline/review flags & unverified/missing renal status
+  const labCtx = r5Contract.lab_safety_context;
   const conditions = [
     ...(Array.isArray(options.patient.selected_conditions) ? options.patient.selected_conditions : []),
     ...(Array.isArray(options.patient.confirmed_conditions) ? options.patient.confirmed_conditions : []),
   ];
-  const hasRenalOrHyperK =
-    conditions.some((c: any) => /ckd|renal|kidney|hyperkal/i.test(String(c))) ||
-    (typeof (options.patient as any).labs?.potassium === 'number' && (options.patient as any).labs.potassium > 5.0);
-  const hasHTN = conditions.some((c: any) => /htn|hypertens|bp/i.test(String(c)));
-
-  const propDailyK = proposed_daily_totals['potassium']?.known_total ?? 0;
-  const origDailyK = original_daily_totals['potassium']?.known_total ?? 0;
-  if (hasRenalOrHyperK && propDailyK > 2000 && propDailyK > origDailyK + 150) {
-    violations.push(
-      `Renal/Hyperkalemia safety check: proposed daily potassium (${Math.round(propDailyK)} mg) exceeds 2000 mg ceiling and increases load over baseline (${Math.round(origDailyK)} mg).`
-    );
+  const hasRenalCondition = conditions.some((c: any) => /ckd|renal|kidney|hyperkal/i.test(String(c)));
+  if (hasRenalCondition && labCtx && labCtx.egfr_state !== 'available_verified') {
+    const msg = `Renal status is ${labCtx.egfr_state}; cannot assume normal renal clearance without verified eGFR.`;
+    reviewAdvisories.push(msg);
+    evaluations.push({
+      parameter: 'renal_egfr_status',
+      category: 'unknown_requirement',
+      is_incomplete: true,
+      missing_food_ids: [],
+      status: 'indeterminate_incomplete_data',
+      message_en: msg,
+    });
   }
 
-  const propDailyNa = proposed_daily_totals['sodium']?.known_total ?? 0;
-  const origDailyNa = original_daily_totals['sodium']?.known_total ?? 0;
-  if (hasHTN && propDailyNa > 2000 && propDailyNa > origDailyNa + 150) {
-    violations.push(
-      `Hypertension safety check: proposed daily sodium (${Math.round(propDailyNa)} mg) exceeds 2000 mg target.`
-    );
+  for (const flag of r5Contract.clinical_review_flags || []) {
+    if (flag.flag === 'NUTRITION_ADJUSTMENT_CANDIDATE' || flag.flag === 'CLINICAL_REVIEW_REQUIRED') {
+      evaluations.push({
+        parameter: flag.parameter,
+        category: flag.flag === 'NUTRITION_ADJUSTMENT_CANDIDATE' ? 'evidence_review_recommendation' : 'clinical_caution',
+        is_incomplete: false,
+        missing_food_ids: [],
+        status: 'compliant',
+        message_en: flag.rationale_en,
+      });
+    }
   }
 
-  const hasIncomplete = Object.values(proposed_meal_totals).some(t => t.is_incomplete);
+  // Overall compliance status
+  let complianceStatus: R8ConstraintComplianceStatus = 'compliant';
+  if (acuteBlocked || evaluations.some(e => e.status === 'blocked_unresolved_safety')) {
+    complianceStatus = 'blocked_unresolved_safety';
+  } else if (evaluations.some(e => e.status === 'non_compliant_worsened')) {
+    complianceStatus = 'non_compliant_worsened';
+  } else if (evaluations.some(e => e.status === 'non_compliant_unchanged')) {
+    complianceStatus = 'non_compliant_unchanged';
+  } else if (evaluations.some(e => e.status === 'non_compliant_improved')) {
+    complianceStatus = 'non_compliant_improved';
+  } else if (indeterminateReasons.length > 0) {
+    complianceStatus = 'indeterminate_incomplete_data';
+  }
+
+  const hasIncompleteAny =
+    Object.values(proposed_meal_totals).some(t => t.is_incomplete) ||
+    Object.values(proposed_daily_totals).some(t => t.is_incomplete);
+
   return {
     original_meal_totals,
     proposed_meal_totals,
     original_daily_totals,
     proposed_daily_totals,
-    constraint_violations_en: violations,
-    has_incomplete_data: hasIncomplete,
-    requires_safety_review: violations.length > 0 || hasIncomplete,
+    constraint_violations_en: [...hardLimitViolations, ...indeterminateReasons],
+    hard_limit_violations_en: hardLimitViolations,
+    indeterminate_reasons_en: indeterminateReasons,
+    constraint_evaluations: evaluations,
+    compliance_status: complianceStatus,
+    acute_release_blocked: acuteBlocked,
+    has_incomplete_data: hasIncompleteAny,
+    requires_safety_review:
+      hardLimitViolations.length > 0 ||
+      indeterminateReasons.length > 0 ||
+      reviewAdvisories.length > 0 ||
+      acuteBlocked,
   };
 }
 
@@ -263,8 +436,11 @@ export function evaluateFoodSubstitutions(
   const foods = foodPool || R8_BASELINE_FOODS;
   const origFood = foods.find(f => f.id === request.original_food_id);
   const mode: R8SubstitutionMode = request.mode || 'energy_matched';
-  const tolerancePct = request.tolerance_pct ?? 20;
+  const tolerancePct = request.tolerance_pct ?? R8_DEFAULT_MATCH_TOLERANCE_PCT;
   const maxResults = request.max_results ?? 6;
+  const r5Contract =
+    request.r5_nutrition_contract ||
+    buildR5NutritionAdjustmentContract({ patient: request.patient });
 
   if (!origFood) {
     throw new Error(`Original food ID "${request.original_food_id}" not found in baseline food database.`);
@@ -298,6 +474,7 @@ export function evaluateFoodSubstitutions(
     const eligibility = evaluatePatientFoodEligibility(cand, request.patient, {
       trafficLight: request.traffic_light,
       labSummary: request.r7_lab_summary,
+      r5NutritionContract: r5Contract,
     });
     if (!eligibility.is_safe_for_patient) {
       excludedSummary.push({
@@ -389,16 +566,21 @@ export function evaluateFoodSubstitutions(
       candidate_food: cand,
       proposed_raw_grams: proposedRawG,
       patient: request.patient,
+      target_item_id: request.target_item_id,
+      meal_id: request.meal_id,
       current_meal_items: request.current_meal_items,
       current_daily_items: request.current_daily_items,
+      r5_nutrition_contract: r5Contract,
+      r7_lab_summary: request.r7_lab_summary,
       foodPool: foods,
     });
 
-    if (impact.constraint_violations_en.length > 0 && mode !== 'manual_clinician_review') {
+    const hasHardConstraintViolation = impact.hard_limit_violations_en.length > 0;
+    if (hasHardConstraintViolation && mode !== 'manual_clinician_review') {
       excludedSummary.push({
         food_id: cand.id,
         name_en: cand.name_en,
-        reason_en: impact.constraint_violations_en.join(' '),
+        reason_en: impact.hard_limit_violations_en.join(' '),
         is_contraindicated: true,
       });
       continue;
@@ -432,11 +614,41 @@ export function evaluateFoodSubstitutions(
         ? Math.abs(primaryDelta.absolute_diff) <= 1.0
         : false;
 
+    const macroWithinTol = (nId: string) => {
+      const d = deltas.find(x => x.nutrient_id === nId);
+      if (!d || d.is_missing_data) return false;
+      if (d.percent_diff !== null) return Math.abs(d.percent_diff) <= tolerancePct;
+      return d.absolute_diff !== null && Math.abs(d.absolute_diff) <= 1.0;
+    };
+
+    const isMultinutrientWithinTol =
+      macroWithinTol('energy') &&
+      macroWithinTol('protein') &&
+      macroWithinTol('available_carbohydrate') &&
+      macroWithinTol('total_fat');
+
+    const activeHardNutrients = impact.constraint_evaluations
+      .filter(e => e.category === 'clinician_authorized_hard_limit')
+      .map(e => e.parameter);
+    const missingSafetyCritical =
+      missingNutrientIds.includes('energy') ||
+      missingNutrientIds.includes('protein') ||
+      activeHardNutrients.some(p => missingNutrientIds.includes(p)) ||
+      impact.indeterminate_reasons_en.length > 0;
+
     let matchStatus: R8SubstitutionMatchStatus = 'equivalent_within_tolerance';
-    if (!isPrimaryWithinTol || eligibility.traffic_status === 'YELLOW' || impact.constraint_violations_en.length > 0) {
+    if (hasHardConstraintViolation || impact.acute_release_blocked) {
+      matchStatus = 'clinically_contraindicated';
+    } else if (
+      !isPrimaryWithinTol ||
+      (mode === 'multinutrient_balanced' && !isMultinutrientWithinTol) ||
+      eligibility.traffic_status === 'YELLOW' ||
+      eligibility.traffic_status === 'UNCLASSIFIED' ||
+      missingSafetyCritical
+    ) {
       matchStatus = 'partially_equivalent_review';
     }
-    if (mode === 'clinical_restriction_aware' && !isPrimaryWithinTol) {
+    if (!hasHardConstraintViolation && mode === 'clinical_restriction_aware' && !isPrimaryWithinTol) {
       matchStatus = 'non_equivalent_clinical_alternative';
     }
 
@@ -474,7 +686,11 @@ export function evaluateFoodSubstitutions(
       conditional_instructions_bn: [...eligibility.cautions_bn],
       ranking_reasons_en: rankingReasons,
       requires_clinician_review:
+        hasHardConstraintViolation ||
+        impact.acute_release_blocked ||
         eligibility.traffic_status === 'YELLOW' ||
+        eligibility.traffic_status === 'UNCLASSIFIED' ||
+        missingSafetyCritical ||
         eligibility.cautions_en.length > 0 ||
         eligibility.drug_interactions_en.length > 0 ||
         impact.requires_safety_review,

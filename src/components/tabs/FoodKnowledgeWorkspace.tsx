@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePractice } from '@/context/PracticeContext';
 import {
   R8_BASELINE_FOODS,
@@ -17,7 +17,16 @@ import {
   queryR8KnowledgeNetwork,
 } from '@/engine/r8/knowledgeNetwork';
 import { R8_PREPARATION_GUIDANCE, R8_REPRESENTATIVE_RECIPES } from '@/data/r8RecipesData';
-import { computeRecipeAnalysis } from '@/engine/r8/recipeEngine';
+import {
+  addRecipeIngredient,
+  adjustRecipeServings,
+  computeRecipeAnalysis,
+  createRecipeDraftFromReference,
+  removeRecipeIngredient,
+  replaceRecipeIngredient,
+  updateRecipeIngredientQuantity,
+} from '@/engine/r8/recipeEngine';
+import { R8Recipe } from '@/types/r8FoodKnowledge';
 import {
   AlertTriangle,
   BookOpen,
@@ -51,7 +60,18 @@ const CORE_DISPLAY_NUTRIENTS = [
 ];
 
 export const FoodKnowledgeWorkspace: React.FC = () => {
-  const { patient, language, trafficLight } = usePractice();
+  const {
+    patient,
+    currentVisit,
+    language,
+    trafficLight,
+    r5NutritionContract,
+    weeklyDietPlan,
+    activeDayNumber,
+    r8RecipeDrafts,
+    saveR8RecipeDraft,
+    includeRecipeInDietPlan,
+  } = usePractice();
   const bn = language === 'bn';
 
   const [subTab, setSubTab] = useState<SubTab>('food_explorer');
@@ -68,9 +88,23 @@ export const FoodKnowledgeWorkspace: React.FC = () => {
   >('nutrient_to_foods');
   const [networkTarget, setNetworkTarget] = useState<string>('iron');
 
-  // Tab 3: Recipe Studio state
+  // Tab 3: Recipe Studio state (clinician-editable draft)
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>(R8_REPRESENTATIVE_RECIPES[0].recipe_id);
-  const [servingsOverride, setServingsOverride] = useState<number>(2);
+  const [editableRecipe, setEditableRecipe] = useState<R8Recipe>(() =>
+    createRecipeDraftFromReference(R8_REPRESENTATIVE_RECIPES[0])
+  );
+  useEffect(() => {
+    const saved = r8RecipeDrafts?.[selectedRecipeId];
+    if (saved) {
+      setEditableRecipe(createRecipeDraftFromReference(saved));
+    }
+  }, [r8RecipeDrafts, selectedRecipeId]);
+  const [servingMode, setServingMode] = useState<'divide_fixed_batch' | 'scale_batch'>('divide_fixed_batch');
+  const [addFoodId, setAddFoodId] = useState<string>('f_04_0025');
+  const [addFoodGrams, setAddFoodGrams] = useState<string>('50');
+  const [recipeActionMsg, setRecipeActionMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [includeMealId, setIncludeMealId] = useState<string>('lunch');
+  const [prescribedServings, setPrescribedServings] = useState<number>(1);
 
   const categories = useMemo(() => {
     const set = new Set<string>();
@@ -137,29 +171,22 @@ export const FoodKnowledgeWorkspace: React.FC = () => {
     [networkMode, networkTarget, patient]
   );
 
-  const activeRecipe = useMemo(() => {
-    const base = R8_REPRESENTATIVE_RECIPES.find(r => r.recipe_id === selectedRecipeId) || R8_REPRESENTATIVE_RECIPES[0];
-    const ratio = servingsOverride > 0 ? servingsOverride / base.servings : 1;
-    return {
-      ...base,
-      servings: Math.max(1, servingsOverride),
-      final_cooked_yield_g: Math.round(base.final_cooked_yield_g * ratio),
-      water_added_ml: Math.round(base.water_added_ml * ratio),
-      ingredients: base.ingredients.map(ing => ({
-        ...ing,
-        raw_weight_g: Math.round(ing.raw_weight_g * ratio * 10) / 10,
-      })),
-    };
-  }, [selectedRecipeId, servingsOverride]);
+  const activeRecipe = editableRecipe;
 
   const recipeAnalysis = useMemo(
     () =>
       computeRecipeAnalysis(activeRecipe, {
         patient,
+        r5NutritionContract,
         trafficLight,
       }),
-    [activeRecipe, patient, trafficLight]
+    [activeRecipe, patient, r5NutritionContract, trafficLight]
   );
+
+  const activeDayMeals = useMemo(() => {
+    const day = weeklyDietPlan?.days?.find(d => d.day_number === activeDayNumber) || weeklyDietPlan?.days?.[0];
+    return day?.meals || [];
+  }, [weeklyDietPlan, activeDayNumber]);
 
   return (
     <div className="space-y-6" data-testid="r8-food-knowledge-workspace">
@@ -561,7 +588,16 @@ export const FoodKnowledgeWorkspace: React.FC = () => {
                 data-testid={`r8-recipe-select-${r.recipe_id}`}
                 onClick={() => {
                   setSelectedRecipeId(r.recipe_id);
-                  setServingsOverride(r.servings);
+                  const savedDraft = r8RecipeDrafts?.[r.recipe_id];
+                  setEditableRecipe(
+                    savedDraft
+                      ? createRecipeDraftFromReference(savedDraft)
+                      : createRecipeDraftFromReference(r, {
+                          patientId: patient?.id,
+                          visitId: currentVisit?.visit_id || currentVisit?.id,
+                        })
+                  );
+                  setRecipeActionMsg(null);
                 }}
                 className={`w-full text-left p-3 rounded-xl border transition-all ${
                   activeRecipe.recipe_id === r.recipe_id
@@ -596,17 +632,161 @@ export const FoodKnowledgeWorkspace: React.FC = () => {
                   {activeRecipe.name_bn} · {activeRecipe.household_serving_en} ({recipeAnalysis.per_serving_weight_g} g/serving)
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  data-testid="r8-recipe-servings-mode"
+                  value={servingMode}
+                  onChange={e => setServingMode(e.target.value as 'divide_fixed_batch' | 'scale_batch')}
+                  className="px-2 py-1 rounded-lg border border-border bg-background text-xs"
+                >
+                  <option value="divide_fixed_batch">Divide Fixed Batch</option>
+                  <option value="scale_batch">Scale Whole Batch</option>
+                </select>
                 <label className="text-xs font-semibold">Servings:</label>
                 <input
                   type="number"
                   min={1}
-                  max={12}
+                  max={24}
                   data-testid="r8-recipe-servings-input"
-                  value={servingsOverride}
-                  onChange={e => setServingsOverride(Math.max(1, Number(e.target.value) || 1))}
+                  value={activeRecipe.servings}
+                  onChange={e => {
+                    const nextVal = Number(e.target.value);
+                    const res = adjustRecipeServings(activeRecipe, nextVal, servingMode);
+                    if (res.ok) {
+                      setEditableRecipe(res.recipe);
+                      setRecipeActionMsg(null);
+                    }
+                  }}
                   className="w-16 px-2 py-1 rounded-lg border border-border bg-background text-xs font-mono text-center"
                 />
+                <button
+                  type="button"
+                  data-testid="r8-recipe-reset-btn"
+                  onClick={() => {
+                    const base = R8_REPRESENTATIVE_RECIPES.find(r => r.recipe_id === selectedRecipeId) || R8_REPRESENTATIVE_RECIPES[0];
+                    setEditableRecipe(createRecipeDraftFromReference(base, { patientId: patient?.id, visitId: currentVisit?.visit_id || currentVisit?.id }));
+                    setRecipeActionMsg({ ok: true, text: 'Reset to reference recipe.' });
+                  }}
+                  className="px-2.5 py-1 rounded-lg border border-border text-xs hover:bg-muted"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            {/* Clinician-Editable Ingredients */}
+            <div className="space-y-2">
+              <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Ingredients ({activeRecipe.ingredients.length})
+              </div>
+              <div className="space-y-1.5">
+                {activeRecipe.ingredients.map((ing, idx) => {
+                  const foodObj = R8_BASELINE_FOODS.find(f => f.id === ing.food_id);
+                  return (
+                    <div
+                      key={`${ing.food_id}-${idx}`}
+                      data-testid={`r8-recipe-ing-${idx}`}
+                      className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl border border-border bg-background/60 text-xs"
+                    >
+                      <select
+                        value={ing.food_id}
+                        onChange={e => {
+                          const res = replaceRecipeIngredient(activeRecipe, idx, e.target.value);
+                          if (res.ok) setEditableRecipe(res.recipe);
+                        }}
+                        className="flex-1 min-w-[180px] px-2 py-1 rounded-lg border border-border bg-background text-xs"
+                      >
+                        {R8_BASELINE_FOODS.slice(0, 120).map(f => (
+                          <option key={f.id} value={f.id}>
+                            {f.name_en}
+                          </option>
+                        ))}
+                        {!R8_BASELINE_FOODS.slice(0, 120).some(f => f.id === ing.food_id) && foodObj && (
+                          <option value={foodObj.id}>{foodObj.name_en}</option>
+                        )}
+                      </select>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={1}
+                          max={5000}
+                          data-testid={`r8-recipe-ing-grams-${idx}`}
+                          value={ing.raw_weight_g}
+                          onChange={e => {
+                            const val = Number(e.target.value);
+                            const res = updateRecipeIngredientQuantity(activeRecipe, idx, val);
+                            if (res.ok) {
+                              setEditableRecipe(res.recipe);
+                              setRecipeActionMsg(null);
+                            } else {
+                              setRecipeActionMsg({ ok: false, text: res.reason });
+                            }
+                          }}
+                          className="w-20 px-2 py-1 rounded-lg border border-border bg-background text-xs font-mono text-right"
+                        />
+                        <span className="text-muted-foreground">g</span>
+                        <button
+                          type="button"
+                          data-testid={`r8-recipe-ing-remove-${idx}`}
+                          onClick={() => setEditableRecipe(removeRecipeIngredient(activeRecipe, idx))}
+                          className="px-2 py-1 rounded-lg text-rose-600 hover:bg-rose-500/10 text-xs font-semibold"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Add Ingredient Row */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <select
+                  data-testid="r8-recipe-add-food-select"
+                  value={addFoodId}
+                  onChange={e => setAddFoodId(e.target.value)}
+                  className="flex-1 min-w-[180px] px-2.5 py-1.5 rounded-xl border border-border bg-background text-xs"
+                >
+                  {R8_BASELINE_FOODS.slice(0, 120).map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.name_en} ({f.id})
+                    </option>
+                  ))}
+                  {['f_06_0015', 'f_09_0059', 'f_11_0001', 'f_04_0025', 'f_07_0020'].map(extraId => {
+                    const ef = R8_BASELINE_FOODS.find(x => x.id === extraId);
+                    if (!ef || R8_BASELINE_FOODS.slice(0, 120).some(x => x.id === extraId)) return null;
+                    return (
+                      <option key={ef.id} value={ef.id}>
+                        {ef.name_en} ({ef.id})
+                      </option>
+                    );
+                  })}
+                </select>
+                <input
+                  type="number"
+                  min={1}
+                  max={5000}
+                  data-testid="r8-recipe-add-grams-input"
+                  value={addFoodGrams}
+                  onChange={e => setAddFoodGrams(e.target.value)}
+                  className="w-20 px-2.5 py-1.5 rounded-xl border border-border bg-background text-xs font-mono"
+                />
+                <button
+                  type="button"
+                  data-testid="r8-recipe-add-btn"
+                  onClick={() => {
+                    const res = addRecipeIngredient(activeRecipe, addFoodId, Number(addFoodGrams));
+                    if (res.ok) {
+                      setEditableRecipe(res.recipe);
+                      setRecipeActionMsg({ ok: true, text: 'Ingredient added to recipe draft.' });
+                    } else {
+                      setRecipeActionMsg({ ok: false, text: res.reason });
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-semibold"
+                >
+                  Add Ingredient
+                </button>
               </div>
             </div>
 
@@ -643,7 +823,7 @@ export const FoodKnowledgeWorkspace: React.FC = () => {
             </div>
 
             {/* Per-serving nutrient breakdown */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="r8-recipe-nutrients-grid">
               {['energy', 'protein', 'available_carbohydrate', 'total_fat', 'dietary_fiber', 'potassium', 'sodium', 'iron'].map(nId => {
                 const sub = recipeAnalysis.nutrients[nId];
                 if (!sub) return null;
@@ -660,6 +840,82 @@ export const FoodKnowledgeWorkspace: React.FC = () => {
                 );
               })}
             </div>
+
+            {/* Save Draft & Include in Diet Plan */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-border">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="r8-recipe-save-btn"
+                  onClick={() => {
+                    saveR8RecipeDraft(activeRecipe);
+                    setRecipeActionMsg({ ok: true, text: 'Recipe draft saved locally for this patient/visit.' });
+                  }}
+                  className="px-3 py-1.5 rounded-xl border border-border bg-background hover:bg-muted text-xs font-semibold"
+                >
+                  Save Recipe Draft
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  data-testid="r8-recipe-include-meal-select"
+                  value={includeMealId}
+                  onChange={e => setIncludeMealId(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-xl border border-border bg-background text-xs"
+                >
+                  {activeDayMeals.length > 0 ? (
+                    activeDayMeals.map(m => (
+                      <option key={m.id} value={m.id}>
+                        Day {activeDayNumber} · {m.title_en}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="lunch">Day {activeDayNumber} · Lunch</option>
+                  )}
+                </select>
+                <input
+                  type="number"
+                  min={0.5}
+                  max={4}
+                  step={0.5}
+                  value={prescribedServings}
+                  onChange={e => setPrescribedServings(Math.max(0.5, Number(e.target.value) || 1))}
+                  className="w-16 px-2 py-1.5 rounded-xl border border-border bg-background text-xs font-mono text-center"
+                  title="Prescribed servings"
+                />
+                <button
+                  type="button"
+                  data-testid="r8-recipe-include-btn"
+                  disabled={!recipeAnalysis.safety.is_safe_for_patient}
+                  onClick={() => {
+                    const targetMealId =
+                      activeDayMeals.find(m => m.id === includeMealId)?.id || activeDayMeals[0]?.id || includeMealId;
+                    const res = includeRecipeInDietPlan(activeDayNumber, targetMealId, activeRecipe, prescribedServings);
+                    setRecipeActionMsg({
+                      ok: res.ok,
+                      text: res.ok ? 'Recipe included in Diet Plan draft (prior approval invalidated for review).' : (res.error || 'Blocked'),
+                    });
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold"
+                >
+                  Include in Diet Plan
+                </button>
+              </div>
+            </div>
+
+            {recipeActionMsg && (
+              <div
+                data-testid="r8-recipe-action-msg"
+                className={`p-2.5 rounded-xl text-xs font-semibold ${
+                  recipeActionMsg.ok
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                }`}
+              >
+                {recipeActionMsg.text}
+              </div>
+            )}
 
             <div className="text-[11px] text-muted-foreground border-t border-border pt-3">
               {recipeAnalysis.provenance_note_en}

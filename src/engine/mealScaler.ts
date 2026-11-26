@@ -10,7 +10,7 @@ import {
   FoodCategory,
   TrafficLightResult
 } from '../types';
-import { evaluateFoodSubstitutions } from './r8/substitutionEngine';
+import { evaluateFoodSubstitutions, R8_DEFAULT_MATCH_TOLERANCE_PCT } from './r8/substitutionEngine';
 
 export function getCookedDisplay(food: FoodItem, rawGrams: number, cookedGrams: number): { bn: string; en: string } {
   const n = (food.name_en + ' ' + food.name_bn).toLowerCase();
@@ -137,7 +137,7 @@ export function generateExchangesForFood(
       patient: (patient || {}) as PatientProfile,
       mode,
       max_results: 4,
-      tolerance_pct: 35,
+      tolerance_pct: R8_DEFAULT_MATCH_TOLERANCE_PCT,
       traffic_light: {
         green: Array.from(greenFoodIds).map(id => ({ id })),
         yellow: Array.from(yellowFoodIds).map(id => ({ id })),
@@ -147,33 +147,48 @@ export function generateExchangesForFood(
     allFoods
   );
 
-  return r8Resp.ranked_candidates.map(c => {
-    const cand = c.candidate_food;
-    const status: 'GREEN' | 'YELLOW' = greenFoodIds.has(cand.id)
-      ? 'GREEN'
-      : c.traffic_status === 'GREEN'
-      ? 'GREEN'
-      : 'YELLOW';
-    const cookedGrams = Math.round(c.proposed_raw_grams * (cand.raw_to_cooked_ratio || 1));
-    const display = getCookedDisplay(cand, c.proposed_raw_grams, cookedGrams);
-    return {
-      food_id: cand.id,
-      name_bn: cand.name_bn,
-      name_en: cand.name_en,
-      raw_weight_g: Math.round(c.proposed_raw_grams),
-      cooked_display_bn: display.bn,
-      cooked_display_en: display.en,
-      kcal:
-        cand.per_100g.kcal !== null && cand.per_100g.kcal !== undefined
-          ? Math.round((cand.per_100g.kcal * c.proposed_raw_grams) / 100)
-          : 0,
-      protein_g:
-        cand.per_100g.protein_g !== null && cand.per_100g.protein_g !== undefined
-          ? Math.round(((cand.per_100g.protein_g * c.proposed_raw_grams) / 100) * 10) / 10
-          : 0,
-      traffic_status: status,
-    };
-  });
+  return r8Resp.ranked_candidates
+    .filter(c => c.match_status !== 'clinically_contraindicated' && c.traffic_status !== 'UNCLASSIFIED')
+    .map(c => {
+      const cand = c.candidate_food;
+      const status: 'GREEN' | 'YELLOW' = greenFoodIds.has(cand.id)
+        ? 'GREEN'
+        : c.traffic_status === 'GREEN'
+        ? 'GREEN'
+        : 'YELLOW';
+      const cookedGrams = Math.round(c.proposed_raw_grams * (cand.raw_to_cooked_ratio || 1));
+      const display = getCookedDisplay(cand, c.proposed_raw_grams, cookedGrams);
+      return {
+        food_id: cand.id,
+        name_bn: cand.name_bn,
+        name_en: cand.name_en,
+        raw_weight_g: Math.round(c.proposed_raw_grams),
+        cooked_display_bn: display.bn,
+        cooked_display_en: display.en,
+        kcal:
+          cand.per_100g.kcal !== null && cand.per_100g.kcal !== undefined
+            ? Math.round((cand.per_100g.kcal * c.proposed_raw_grams) / 100)
+            : 0,
+        protein_g:
+          cand.per_100g.protein_g !== null && cand.per_100g.protein_g !== undefined
+            ? Math.round(((cand.per_100g.protein_g * c.proposed_raw_grams) / 100) * 10) / 10
+            : 0,
+        traffic_status: status,
+        is_nutrient_incomplete:
+          cand.per_100g.kcal === null ||
+          cand.per_100g.protein_g === null ||
+          c.missing_nutrient_ids.length > 0,
+        missing_nutrient_ids: c.missing_nutrient_ids,
+        matching_mode: c.matching_mode,
+        match_status: c.match_status,
+        requires_clinician_review: c.requires_clinician_review,
+        conditional_instructions_en: c.conditional_instructions_en,
+        conditional_instructions_bn: c.conditional_instructions_bn,
+        authorized_for_patient_id: patient?.id,
+        authorized_for_visit_id: patient?.current_visit_id,
+        authorization_status: 'draft_candidate',
+      };
+    });
 }
 
 interface SafeSelectionResult {

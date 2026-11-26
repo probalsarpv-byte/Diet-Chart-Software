@@ -5,7 +5,7 @@
  */
 
 import { FoodItem, PatientProfile } from '../../types';
-import { R5MedicationRecord } from '../../types/r5Systems';
+import { R5MedicationRecord, R5NutritionAdjustmentContract } from '../../types/r5Systems';
 import { R7LabIntelligenceSummary } from '../../types/r7Laboratory';
 import { R7SupplementExposureSummary, SupplementProtocolItem } from '../../types/r4Protocol';
 import {
@@ -24,7 +24,9 @@ import {
   TrafficLightStatus,
 } from '../../types/r8FoodKnowledge';
 import { evaluateMedicationNutritionInteractions } from '../r5MedicationNutritionEngine';
-import { calculateR7SupplementExposure } from '../r7/supplementIntelligence';
+import { calculateR7SupplementExposure, resolveLifeStageUpperLimit } from '../r7/supplementIntelligence';
+import { buildR5PopulationProfile } from '../r5PopulationEngine';
+import { isEligibleCanonicalScalarObservation } from '../r7/labFoundation';
 import {
   aggregateFoodNutrients,
   extractFoodNutrientMeasurement,
@@ -127,6 +129,7 @@ export function evaluatePatientFoodEligibility(
       red?: Array<{ id: string; reasons?: any[] }>;
     };
     labSummary?: R7LabIntelligenceSummary;
+    r5NutritionContract?: R5NutritionAdjustmentContract;
   }
 ): R8PatientFoodEligibilityResult {
   const exclusionReasonsEn: string[] = [];
@@ -166,24 +169,43 @@ export function evaluatePatientFoodEligibility(
       }
     }
 
-    // 2. Renal / Hyperkalemia check
+    // 2. Canonical Renal / Electrolyte context (prefer R5 contract / R7 canonical lab summary over unverified legacy scalars)
     const conditions = [
       ...(Array.isArray(patient.selected_conditions) ? patient.selected_conditions : []),
       ...(Array.isArray(patient.confirmed_conditions) ? patient.confirmed_conditions : []),
     ];
-    const hasRenalOrHyperK =
-      conditions.some((c: any) => /ckd|renal|kidney|hyperkal/i.test(String(c))) ||
-      (typeof (patient as any).labs?.potassium === 'number' && (patient as any).labs.potassium > 5.0);
+    const hasRenalCondition = conditions.some((c: any) => /ckd|renal|kidney|hyperkal/i.test(String(c)));
+    const labCtx = options?.r5NutritionContract?.lab_safety_context;
+    const r7Pot = options?.labSummary?.observations?.potassium;
+    const potValue =
+      labCtx?.serum_potassium_mmol_l ??
+      (r7Pot && isEligibleCanonicalScalarObservation(r7Pot) ? r7Pot.normalized_value : undefined);
+    const potLimit = options?.r5NutritionContract?.nutrient_constraints?.potassium_mg_max;
+    const egfrUnavailableOrUnverified =
+      hasRenalCondition &&
+      labCtx &&
+      labCtx.egfr_state !== 'available_verified';
 
-    if (hasRenalOrHyperK) {
+    const hasElevatedK =
+      (potValue !== undefined && potValue >= 5.0) ||
+      Boolean(potLimit) ||
+      hasRenalCondition;
+
+    if (egfrUnavailableOrUnverified) {
+      cautionsEn.push(
+        `Renal laboratory status is ${labCtx!.egfr_state} (not verified normal); verify renal function before finalizing electrolyte/protein choices.`
+      );
+    }
+
+    if (hasElevatedK) {
       const kMeas = extractFoodNutrientMeasurement(food, 'potassium_mg');
       if (kMeas.value !== null && kMeas.value >= 350) {
-        cautionsEn.push(`High potassium (${kMeas.value} mg/100g) in renal/hyperkalemia context; leach/soak or choose lower-K+ alternative.`);
-        cautionsBn.push(`উচ্চ পটাশিয়াম (${kMeas.value} mg/100g); কিডনি ঝুঁকিতে ভিজিয়ে বা বিকল্প নির্বাচন করুন।`);
-        prepRequirementsEn.push('Dice, soak in warm water, and discard boiling water if prescribed in CKD.');
-      } else if (kMeas.quality === 'missing_unknown') {
-        cautionsEn.push('Potassium value missing in FCTB V6; verify before prescribing in hyperkalemia/CKD.');
-        cautionsBn.push('পটাশিয়ামের তথ্য অনুপস্থিত; কিডনি রোগে যাচাই প্রয়োজন।');
+        cautionsEn.push(`High potassium (${kMeas.value} mg/100g) in renal/hyperkalemia review context; leach/soak or verify against authorized potassium target.`);
+        cautionsBn.push(`উচ্চ পটাশিয়াম (${kMeas.value} mg/100g); কিডনি সতর্কতায় ভিজিয়ে বা অনুমোদিত মাত্রা যাচাই করুন।`);
+        prepRequirementsEn.push('Dice, soak in warm water, and discard boiling water if prescribed for potassium moderation.');
+      } else if (kMeas.quality === 'missing_unknown' && potLimit !== undefined) {
+        cautionsEn.push('Potassium value missing in FCTB V6; verify before prescribing under active potassium limit.');
+        cautionsBn.push('পটাশিয়ামের তথ্য অনুপস্থিত; অনুমোদিত পটাশিয়াম সীমায় যাচাই প্রয়োজন।');
       }
     }
 
@@ -604,19 +626,22 @@ export function evaluateCombinedDietSupplementExposure(
     );
   }
 
+  const popProfile = buildR5PopulationProfile(patient);
+  const zincUl = resolveLifeStageUpperLimit('zinc', popProfile);
   const foodZinc = foodTotals['zinc']?.known_total ?? 0;
   const suppZinc = supplementExposure.exposures_by_nutrient['zinc']?.combined_daily ?? 0;
-  if (foodZinc + suppZinc > 40) {
+  if (zincUl?.ul && foodZinc + suppZinc > zincUl.ul) {
     combinedAdvisories.push(
-      `Combined food (${Math.round(foodZinc)} mg) + supplemental (${Math.round(suppZinc)} mg) zinc exceeds 40 mg/day adult UL.`
+      `Combined food (${Math.round(foodZinc)} mg) + supplemental (${Math.round(suppZinc)} mg) zinc exceeds ${zincUl.ul} mg/day ${zincUl.stageLabel} UL.`
     );
   }
 
+  const ironUl = resolveLifeStageUpperLimit('iron', popProfile);
   const foodIron = foodTotals['iron']?.known_total ?? 0;
   const suppIron = supplementExposure.exposures_by_nutrient['iron']?.combined_daily ?? 0;
-  if (foodIron + suppIron > 45) {
+  if (ironUl?.ul && foodIron + suppIron > ironUl.ul) {
     combinedAdvisories.push(
-      `Combined food (${Math.round(foodIron)} mg) + supplemental (${Math.round(suppIron)} mg) iron exceeds 45 mg/day adult UL.`
+      `Combined food (${Math.round(foodIron)} mg) + supplemental (${Math.round(suppIron)} mg) iron exceeds ${ironUl.ul} mg/day ${ironUl.stageLabel} UL.`
     );
   }
 

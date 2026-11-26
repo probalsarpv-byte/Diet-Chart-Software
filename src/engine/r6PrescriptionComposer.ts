@@ -37,7 +37,7 @@ import {
 } from './reports/dualReportEngine';
 import { CLINICAL_PHASES } from './phaseProgression';
 import foodsData from '../data/foods.json';
-import { evaluateFoodSubstitutions } from './r8/substitutionEngine';
+import { evaluatePatientFoodEligibility } from './r8/knowledgeNetwork';
 
 /**
  * Standard Bangladeshi Food Exchange Definitions with Local Household Measures
@@ -999,35 +999,59 @@ export function buildPatientSpecificFoodExchanges(
     const rawG = item.raw_weight_g || 100;
     const origHousehold = getHouseholdPortion(group, rawG, ratio);
 
-    // Delegate substitution ranking & portion scaling directly to R8-E engine
-    const r8Response = evaluateFoodSubstitutions(
-      {
-        original_food_id: origFood.id,
-        original_raw_grams: rawG,
-        patient: patient || ({} as PatientProfile),
-        mode:
-          group.includes('protein') || group.includes('legume') || group.includes('fish')
-            ? 'protein_matched'
-            : 'energy_matched',
-        max_results: 3,
-        tolerance_pct: 30,
-        traffic_light: trafficLight,
-      },
-      allFoodsList
-    );
+    // Checkpoint B: Strictly consume ONLY pre-evaluated authorized substitution snapshots from item.alternatives.
+    // NEVER generate unreviewed alternatives at report composition time.
+    const isPlanApproved =
+      Boolean(dietChartOrPlan && !Array.isArray(dietChartOrPlan) && 'approval_status' in dietChartOrPlan && dietChartOrPlan.approval_status === 'approved');
+    const planVisitId =
+      dietChartOrPlan && !Array.isArray(dietChartOrPlan) && 'visit_id' in dietChartOrPlan
+        ? (dietChartOrPlan as WeeklyDietPlan).visit_id
+        : undefined;
+    const activeVisitId = patient.current_visit_id || planVisitId;
 
-    const candList =
-      r8Response.ranked_candidates.length > 0
-        ? r8Response.ranked_candidates
-        : [];
+    const snapshotAlternatives: any[] = Array.isArray(item.alternatives) ? item.alternatives : [];
+    for (const altSnap of snapshotAlternatives) {
+      if (!altSnap || !altSnap.food_id) continue;
+      if (altSnap.authorization_status === 'invalidated') continue;
+      if (altSnap.authorized_for_patient_id && altSnap.authorized_for_patient_id !== patient.id) continue;
+      if (altSnap.authorized_for_visit_id && activeVisitId && altSnap.authorized_for_visit_id !== activeVisitId) continue;
+      if (altSnap.match_status === 'clinically_contraindicated') continue;
+      if (altSnap.traffic_status === 'UNCLASSIFIED' || altSnap.traffic_status === 'RED') continue;
+      if (redFoodIds.has(altSnap.food_id)) continue;
+      if (isPlanApproved && altSnap.requires_clinician_review && altSnap.authorization_status !== 'authorized') continue;
 
-    for (const r8Cand of candList) {
-      const altFood = r8Cand.candidate_food;
-      const altRawG = Math.round(r8Cand.proposed_raw_grams);
+      const altFood = allFoodsList.find(x => x.id === altSnap.food_id);
+      if (!altFood) continue;
+
+      const elig = evaluatePatientFoodEligibility(altFood, patient, { trafficLight });
+      if (!elig.is_safe_for_patient) continue;
+
+      const altNameLower = (altFood.name_en || '').toLowerCase();
+      const altNameBn = (altFood.name_bn || '').toLowerCase();
+      if ([...confirmedAllergies].some(a => altNameLower.includes(a) || altNameBn.includes(a) || altFood.id.toLowerCase() === a)) continue;
+      if ([...disallowed].some(d => altNameLower.includes(d) || altFood.id.toLowerCase() === d || altNameBn.includes(d))) continue;
+
+      const altRawG = Math.round(Number(altSnap.raw_weight_g) || 0);
+      if (altRawG <= 0) continue;
+      const altRatio = altFood.raw_to_cooked_ratio || 1;
       const altHousehold = {
-        bn: r8Cand.household_portion_bn,
-        en: r8Cand.household_portion_en,
+        bn: altSnap.cooked_display_bn || getHouseholdPortion(group, altRawG, altRatio).bn,
+        en: altSnap.cooked_display_en || getHouseholdPortion(group, altRawG, altRatio).en,
       };
+      const objectiveLabelEn =
+        altSnap.matching_mode === 'protein_matched'
+          ? 'Protein-matched authorized alternative (portioned for comparable protein).'
+          : altSnap.matching_mode === 'carb_matched'
+          ? 'Carbohydrate-matched authorized alternative.'
+          : altSnap.matching_mode === 'energy_matched'
+          ? 'Energy-matched authorized alternative (not identical in every micronutrient).'
+          : 'Clinician-reviewed food-group alternative.';
+      const objectiveLabelBn =
+        altSnap.matching_mode === 'protein_matched'
+          ? 'প্রোটিন-সামঞ্জস্যপূর্ণ অনুমোদিত বিকল্প।'
+          : altSnap.matching_mode === 'carb_matched'
+          ? 'কার্বোহাইড্রেট-সামঞ্জস্যপূর্ণ অনুমোদিত বিকল্প।'
+          : 'ক্লিনিক্যালি পর্যালোচিত খাদ্য-বদল বিকল্প।';
 
       let groupLabelBn = 'সাধারণ খাদ্য';
       let groupLabelEn = 'General Food';
@@ -1076,14 +1100,22 @@ export function buildPatientSpecificFoodExchanges(
         alternative_raw_g: altRawG,
         alternative_household_portion_bn: altHousehold.bn,
         alternative_household_portion_en: altHousehold.en,
-        nutritional_comparability_bn: 'অনুরূপ পুষ্টিমান ও খাদ্যশ্রেণি ভিত্তিক সমতুল্য বিকল্প।',
-        nutritional_comparability_en: 'Nutritionally comparable substitute providing matched food group density.',
-        clinical_caution_bn: altFood.tags?.includes('contains_gluten') 
-          ? 'গ্লুটেন সংবেদনশীল রোগীদের জন্য বর্জনীয়।'
-          : undefined,
-        clinical_caution_en: altFood.tags?.includes('contains_gluten')
-          ? 'Contains gluten; avoid in celiac or gluten sensitivity.'
-          : undefined,
+        nutritional_comparability_bn: objectiveLabelBn,
+        nutritional_comparability_en: objectiveLabelEn,
+        clinical_caution_bn:
+          (Array.isArray(altSnap.conditional_instructions_bn) && altSnap.conditional_instructions_bn.length > 0
+            ? altSnap.conditional_instructions_bn.join(' ')
+            : undefined) ||
+          (altFood.tags?.includes('contains_gluten')
+            ? 'গ্লুটেন সংবেদনশীল রোগীদের জন্য বর্জনীয়।'
+            : undefined),
+        clinical_caution_en:
+          (Array.isArray(altSnap.conditional_instructions_en) && altSnap.conditional_instructions_en.length > 0
+            ? altSnap.conditional_instructions_en.join(' ')
+            : undefined) ||
+          (altFood.tags?.includes('contains_gluten')
+            ? 'Contains gluten; avoid in celiac or gluten sensitivity.'
+            : undefined),
         prep_guidance_bn: altFood.prep_note_bn || 'স্বাভাবিক স্বাস্থ্যকর পদ্ধতিতে রান্না করুন।',
         prep_guidance_en: altFood.prep_note_en || 'Prepare using standard wholesome culinary method.'
       });

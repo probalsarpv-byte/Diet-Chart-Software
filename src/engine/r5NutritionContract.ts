@@ -446,6 +446,16 @@ export function buildR5NutritionAdjustmentContract(options: {
 
   const insulin = analyzeInsulinRegimen(r5Medications);
   const fluidLimit = patient.fluid_prescription?.total_fluid_limit_ml || patient.clinical_safety?.fluid_restriction?.limit_ml;
+  const phosphorusLimit = patientPrescriptions?.phosphorus?.limit_mg;
+  if (phosphorusLimit) {
+    clinicalReviewFlags.push({
+      parameter: 'phosphorus',
+      flag: 'CLINICIAN_APPROVED_TARGET',
+      rationale_en: `Clinician approved phosphorus ceiling of ${phosphorusLimit} mg/day.`,
+      rationale_bn: `চিকিৎসক কর্তৃক অনুমোদিত ফসফরাস সীমা ${phosphorusLimit} মিগ্রা/দিন।`,
+      evidence_status: 'CLINICIAN_VERIFIED'
+    });
+  }
 
   return {
     patient_id: patient.id,
@@ -453,6 +463,7 @@ export function buildR5NutritionAdjustmentContract(options: {
     nutrient_constraints: {
       potassium_mg_max: potassiumLimit,
       sodium_mg_max: sodiumLimit,
+      phosphorus_mg_max: phosphorusLimit,
       protein_g_per_kg: proteinGPerKg,
       fluid_ml_max: fluidLimit,
       carbohydrate_consistency_required: insulin.regimen_context.active

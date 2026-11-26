@@ -4,7 +4,8 @@
  */
 
 import { FoodItem, PatientProfile } from './index';
-import { FunctionalMatrixDomain } from './r5Systems';
+import { FunctionalMatrixDomain, R5NutritionAdjustmentContract } from './r5Systems';
+import { R7LabIntelligenceSummary } from './r7Laboratory';
 
 export type TrafficLightStatus = 'GREEN' | 'YELLOW' | 'RED';
 
@@ -309,26 +310,58 @@ export type R8SubstitutionMatchStatus =
   | 'clinically_contraindicated'
   | 'no_suitable_equivalent';
 
+export type R8ConstraintCategory =
+  | 'clinician_authorized_hard_limit'
+  | 'clinician_authorized_target'
+  | 'evidence_review_recommendation'
+  | 'clinical_caution'
+  | 'unresolved_safety_restriction'
+  | 'unknown_requirement'
+  | 'non_applicable';
+
+export type R8ConstraintComplianceStatus =
+  | 'compliant'
+  | 'non_compliant_worsened'
+  | 'non_compliant_unchanged'
+  | 'non_compliant_improved'
+  | 'indeterminate_incomplete_data'
+  | 'blocked_unresolved_safety';
+
+export interface R8ConstraintEvaluationResult {
+  parameter: string;
+  category: R8ConstraintCategory;
+  limit_value?: number;
+  unit?: string;
+  baseline_value?: number | null;
+  proposed_value?: number | null;
+  is_incomplete: boolean;
+  missing_food_ids: string[];
+  status: R8ConstraintComplianceStatus;
+  message_en: string;
+}
+
 export interface R8SubstitutionRequest {
   original_food_id: string;
   original_raw_grams: number;
   original_food_state?: R8FoodState;
+  target_day_number?: number;
   meal_id?: string;
+  target_item_id?: string;
   patient: PatientProfile;
   visit_id?: string;
   mode?: R8SubstitutionMode;
   target_nutrient_id?: string;
   tolerance_pct?: number;
   max_results?: number;
-  current_meal_items?: Array<{ food_id: string; raw_weight_g: number }>;
-  current_daily_items?: Array<{ food_id: string; raw_weight_g: number }>;
+  current_meal_items?: Array<{ item_id?: string; food_id: string; raw_weight_g: number }>;
+  current_daily_items?: Array<{ item_id?: string; meal_id?: string; food_id: string; raw_weight_g: number }>;
   traffic_light?: {
     green: Array<{ id: string }>;
     yellow: Array<{ id: string; reasons?: any[] }>;
     red: Array<{ id: string; reasons?: any[] }>;
   };
-  r5_nutrition_contract?: any;
-  r7_lab_summary?: any;
+  r5_nutrition_contract?: R5NutritionAdjustmentContract;
+  r7_lab_summary?: R7LabIntelligenceSummary;
 }
 
 export interface R8NutrientDelta {
@@ -348,6 +381,11 @@ export interface R8MealAndDailyImpact {
   original_daily_totals: Record<string, R8ComputedNutrientSubtotal>;
   proposed_daily_totals: Record<string, R8ComputedNutrientSubtotal>;
   constraint_violations_en: string[];
+  hard_limit_violations_en: string[];
+  indeterminate_reasons_en: string[];
+  constraint_evaluations: R8ConstraintEvaluationResult[];
+  compliance_status: R8ConstraintComplianceStatus;
+  acute_release_blocked: boolean;
   has_incomplete_data: boolean;
   requires_safety_review: boolean;
 }

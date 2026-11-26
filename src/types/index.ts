@@ -524,6 +524,16 @@ export interface FoodExchangeItem {
   kcal: number;
   protein_g: number;
   traffic_status: 'GREEN' | 'YELLOW';
+  is_nutrient_incomplete?: boolean;
+  missing_nutrient_ids?: string[];
+  matching_mode?: string;
+  match_status?: string;
+  requires_clinician_review?: boolean;
+  conditional_instructions_en?: string[];
+  conditional_instructions_bn?: string[];
+  authorized_for_patient_id?: string;
+  authorized_for_visit_id?: string;
+  authorization_status?: 'authorized' | 'draft_candidate' | 'invalidated';
 }
 
 export interface DietChartMealItem {
@@ -548,6 +558,12 @@ export interface DietChartMealItem {
   contraindicated_reasons?: string[];
   contraindicated_reasons_bn?: string[];
   is_locked?: boolean;
+  recipe_reference?: {
+    recipe_id: string;
+    version: string;
+    prescribed_servings: number;
+    ingredients_snapshot: Array<{ food_id: string; raw_weight_g: number }>;
+  };
 }
 
 export interface IncompatiblePairWarning {

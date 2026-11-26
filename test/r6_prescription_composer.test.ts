@@ -644,7 +644,22 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
                   prep_note_bn: 'সিদ্ধ ভাত',
                   prep_note_en: 'Boiled',
                   traffic_status: 'GREEN',
-                  alternatives: []
+                  alternatives: [
+                    {
+                      food_id: 'f_01_0010',
+                      name_bn: 'চিড়া',
+                      name_en: 'Rice flaked',
+                      raw_weight_g: 58,
+                      cooked_display_bn: '৫৮ গ্রাম',
+                      cooked_display_en: '58g',
+                      kcal: 205,
+                      protein_g: 4.0,
+                      traffic_status: 'GREEN',
+                      matching_mode: 'energy_matched',
+                      match_status: 'equivalent_within_tolerance',
+                      authorization_status: 'authorized'
+                    }
+                  ]
                 }
               ]
             }
@@ -832,7 +847,22 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
                   prep_note_bn: 'তেল ছাড়া তাওয়ায় সেঁকা',
                   prep_note_en: 'Dry roasted on tawa',
                   traffic_status: 'GREEN',
-                  alternatives: []
+                  alternatives: [
+                    {
+                      food_id: 'f_01_0010',
+                      name_bn: 'চিড়া',
+                      name_en: 'Rice flaked',
+                      raw_weight_g: 58,
+                      cooked_display_bn: '৫৮ গ্রাম',
+                      cooked_display_en: '58g',
+                      kcal: 205,
+                      protein_g: 4.0,
+                      traffic_status: 'GREEN',
+                      matching_mode: 'energy_matched',
+                      match_status: 'equivalent_within_tolerance',
+                      authorization_status: 'authorized'
+                    }
+                  ]
                 }
               ]
             }

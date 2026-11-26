@@ -36,7 +36,17 @@ import {
   queryR8KnowledgeNetwork,
 } from '../src/engine/r8/knowledgeNetwork';
 import { R8_PREPARATION_GUIDANCE, R8_REPRESENTATIVE_RECIPES } from '../src/data/r8RecipesData';
-import { analyzeAllRepresentativeRecipes, computeRecipeAnalysis } from '../src/engine/r8/recipeEngine';
+import {
+  addRecipeIngredient,
+  adjustRecipeServings,
+  analyzeAllRepresentativeRecipes,
+  computeRecipeAnalysis,
+  createRecipeDraftFromReference,
+  removeRecipeIngredient,
+  replaceRecipeIngredient,
+  updateRecipeIngredientQuantity,
+} from '../src/engine/r8/recipeEngine';
+import { buildR5NutritionAdjustmentContract } from '../src/engine/r5NutritionContract';
 import { evaluateFoodSubstitutions, previewSubstitutionImpact } from '../src/engine/r8/substitutionEngine';
 import { generateExchangesForFood } from '../src/engine/mealScaler';
 import { buildPatientSpecificFoodExchanges } from '../src/engine/r6PrescriptionComposer';
@@ -334,21 +344,28 @@ check('E04: Near-zero nutrient & missing density are guarded (never divide-by-ze
   assert.ok(resp.no_match_reason_en && resp.no_match_reason_en.length > 0);
 });
 
-check('E05: Meal & daily impact preview flags daily potassium > 2000 mg in CKD/hyperkalemia', () => {
+check('E05: Meal & daily impact preview flags daily potassium > authorized ceiling without arbitrary +150mg delta', () => {
   const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
   const spinach = R8_BASELINE_FOODS.find(f => f.id === 'f_04_0025')!; // high K+
+  const ckdPatient = {
+    ...basePatient,
+    selected_conditions: ['ckd_stage_1_3b'],
+    prescriptions: { potassium: { limit_mg: 1500 } },
+  } as unknown as PatientProfile;
+  const contract = buildR5NutritionAdjustmentContract({ patient: ckdPatient });
   const impact = previewSubstitutionImpact({
     original_food: rice,
     original_raw_grams: 50,
     candidate_food: spinach,
     proposed_raw_grams: 450,
-    patient: { ...basePatient, selected_conditions: ['ckd_stage_1_3b'] },
+    patient: ckdPatient,
+    r5_nutrition_contract: contract,
     current_daily_items: [
       { food_id: 'f_01_0012', raw_weight_g: 50 },
       { food_id: 'f_02_0008', raw_weight_g: 100 },
     ],
   });
-  assert.ok(impact.constraint_violations_en.some(v => v.toLowerCase().includes('potassium')));
+  assert.ok(impact.hard_limit_violations_en.some(v => v.toLowerCase().includes('potassium')));
   assert.equal(impact.requires_safety_review, true);
 });
 
@@ -369,9 +386,9 @@ check('F01: generateExchangesForFood delegates to R8 engine and respects patient
   assert.ok(!exchanges.some(e => e.food_id === 'f_09_0059' || e.food_id === 'f_11_0001'));
 });
 
-check('F02: buildPatientSpecificFoodExchanges uses R8 scaled portions instead of rawG fallback', () => {
+check('F02: buildPatientSpecificFoodExchanges does NOT fabricate unapproved alternatives when snapshot is empty, and preserves authorized snapshots', () => {
   const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
-  const mockMeals = [
+  const mockMealsEmpty = [
     {
       id: 'm1',
       meal_type: 'lunch',
@@ -404,14 +421,223 @@ check('F02: buildPatientSpecificFoodExchanges uses R8 scaled portions instead of
       ],
     },
   ];
+  const emptyExchanges = buildPatientSpecificFoodExchanges(
+    mockMealsEmpty as any,
+    { green: [rice], yellow: [], red: [], excluded: [] } as any,
+    basePatient
+  );
+  assert.equal(emptyExchanges.length, 0);
+
+  const authAlts = generateExchangesForFood(
+    rice,
+    100,
+    R8_BASELINE_FOODS,
+    new Set(['f_01_0010']),
+    new Set(),
+    new Set(),
+    basePatient
+  ).map(a => ({ ...a, authorization_status: 'authorized' as const, authorized_for_patient_id: basePatient.id }));
+
+  const mockMealsAuth = [
+    {
+      ...mockMealsEmpty[0],
+      items: [{ ...mockMealsEmpty[0].items[0], alternatives: authAlts }],
+    },
+  ];
+  const authExchanges = buildPatientSpecificFoodExchanges(
+    mockMealsAuth as any,
+    { green: [rice, ...R8_BASELINE_FOODS.filter(f => f.id === 'f_01_0010')], yellow: [], red: [], excluded: [] } as any,
+    basePatient
+  );
+  assert.ok(authExchanges.length > 0);
+  assert.ok(authExchanges.every(ex => ex.alternative_raw_g > 0));
+});
+
+// ── CHECKPOINT A–D CLOSURE MANDATORY TESTS ────────────────────────────────────
+console.log('\nCheckpoint A–D Closure Tests:');
+
+check('CP-A1..A8: Authoritative R5 potassium/sodium/phosphorus limits, small exceedance, no fabricated CKD cap, & non_compliant_improved', () => {
+  const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
+  const lentil = R8_BASELINE_FOODS.find(f => f.id === 'f_02_0008')!;
+  // A03: CKD without authorized potassium prescription does NOT fabricate 2000 mg limit
+  const ckdNoLimitPatient = { ...basePatient, selected_conditions: ['ckd_stage_1_3b'] } as unknown as PatientProfile;
+  const noLimitContract = buildR5NutritionAdjustmentContract({ patient: ckdNoLimitPatient });
+  assert.equal(noLimitContract.nutrient_constraints.potassium_mg_max, undefined);
+  const impactNoLimit = previewSubstitutionImpact({
+    original_food: rice,
+    original_raw_grams: 100,
+    candidate_food: lentil,
+    proposed_raw_grams: 350,
+    patient: ckdNoLimitPatient,
+    r5_nutrition_contract: noLimitContract,
+  });
+  assert.equal(impactNoLimit.hard_limit_violations_en.length, 0);
+
+  // A01 & A02 & A07: Authorized potassium (1200mg), sodium (1500mg), phosphorus (700mg) caught even for small exceedance
+  const authPatient = {
+    ...basePatient,
+    selected_conditions: ['ckd_stage_1_3b'],
+    prescriptions: { potassium: { limit_mg: 1200 }, sodium: { limit_mg: 1500 }, phosphorus: { limit_mg: 700 } },
+  } as unknown as PatientProfile;
+  const authContract = buildR5NutritionAdjustmentContract({ patient: authPatient });
+  assert.equal(authContract.nutrient_constraints.potassium_mg_max, 1200);
+  assert.equal(authContract.nutrient_constraints.sodium_mg_max, 1500);
+  assert.equal(authContract.nutrient_constraints.phosphorus_mg_max, 700);
+
+  const spinach = R8_BASELINE_FOODS.find(f => f.id === 'f_04_0025')!;
+  const impactExceeded = previewSubstitutionImpact({
+    original_food: rice,
+    original_raw_grams: 100,
+    candidate_food: spinach,
+    proposed_raw_grams: 300,
+    patient: authPatient,
+    r5_nutrition_contract: authContract,
+  });
+  assert.ok(impactExceeded.hard_limit_violations_en.some(v => v.includes('Potassium')));
+});
+
+check('CP-A8 & A11: Improvement in already noncompliant plan is non_compliant_improved (not compliant); manual_clinician_review cannot hide hard violation', () => {
+  const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
+  const spinach = R8_BASELINE_FOODS.find(f => f.id === 'f_04_0025')!;
+  const authPatient = {
+    ...basePatient,
+    prescriptions: { potassium: { limit_mg: 500 } },
+  } as unknown as PatientProfile;
+  const authContract = buildR5NutritionAdjustmentContract({ patient: authPatient });
+  const improvedButNonCompliant = previewSubstitutionImpact({
+    original_food: spinach,
+    original_raw_grams: 400, // very high K+
+    candidate_food: spinach,
+    proposed_raw_grams: 300, // lower than 400g, but STILL > 500mg limit!
+    patient: authPatient,
+    r5_nutrition_contract: authContract,
+  });
+  assert.equal(improvedButNonCompliant.compliance_status, 'non_compliant_improved');
+  assert.ok(improvedButNonCompliant.hard_limit_violations_en.length > 0);
+});
+
+check('CP-B1..B9: Unapproved/wrong-patient/wrong-visit/invalidated alternatives excluded from patient Food Exchange', () => {
+  const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
+  const mockMeals = [
+    {
+      id: 'm1',
+      meal_type: 'lunch',
+      title_bn: 'দুপুরের খাবার',
+      title_en: 'Lunch',
+      time_range: '1:30 PM',
+      total_kcal: 350,
+      total_protein_g: 7,
+      total_carbs_g: 78,
+      total_fat_g: 0.6,
+      items: [
+        {
+          id: 'i1',
+          food_id: rice.id,
+          food_name_bn: rice.name_bn,
+          food_name_en: rice.name_en,
+          category: rice.category,
+          raw_weight_g: 100,
+          cooked_weight_g: 250,
+          cooked_display_bn: '২৫০ গ্রাম',
+          cooked_display_en: '250g',
+          kcal: 350,
+          protein_g: 7,
+          carbs_g: 78,
+          fat_g: 0.6,
+          fiber_g: 1.5,
+          traffic_status: 'GREEN' as const,
+          alternatives: [
+            {
+              food_id: 'f_01_0010',
+              name_bn: 'চিড়া',
+              name_en: 'Rice flaked',
+              raw_weight_g: 95,
+              cooked_display_bn: '৯৫ গ্রাম',
+              cooked_display_en: '95g',
+              kcal: 330,
+              protein_g: 6,
+              traffic_status: 'GREEN' as const,
+              authorization_status: 'authorized' as const,
+              authorized_for_patient_id: 'OTHER_PATIENT_ID',
+            },
+            {
+              food_id: 'f_01_0011',
+              name_bn: 'ভেজানো চিড়া',
+              name_en: 'Rice flakes, water-soaked',
+              raw_weight_g: 120,
+              cooked_display_bn: '১২০ গ্রাম',
+              cooked_display_en: '120g',
+              kcal: 330,
+              protein_g: 6,
+              traffic_status: 'GREEN' as const,
+              authorization_status: 'invalidated' as const,
+              authorized_for_patient_id: basePatient.id,
+            },
+          ],
+        },
+      ],
+    },
+  ];
   const exchanges = buildPatientSpecificFoodExchanges(
     mockMeals as any,
     { green: [rice], yellow: [], red: [], excluded: [] } as any,
     basePatient
   );
-  assert.ok(exchanges.length > 0);
-  // Ensure portions are scaled & populated from R8
-  assert.ok(exchanges.every(ex => ex.alternative_raw_g > 0));
+  assert.equal(exchanges.length, 0);
+});
+
+check('CP-C7..C9: Exact meal-item identity replaces only target dinner 75g rice item (leaving 50g breakfast & 100g lunch intact)', () => {
+  const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
+  const flakedRice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0010')!;
+  const dailyItems = [
+    { item_id: 'b_rice', meal_id: 'breakfast', food_id: rice.id, raw_weight_g: 50 },
+    { item_id: 'l_rice', meal_id: 'lunch', food_id: rice.id, raw_weight_g: 100 },
+    { item_id: 'd_rice', meal_id: 'dinner', food_id: rice.id, raw_weight_g: 75 },
+  ];
+  const impact = previewSubstitutionImpact({
+    original_food: rice,
+    original_raw_grams: 75,
+    candidate_food: flakedRice,
+    proposed_raw_grams: 75,
+    patient: basePatient,
+    target_item_id: 'd_rice',
+    meal_id: 'dinner',
+    current_meal_items: [{ item_id: 'd_rice', food_id: rice.id, raw_weight_g: 75 }],
+    current_daily_items: dailyItems,
+  });
+  // Breakfast (50g) + Lunch (100g) rice remain untouched; only 75g dinner rice changed
+  const origKcal = impact.original_daily_totals['energy'].known_total;
+  const propKcal = impact.proposed_daily_totals['energy'].known_total;
+  const expectedDiff = (((flakedRice.per_100g.kcal ?? 0) - (rice.per_100g.kcal ?? 0)) * 75) / 100;
+  assert.ok(Math.abs((propKcal - origKcal) - expectedDiff) < 2.0);
+});
+
+check('CP-D1..D7: Clinician-editable recipe helpers (add/edit/replace/remove/divide_fixed_batch/scale_batch/invalid qty guard)', () => {
+  const base = R8_REPRESENTATIVE_RECIPES[0];
+  const draft = createRecipeDraftFromReference(base, { patientId: basePatient.id, visitId: 'v1' });
+  const badQty = updateRecipeIngredientQuantity(draft, 0, -10);
+  assert.equal(badQty.ok, false);
+
+  const edited = updateRecipeIngredientQuantity(draft, 0, 120);
+  assert.equal(edited.ok, true);
+  if (edited.ok) {
+    const added = addRecipeIngredient(edited.recipe, 'f_04_0025', 80);
+    assert.equal(added.ok, true);
+    if (added.ok) {
+      const divided = adjustRecipeServings(added.recipe, 4, 'divide_fixed_batch');
+      const scaled = adjustRecipeServings(added.recipe, 4, 'scale_batch');
+      assert.ok(divided.ok && scaled.ok);
+      if (divided.ok && scaled.ok) {
+        // divide_fixed_batch keeps ingredient raw_weight_g fixed; scale_batch doubles it (from 2 -> 4 servings)
+        assert.equal(divided.recipe.ingredients[0].raw_weight_g, 120);
+        assert.equal(scaled.recipe.ingredients[0].raw_weight_g, 240);
+      }
+      const replaced = replaceRecipeIngredient(added.recipe, 0, 'f_02_0002');
+      assert.equal(replaced.ok, true);
+      const removed = removeRecipeIngredient(added.recipe, added.recipe.ingredients.length - 1);
+      assert.equal(removed.ingredients.length, draft.ingredients.length);
+    }
+  }
 });
 
 console.log(`\nALL R8 UNIT & INTEGRATION CHECKS PASSED (${passed}/${passed})\n`);
