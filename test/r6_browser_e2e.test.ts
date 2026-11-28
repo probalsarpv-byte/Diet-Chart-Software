@@ -178,7 +178,10 @@ async function runR6BrowserE2E() {
     assert((await exchangeItems.count()) >= 5, 'Contains multiple standard exchange groups (Grains, Proteins, Veggies, Fruits, Dairy, Fats)');
 
     const patientExchanges = patientView.locator('[data-testid="patient-specific-food-exchanges"]');
-    assert((await patientExchanges.count()) > 0, 'Patient-Specific Food Exchanges section rendered');
+    assert(
+      (await patientExchanges.count()) === 0,
+      'Checkpoint F: Unapproved draft plan strictly hides Patient-Specific Food Exchanges'
+    );
 
     console.log('--- 6. Fail-Closed Draft Gate -> Clinician Weekly Plan Sign-Off -> Released A4 PDF ---');
     const watermark = patientView.locator('[data-testid="draft-watermark"]');
@@ -240,6 +243,7 @@ async function runR6BrowserE2E() {
     const approvedBanner = patientView.locator('[data-testid="patient-release-approved-banner"]');
     assert((await approvedBanner.count()) > 0, 'After clinician approval, patient report transitions to RELEASED state');
     assert((await watermark.count()) === 0, 'Released patient report removes draft watermark');
+    assert((await patientExchanges.count()) > 0, 'Checkpoint F: Released approved prescription renders Patient-Specific Food Exchanges');
     assert(!(await printBtn.isDisabled()), 'Patient print button unlocks and is enabled on released prescription');
     assert(!(await hubPrintBtn.isDisabled()), 'Report Hub print button is enabled on released prescription');
     assert(!(await headerPrintBtn.isDisabled()), 'Header global print button is enabled on released prescription');

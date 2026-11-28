@@ -621,6 +621,16 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
     };
 
     const mockDietPlan: Partial<WeeklyDietPlan> = {
+      patient_id: 'p_exchange_01',
+      status: 'approved',
+      is_approved: true,
+      version: 2,
+      approval_metadata: {
+        clinician_id: 'DR_01',
+        clinician_name: 'Dr. Nutritionist',
+        approval_timestamp: '2026-11-28T00:00:00Z',
+        plan_version: 2,
+      },
       days: [
         {
           day_number: 1,
@@ -657,7 +667,9 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
                       traffic_status: 'GREEN',
                       matching_mode: 'energy_matched',
                       match_status: 'equivalent_within_tolerance',
-                      authorization_status: 'authorized'
+                      authorization_status: 'authorized',
+                      authorized_for_patient_id: 'p_exchange_01',
+                      authorized_for_plan_version: 2
                     }
                   ]
                 }
@@ -860,7 +872,9 @@ describe('Phase R6 — Master Prescription Composer Engine', () => {
                       traffic_status: 'GREEN',
                       matching_mode: 'energy_matched',
                       match_status: 'equivalent_within_tolerance',
-                      authorization_status: 'authorized'
+                      authorization_status: 'authorized',
+                      authorized_for_patient_id: 'p_exchange_01',
+                      authorized_for_plan_version: 2
                     }
                   ]
                 }

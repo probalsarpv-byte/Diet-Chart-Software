@@ -37,7 +37,7 @@ import {
 } from './reports/dualReportEngine';
 import { CLINICAL_PHASES } from './phaseProgression';
 import foodsData from '../data/foods.json';
-import { evaluatePatientFoodEligibility } from './r8/knowledgeNetwork';
+import { filterAuthorizedPatientAlternatives } from './r8/substitutionEngine';
 
 /**
  * Standard Bangladeshi Food Exchange Definitions with Local Household Measures
@@ -921,7 +921,9 @@ export function compose6ColumnMedicationProtocol(
 export function buildPatientSpecificFoodExchanges(
   dietChartOrPlan: WeeklyDietPlan | DietChartMeal[] | undefined,
   trafficLight: any,
-  patient: PatientProfile
+  patient: PatientProfile,
+  r5NutritionContract?: any,
+  visitId?: string
 ): PatientFoodExchangeItem[] {
   const result: PatientFoodExchangeItem[] = [];
   const processedOriginalIds = new Set<string>();
@@ -999,37 +1001,27 @@ export function buildPatientSpecificFoodExchanges(
     const rawG = item.raw_weight_g || 100;
     const origHousehold = getHouseholdPortion(group, rawG, ratio);
 
-    // Checkpoint B: Strictly consume ONLY pre-evaluated authorized substitution snapshots from item.alternatives.
-    // NEVER generate unreviewed alternatives at report composition time.
-    const isPlanApproved =
-      Boolean(dietChartOrPlan && !Array.isArray(dietChartOrPlan) && 'approval_status' in dietChartOrPlan && dietChartOrPlan.approval_status === 'approved');
-    const planVisitId =
-      dietChartOrPlan && !Array.isArray(dietChartOrPlan) && 'visit_id' in dietChartOrPlan
-        ? (dietChartOrPlan as WeeklyDietPlan).visit_id
-        : undefined;
-    const activeVisitId = patient.current_visit_id || planVisitId;
+    // Checkpoint F: Enforce single authoritative authorization filter (status === 'approved' && is_approved === true).
+    const planObj: WeeklyDietPlan | null =
+      dietChartOrPlan && !Array.isArray(dietChartOrPlan) && 'days' in dietChartOrPlan
+        ? (dietChartOrPlan as WeeklyDietPlan)
+        : null;
 
-    const snapshotAlternatives: any[] = Array.isArray(item.alternatives) ? item.alternatives : [];
-    for (const altSnap of snapshotAlternatives) {
-      if (!altSnap || !altSnap.food_id) continue;
-      if (altSnap.authorization_status === 'invalidated') continue;
-      if (altSnap.authorized_for_patient_id && altSnap.authorized_for_patient_id !== patient.id) continue;
-      if (altSnap.authorized_for_visit_id && activeVisitId && altSnap.authorized_for_visit_id !== activeVisitId) continue;
-      if (altSnap.match_status === 'clinically_contraindicated') continue;
-      if (altSnap.traffic_status === 'UNCLASSIFIED' || altSnap.traffic_status === 'RED') continue;
-      if (redFoodIds.has(altSnap.food_id)) continue;
-      if (isPlanApproved && altSnap.requires_clinician_review && altSnap.authorization_status !== 'authorized') continue;
+    if (item.is_recipe_item || item.recipe_reference) continue;
 
+    const authorizedAlts = filterAuthorizedPatientAlternatives({
+      alternatives: item.alternatives,
+      plan: planObj,
+      patient,
+      visitId: visitId || patient.current_visit_id || planObj?.visit_id,
+      trafficLight,
+      r5NutritionContract,
+      foodPool: allFoodsList,
+    });
+
+    for (const altSnap of authorizedAlts) {
       const altFood = allFoodsList.find(x => x.id === altSnap.food_id);
       if (!altFood) continue;
-
-      const elig = evaluatePatientFoodEligibility(altFood, patient, { trafficLight });
-      if (!elig.is_safe_for_patient) continue;
-
-      const altNameLower = (altFood.name_en || '').toLowerCase();
-      const altNameBn = (altFood.name_bn || '').toLowerCase();
-      if ([...confirmedAllergies].some(a => altNameLower.includes(a) || altNameBn.includes(a) || altFood.id.toLowerCase() === a)) continue;
-      if ([...disallowed].some(d => altNameLower.includes(d) || altFood.id.toLowerCase() === d || altNameBn.includes(d))) continue;
 
       const altRawG = Math.round(Number(altSnap.raw_weight_g) || 0);
       if (altRawG <= 0) continue;
@@ -1445,14 +1437,25 @@ export function composeR6Prescription(options: {
         title_en: meal.title_en,
         target_time: meal.target_time,
         items: meal.items.map(item => ({
-          food_name_bn: item.food_name_bn,
-          food_name_en: item.food_name_en,
+          food_name_bn: item.recipe_reference?.name_bn
+            ? `${item.recipe_reference.name_bn} (অনুমোদিত রেসিপি · ${item.recipe_reference.prescribed_servings} পরিবেশন)`
+            : item.food_name_bn,
+          food_name_en: item.recipe_reference?.name_en
+            ? `${item.recipe_reference.name_en} (Authorized Recipe · ${item.recipe_reference.prescribed_servings} serving(s))`
+            : item.food_name_en,
           raw_serving_weight_g: item.raw_weight_g,
           household_portion_bn: item.cooked_display_bn,
           household_portion_en: item.cooked_display_en,
           preparation_note_bn: item.prep_note_bn || 'স্বাভাবিক পদ্ধতিতে রান্না',
           preparation_note_en: item.prep_note_en || 'Standard preparation',
-          alternatives: (item.alternatives || []).slice(0, 3).map(alt => ({
+          alternatives: filterAuthorizedPatientAlternatives({
+            alternatives: item.alternatives,
+            plan: weeklyDietPlan,
+            patient,
+            visitId,
+            trafficLight,
+            r5NutritionContract,
+          }).slice(0, 3).map(alt => ({
             name_bn: alt.name_bn,
             name_en: alt.name_en,
             portion_bn: alt.cooked_display_bn,
@@ -1473,7 +1476,9 @@ export function composeR6Prescription(options: {
   const patientSpecificExchanges = buildPatientSpecificFoodExchanges(
     weeklyDietPlan || dietChart,
     trafficLight,
-    patient
+    patient,
+    r5NutritionContract,
+    visitId
   );
 
   // 8. Stage E: Connect R4 Lifestyle Protocols (Zero Fabricated Blanket Advice)

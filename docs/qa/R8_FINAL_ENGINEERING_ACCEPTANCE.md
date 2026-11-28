@@ -81,3 +81,41 @@
 - `npm.cmd run test:r7:browser`, `test:r6:browser`, `test:r5:browser` (`37/37`), `test:r4:browser` (`24/24`): **ALL PASS (0 FAIL)**
 - **Production Database Policy:** Zero live Supabase DDL or production mutations executed.
 - **Final Engineering Closure Decision:** **GO — R8 FINAL ENGINEERING CLOSURE ACCEPTED** (independent clinical validation & production deployment remain separate).
+
+---
+
+## 5. Definitive Integration & Clinical Safety Closure — Checkpoints F–I
+
+**Starting Baseline SHA:** `9d6009f049ee17fb52ff73dfad27f7328f695ce0` (`fix(r8): close clinical nutrition constraints, authorized food exchanges, substitution accuracy, recipe workflow and browser acceptance`)  
+**Engineering Decision:** **GO — R8 DEFINITIVE ENGINEERING CLOSURE ACCEPTED**
+
+### Checkpoints F–I Acceptance Matrix
+
+| Checkpoint | Required Correction | Primary Code / Test Evidence | Focused Verification | Result |
+| --- | --- | --- | --- | --- |
+| **F** | Single-source Food Exchange authorization gate (`status === 'approved' && is_approved === true`, version/patient/visit match, resolved review, non-incomplete hard-limit check, live eligibility); eliminated unfiltered `(item.alternatives \|\| []).slice(0, 3)` bypasses in R6 Composer & Dual Report; cleared `is_diet_plan_dirty` on re-approval | `src/engine/r8/substitutionEngine.ts` (`isWeeklyPlanCurrentlyAuthorized`, `filterAuthorizedPatientAlternatives`), `src/engine/r6PrescriptionComposer.ts`, `src/engine/reports/dualReportEngine.ts`, `src/context/PracticeContext.tsx` (`approveWeeklyPlan`) | `test:r8` (`CP-F1..F11`), `test:r6:browser` (**49/49 PASS**) | **PASS** |
+| **G** | Unified daily nutrient constraint enforcement (`evaluateDailyPlanConstraints`), preserving unknown food IDs in `missing_food_ids` (`is_incomplete: true`), distinguishing general protein targets vs explicit hard protein caps, returning typed `FoodSwapResult` rejections without mutating/invalidating, enforcing on `approveWeeklyPlan` & `validateReportReleaseEligibility` | `src/engine/r8/substitutionEngine.ts` (`evaluateDailyPlanConstraints`, `previewSubstitutionImpact`), `src/engine/weeklyPlanner.ts` (`evaluateWeeklyPlanClinicalSafety`), `src/engine/reports/dualReportEngine.ts` (`validateReportReleaseEligibility` Check 7b), `src/context/PracticeContext.tsx` (`swapDayMealItemAlternative`, `swapMealItemAlternative`), `src/components/tabs/DietChartTab.tsx` (`[data-testid="r8-swap-modal-error"]`) | `test:r8` (`CP-G9..G15`), `test:r6`, `test:r1` | **PASS** |
+| **H** | Recipe nutrient & meal identity integrity (`food_id: recipe.recipe_id`, `is_recipe_item: true`, full `recipe_reference` with `recipe_servings_base`, zero `ingredients[0]?.food_id` fallback); single nutrient scaling via `aggregateMealItemsNutrients`; daily recipe inclusion constraint check; disabled single-ingredient Smart Swap on recipe items | `src/types/index.ts` (`DietChartMealItem`), `src/engine/r8/foodFoundation.ts` (`aggregateMealItemsNutrients`), `src/engine/weeklyPlanner.ts` (`calculateMealTotals`), `src/context/PracticeContext.tsx` (`includeRecipeInDietPlan`), `src/engine/r6PrescriptionComposer.ts`, `src/engine/reports/dualReportEngine.ts`, `src/components/tabs/DietChartTab.tsx` | `test:r8` (`CP-H1..H11`), `test:r8:browser` (`I3`, `H6`, `I5/I6`) | **PASS** |
+| **I** | Non-bypassable Playwright browser E2E, approval lifecycle (`initial approval -> swap -> invalidation -> recipe edit/inclusion -> reauthorization -> released consistency -> approved Chromium A4 PDF`), reload persistence, Patient B registration isolation, and 390px mobile overflow checks | `test/r8_browser_e2e.test.ts`, `test/r6_browser_e2e.test.ts` | `test:r8:browser` (**38/38 PASS**), `test:r6:browser` (**49/49 PASS**) | **PASS** |
+
+### Definitive Post-Final-Edit Verification Matrix
+
+| Check | Command | Exact Result |
+| --- | --- | --- |
+| TypeScript | `npx.cmd tsc --noEmit` | **PASS (exit 0)** |
+| Production Build | `npm.cmd run build` | **PASS (exit 0)** — static `out/`, 7 pages |
+| R8 Suite | `npm.cmd run test:r8` | **30/30 PASS, 0 FAIL** |
+| R7 Suite | `npm.cmd run test:r7` | **23/23 PASS, 0 FAIL** |
+| R6 Suite | `npm.cmd run test:r6` | **23/23 + 25/25 PASS, 0 FAIL** |
+| R5 Suite | `npm.cmd run test:r5` | **48/48 + 16/16 + 18/18 PASS, 0 FAIL** |
+| R4 Suite | `npm.cmd run test:r4` | **82/82 PASS, 0 FAIL** |
+| R1 Suite | `npm.cmd run test:r1` | **101/101 + 44/44 + 39/39 PASS, 0 FAIL** |
+| Full Regression | `npm.cmd test` | **PASS (exit 0 across all 20 scripts)** |
+| R8 Browser & PDF | `npm.cmd run test:r8:browser` | **38/38 PASS, 0 FAIL** (Chromium A4 PDF: `%PDF-`, `720,464` bytes, `16` pages, `316` decompressed streams; `0px` mobile overflow at 390px; `0` uncaught runtime errors) |
+| R7 Browser | `npm.cmd run test:r7:browser` | **47/47 PASS, 0 FAIL** |
+| R6 Browser | `npm.cmd run test:r6:browser` | **49/49 PASS, 0 FAIL** |
+| R5 Browser | `npm.cmd run test:r5:browser` | **37/37 PASS, 0 FAIL** |
+| R4 Browser | `npm.cmd run test:r4:browser` | **24/24 PASS, 0 FAIL** |
+
+- **Production Database Policy:** Zero live Supabase DDL or production mutations executed.
+- **Definitive R8 Closure Decision:** **GO — R8 DEFINITIVE ENGINEERING CLOSURE ACCEPTED** (R9 has not been started; independent clinical validation and production deployment remain separate).

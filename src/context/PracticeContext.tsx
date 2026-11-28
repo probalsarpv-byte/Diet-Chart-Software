@@ -14,6 +14,7 @@ import {
   PatientRecord, 
   ClinicalConditionId,
   FoodExchangeItem,
+  FoodSwapResult,
   SupplementOverlapWarning,
   InterventionApproval,
   InterventionRevision,
@@ -48,6 +49,7 @@ import { evaluateDNIAndTimeline, DNIEngineResult, checkSupplementOverlaps } from
 import { buildAutoScaledDietChart, getCookedDisplay, generateExchangesForFood } from '@/engine/mealScaler';
 import { evaluatePatientFoodEligibility } from '@/engine/r8/knowledgeNetwork';
 import { computeRecipeAnalysis } from '@/engine/r8/recipeEngine';
+import { evaluateDailyPlanConstraints } from '@/engine/r8/substitutionEngine';
 import { R8Recipe } from '@/types/r8FoodKnowledge';
 import { 
   generateWeeklyDietPlan, 
@@ -225,7 +227,7 @@ export interface PracticeContextType {
   recalculateDietPlan: (preserveManualEdits?: boolean) => void;
   dismissDirtyWarning: () => void;
   updateMealItemRawGrams: (mealId: string, itemId: string, rawGrams: number) => void;
-  swapMealItemAlternative: (mealId: string, itemId: string, alt: FoodExchangeItem) => void;
+  swapMealItemAlternative: (mealId: string, itemId: string, alt: FoodExchangeItem) => FoodSwapResult;
   removeMealItem: (mealId: string, itemId: string) => void;
   addMealItem: (mealId: string, foodId: string, rawGrams?: number) => void;
   resetDietChartToAutoScaled: () => void;
@@ -293,7 +295,7 @@ export interface PracticeContextType {
   generateWeeklyPlan: (forceRegenerate?: boolean) => WeeklyDietPlan | null;
   regenerateDay: (dayNumber: number, preserveLocks?: boolean) => WeeklyDietPlan | null;
   updateDayMealItemRawGrams: (dayNumber: number, mealId: string, itemId: string, rawGrams: number) => void;
-  swapDayMealItemAlternative: (dayNumber: number, mealId: string, itemId: string, alt: FoodExchangeItem) => void;
+  swapDayMealItemAlternative: (dayNumber: number, mealId: string, itemId: string, alt: FoodExchangeItem) => FoodSwapResult;
   removeDayMealItem: (dayNumber: number, mealId: string, itemId: string) => void;
   addDayMealItem: (dayNumber: number, mealId: string, foodId: string, rawGrams?: number) => void;
   toggleDayLock: (dayNumber: number) => void;
@@ -1945,113 +1947,181 @@ function createTypedPlanningContextFallback(
     }));
   }, [foodMap, patient, trafficLight, allFoods, recalculateDayPlanSummary, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
-  const swapDayMealItemAlternative = useCallback((dayNumber: number, mealId: string, itemId: string, alt: FoodExchangeItem) => {
+  const swapDayMealItemAlternative = useCallback((dayNumber: number, mealId: string, itemId: string, alt: FoodExchangeItem): FoodSwapResult => {
+    if (!patient || !patient.id) {
+      return { ok: false, reason: 'No active patient selected.' };
+    }
     const food = foodMap.get(alt.food_id);
-    if (!food) return;
+    if (!food) {
+      return { ok: false, reason: `Replacement food ID "${alt.food_id}" not found in baseline food database.` };
+    }
     if (alt.match_status === 'clinically_contraindicated') {
-      console.warn('[R8 Mutation Blocked] Clinically contraindicated candidate cannot be applied.');
-      return;
+      return { ok: false, reason: 'Clinically contraindicated candidate cannot be applied as a safe replacement.' };
+    }
+    if (!Number.isFinite(alt.raw_weight_g) || alt.raw_weight_g <= 0) {
+      return { ok: false, reason: `Invalid replacement weight (${alt.raw_weight_g} g).` };
     }
     const elig = evaluatePatientFoodEligibility(food, patient, {
       trafficLight,
       r5NutritionContract,
     });
     if (!elig.is_safe_for_patient) {
-      console.warn('[R8 Mutation Blocked] Candidate failed patient eligibility:', elig.exclusion_reasons_en.join('; '));
-      return;
-    }
-    if (!Number.isFinite(alt.raw_weight_g) || alt.raw_weight_g <= 0) {
-      console.warn('[R8 Mutation Blocked] Invalid raw_weight_g:', alt.raw_weight_g);
-      return;
-    }
-
-    let didMutate = false;
-    setWeeklyDietPlan(prev => {
-      if (!prev) return prev;
-      if (prev.patient_id !== patient.id) return prev;
-      const targetDay = prev.days.find(d => d.day_number === dayNumber);
-      const targetMeal = targetDay?.meals.find(m => m.id === mealId);
-      const targetItem = targetMeal?.items.find(i => i.id === itemId);
-      if (!targetItem) {
-        console.warn(`[R8 Mutation Blocked] Target item "${itemId}" not found in day ${dayNumber} meal "${mealId}".`);
-        return prev;
-      }
-      didMutate = true;
-      const updatedDays = prev.days.map(day => {
-        if (day.day_number !== dayNumber) return day;
-        const updatedMeals = day.meals.map(meal => {
-          if (meal.id !== mealId) return meal;
-          const updatedItems = meal.items.map(item => {
-            if (item.id !== itemId) return item;
-            const rawG = alt.raw_weight_g;
-            const cookedG = Math.round(rawG * food.raw_to_cooked_ratio);
-            const display = getCookedDisplay(food, rawG, cookedG);
-            const mult = rawG / 100;
-            return {
-              id: item.id,
-              food_id: food.id,
-              food_name_bn: food.name_bn,
-              food_name_en: food.name_en,
-              category: food.category,
-              raw_weight_g: rawG,
-              cooked_weight_g: cookedG,
-              cooked_display_bn: display.bn,
-              cooked_display_en: display.en,
-              kcal: Math.round((food.per_100g.kcal ?? 0) * mult),
-              protein_g: Math.round((food.per_100g.protein_g ?? 0) * mult * 10) / 10,
-              carbs_g: Math.round((food.per_100g.carbs_g ?? 0) * mult * 10) / 10,
-              fat_g: Math.round((food.per_100g.fat_g ?? 0) * mult * 10) / 10,
-              fiber_g: Math.round((food.per_100g.fiber_g ?? 0) * mult * 10) / 10,
-              prep_note_bn: food.prep_note_bn,
-              prep_note_en: food.prep_note_en,
-              alternatives: generateExchangesForFood(
-                food, 
-                rawG, 
-                allFoods, 
-                new Set(trafficLight.green.map(g => g.id)),
-                new Set(trafficLight.red.map(r => r.id)),
-                new Set(trafficLight.yellow.map(y => y.id)),
-                patient
-              ),
-              traffic_status: alt.traffic_status,
-              is_locked: item.is_locked
-            };
-          });
-
-          return {
-            ...meal,
-            items: updatedItems,
-            ...calculateMealTotals(updatedItems, allFoods)
-          };
-        });
-
-        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, prev.target_macros);
-      });
-
-      const updatedPlan: WeeklyDietPlan = {
-        ...prev,
-        days: updatedDays,
-        updated_at: new Date().toISOString()
+      return {
+        ok: false,
+        reason: `Candidate excluded for patient safety: ${elig.exclusion_reasons_en.join('; ')}`,
+        clinicalViolations: elig.exclusion_reasons_en,
       };
+    }
 
-      const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updatedPlan, allFoods, p2AnalysisResult?.p3PlanningContext);
-      updatedPlan.overall_safety_status = safetyEval.overall_decision;
-      updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
+    if (!weeklyDietPlan) {
+      return { ok: false, reason: 'No active weekly diet plan available.' };
+    }
+    if (weeklyDietPlan.patient_id !== patient.id) {
+      return { ok: false, reason: `Plan belongs to patient "${weeklyDietPlan.patient_id}", not active patient "${patient.id}".` };
+    }
+    const activeVisitId = currentVisit?.visit_id || currentVisit?.id || patient.current_visit_id;
+    if (weeklyDietPlan.visit_id && activeVisitId && weeklyDietPlan.visit_id !== activeVisitId) {
+      return { ok: false, reason: `Plan belongs to visit "${weeklyDietPlan.visit_id}", not active visit "${activeVisitId}".` };
+    }
 
-      const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item swapped with alternative');
-      if (dayNumber === 1 && updatedDays[0]) {
-        setDietChart(updatedDays[0].meals);
-      }
-      persistWeeklyPlan(invalidated);
-      return invalidated;
+    const targetDay = weeklyDietPlan.days.find(d => d.day_number === dayNumber);
+    const targetMeal = targetDay?.meals.find(m => m.id === mealId);
+    const targetItem = targetMeal?.items.find(i => i.id === itemId);
+    if (!targetDay || !targetMeal || !targetItem) {
+      return { ok: false, reason: `Target meal item "${itemId}" not found in Day ${dayNumber} / Meal "${mealId}".` };
+    }
+    if (targetItem.is_recipe_item || targetItem.recipe_reference) {
+      return {
+        ok: false,
+        reason: 'Recipe-derived meal items cannot be replaced as single ingredients via Smart Swap; edit or replace the recipe via Recipe Studio.',
+      };
+    }
+
+    const rawG = Math.round(alt.raw_weight_g);
+    const cookedG = Math.round(rawG * food.raw_to_cooked_ratio);
+    const display = getCookedDisplay(food, rawG, cookedG);
+    const mult = rawG / 100;
+    const replacementItem: DietChartMealItem = {
+      id: targetItem.id,
+      food_id: food.id,
+      food_name_bn: food.name_bn,
+      food_name_en: food.name_en,
+      category: food.category,
+      raw_weight_g: rawG,
+      cooked_weight_g: cookedG,
+      cooked_display_bn: display.bn,
+      cooked_display_en: display.en,
+      kcal: Math.round((food.per_100g.kcal ?? 0) * mult),
+      protein_g: Math.round((food.per_100g.protein_g ?? 0) * mult * 10) / 10,
+      carbs_g: Math.round((food.per_100g.carbs_g ?? 0) * mult * 10) / 10,
+      fat_g: Math.round((food.per_100g.fat_g ?? 0) * mult * 10) / 10,
+      fiber_g: Math.round((food.per_100g.fiber_g ?? 0) * mult * 10) / 10,
+      prep_note_bn: food.prep_note_bn,
+      prep_note_en: food.prep_note_en,
+      alternatives: generateExchangesForFood(
+        food,
+        rawG,
+        allFoods,
+        new Set(trafficLight.green.map(g => g.id)),
+        new Set(trafficLight.red.map(r => r.id)),
+        new Set(trafficLight.yellow.map(y => y.id)),
+        patient
+      ),
+      traffic_status: alt.traffic_status,
+      is_locked: targetItem.is_locked,
+    };
+
+    // Checkpoint G1 & G2: Authoritative daily nutrient exposure check BEFORE commit
+    const baselineDailyItems = targetDay.meals.flatMap(m =>
+      m.items.map(it => ({
+        item_id: it.id,
+        meal_id: m.id,
+        food_id: it.food_id,
+        raw_weight_g: it.raw_weight_g,
+        is_recipe_item: it.is_recipe_item,
+        recipe_reference: it.recipe_reference,
+      }))
+    );
+    const proposedDailyItems = targetDay.meals.flatMap(m =>
+      m.items.map(it =>
+        m.id === mealId && it.id === itemId
+          ? { item_id: it.id, meal_id: m.id, food_id: food.id, raw_weight_g: rawG }
+          : {
+              item_id: it.id,
+              meal_id: m.id,
+              food_id: it.food_id,
+              raw_weight_g: it.raw_weight_g,
+              is_recipe_item: it.is_recipe_item,
+              recipe_reference: it.recipe_reference,
+            }
+      )
+    );
+    const baselineCheck = evaluateDailyPlanConstraints({
+      daily_items: baselineDailyItems,
+      patient,
+      r5_nutrition_contract: r5NutritionContract,
+      foodPool: allFoods,
     });
+    const proposedCheck = evaluateDailyPlanConstraints({
+      daily_items: proposedDailyItems,
+      baseline_daily_totals: baselineCheck.daily_totals,
+      patient,
+      r5_nutrition_contract: r5NutritionContract,
+      foodPool: allFoods,
+    });
+    if (proposedCheck.hard_limit_violations_en.length > 0) {
+      return {
+        ok: false,
+        reason: `Proposed substitution violates authorized clinical nutrient constraints: ${proposedCheck.hard_limit_violations_en.join(' ')}`,
+        clinicalViolations: proposedCheck.hard_limit_violations_en,
+      };
+    }
+
+    const updatedDays = weeklyDietPlan.days.map(day => {
+      if (day.day_number !== dayNumber) return day;
+      const updatedMeals = day.meals.map(meal => {
+        if (meal.id !== mealId) return meal;
+        const updatedItems = meal.items.map(item => (item.id === itemId ? replacementItem : item));
+        return {
+          ...meal,
+          items: updatedItems,
+          ...calculateMealTotals(updatedItems, allFoods),
+        };
+      });
+      return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, weeklyDietPlan.target_macros);
+    });
+
+    const updatedPlan: WeeklyDietPlan = {
+      ...weeklyDietPlan,
+      days: updatedDays,
+      updated_at: new Date().toISOString(),
+    };
+
+    const safetyEval = evaluateWeeklyPlanClinicalSafety(
+      patient,
+      updatedPlan,
+      allFoods,
+      p2AnalysisResult?.p3PlanningContext,
+      r5NutritionContract
+    );
+    updatedPlan.overall_safety_status = safetyEval.overall_decision;
+    updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
+
+    const invalidated = invalidateWeeklyPlanApproval(updatedPlan, 'Food item swapped with alternative');
+    setWeeklyDietPlan(invalidated);
+    if (dayNumber === 1 && updatedDays[0]) {
+      setDietChart(updatedDays[0].meals);
+    }
+    persistWeeklyPlan(invalidated);
 
     setPatient(prev => ({
       ...prev,
       is_diet_plan_dirty: true,
-      manual_edits_preserved: true
+      manual_edits_preserved: true,
     }));
-  }, [foodMap, allFoods, trafficLight, patient, recalculateDayPlanSummary, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
+
+    return { ok: true, updatedItemId: itemId };
+  }, [foodMap, patient, currentVisit, weeklyDietPlan, trafficLight, r5NutritionContract, allFoods, recalculateDayPlanSummary, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan]);
 
   const removeDayMealItem = useCallback((dayNumber: number, mealId: string, itemId: string) => {
     setWeeklyDietPlan(prev => {
@@ -2286,6 +2356,18 @@ function createTypedPlanningContextFallback(
     if (!patient || !patient.id) {
       return { ok: false, error: 'No active patient selected.' };
     }
+    if (!weeklyDietPlan || weeklyDietPlan.patient_id !== patient.id) {
+      return { ok: false, error: 'No active weekly diet plan for this patient.' };
+    }
+    const targetDay = weeklyDietPlan.days.find(d => d.day_number === dayNumber);
+    const targetMeal = targetDay?.meals.find(m => m.id === mealId);
+    if (!targetDay || !targetMeal) {
+      return { ok: false, error: `Target Day ${dayNumber} / Meal "${mealId}" not found in Diet Plan.` };
+    }
+    if (typeof prescribedServings !== 'number' || !Number.isFinite(prescribedServings) || prescribedServings <= 0 || prescribedServings > 12) {
+      return { ok: false, error: `Invalid prescribed servings (${prescribedServings}); must be finite and > 0.` };
+    }
+
     const analysis = computeRecipeAnalysis(recipe, {
       foods: allFoods,
       patient,
@@ -2299,7 +2381,7 @@ function createTypedPlanningContextFallback(
       };
     }
 
-    const mult = Math.max(0.25, prescribedServings);
+    const mult = prescribedServings;
     const kcal = Math.round((analysis.nutrients['energy']?.per_serving ?? 0) * mult);
     const protein_g = Math.round((analysis.nutrients['protein']?.per_serving ?? 0) * mult * 10) / 10;
     const carbs_g = Math.round((analysis.nutrients['available_carbohydrate']?.per_serving ?? 0) * mult * 10) / 10;
@@ -2311,7 +2393,8 @@ function createTypedPlanningContextFallback(
     const newItemId = `rec_item_${recipe.recipe_id}_${Date.now()}`;
     const recipeMealItem: DietChartMealItem = {
       id: newItemId,
-      food_id: recipe.ingredients[0]?.food_id || recipe.recipe_id,
+      // Checkpoint H1: Preserve canonical recipe identity (NEVER use recipe.ingredients[0]?.food_id)
+      food_id: recipe.recipe_id,
       food_name_bn: `${recipe.name_bn} (রেসিপি)`,
       food_name_en: `${recipe.name_en} (Recipe)`,
       category: 'vegetables_leafy' as any,
@@ -2328,46 +2411,90 @@ function createTypedPlanningContextFallback(
       prep_note_en: recipe.guidance_en,
       alternatives: [],
       traffic_status: analysis.safety.traffic_status,
+      is_recipe_item: true,
       recipe_reference: {
         recipe_id: recipe.recipe_id,
         version: recipe.version,
+        name_en: recipe.name_en,
+        name_bn: recipe.name_bn,
+        recipe_servings_base: Math.max(1, recipe.servings),
         prescribed_servings: mult,
+        preparation_method: recipe.preparation_method,
+        cooked_yield_g: recipe.final_cooked_yield_g > 0 ? recipe.final_cooked_yield_g : null,
+        is_nutrition_incomplete: analysis.is_nutrition_incomplete,
         ingredients_snapshot: recipe.ingredients.map(i => ({ food_id: i.food_id, raw_weight_g: i.raw_weight_g })),
       },
     };
 
+    // Checkpoint H4: Evaluate FULL daily plan (existing meals + new recipe item at prescribed_servings) BEFORE inclusion
+    const proposedDailyItems = [
+      ...targetDay.meals.flatMap(m =>
+        m.items.map(it => ({
+          item_id: it.id,
+          meal_id: m.id,
+          food_id: it.food_id,
+          raw_weight_g: it.raw_weight_g,
+          is_recipe_item: it.is_recipe_item,
+          recipe_reference: it.recipe_reference,
+        }))
+      ),
+      {
+        item_id: recipeMealItem.id,
+        meal_id: mealId,
+        food_id: recipeMealItem.food_id,
+        raw_weight_g: recipeMealItem.raw_weight_g,
+        is_recipe_item: true,
+        recipe_reference: recipeMealItem.recipe_reference,
+      },
+    ];
+    const dailyEval = evaluateDailyPlanConstraints({
+      daily_items: proposedDailyItems,
+      patient,
+      r5_nutrition_contract: r5NutritionContract,
+      foodPool: allFoods,
+    });
+    if (dailyEval.hard_limit_violations_en.length > 0) {
+      return {
+        ok: false,
+        error: `Including recipe violates patient daily nutrient constraints: ${dailyEval.hard_limit_violations_en.join(' ')}`,
+      };
+    }
+
     saveR8RecipeDraft(recipe);
 
-    setWeeklyDietPlan(prev => {
-      if (!prev) return prev;
-      const updatedDays = prev.days.map(day => {
-        if (day.day_number !== dayNumber) return day;
-        const updatedMeals = day.meals.map(meal => {
-          if (meal.id !== mealId) return meal;
-          const updatedItems = [...meal.items, recipeMealItem];
-          return {
-            ...meal,
-            items: updatedItems,
-            ...calculateMealTotals(updatedItems, allFoods),
-          };
-        });
-        return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, prev.target_macros);
+    const updatedDays = weeklyDietPlan.days.map(day => {
+      if (day.day_number !== dayNumber) return day;
+      const updatedMeals = day.meals.map(meal => {
+        if (meal.id !== mealId) return meal;
+        const updatedItems = [...meal.items, recipeMealItem];
+        return {
+          ...meal,
+          items: updatedItems,
+          ...calculateMealTotals(updatedItems, allFoods),
+        };
       });
-      const updatedPlan: WeeklyDietPlan = {
-        ...prev,
-        days: updatedDays,
-        updated_at: new Date().toISOString(),
-      };
-      const safetyEval = evaluateWeeklyPlanClinicalSafety(patient, updatedPlan, allFoods, p2AnalysisResult?.p3PlanningContext);
-      updatedPlan.overall_safety_status = safetyEval.overall_decision;
-      updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
-      const invalidated = invalidateWeeklyPlanApproval(updatedPlan, `Recipe "${recipe.name_en}" included in plan`);
-      if (dayNumber === 1 && updatedDays[0]) {
-        setDietChart(updatedDays[0].meals);
-      }
-      persistWeeklyPlan(invalidated);
-      return invalidated;
+      return recalculateDayPlanSummary({ ...day, meals: updatedMeals }, patient, weeklyDietPlan.target_macros);
     });
+    const updatedPlan: WeeklyDietPlan = {
+      ...weeklyDietPlan,
+      days: updatedDays,
+      updated_at: new Date().toISOString(),
+    };
+    const safetyEval = evaluateWeeklyPlanClinicalSafety(
+      patient,
+      updatedPlan,
+      allFoods,
+      p2AnalysisResult?.p3PlanningContext,
+      r5NutritionContract
+    );
+    updatedPlan.overall_safety_status = safetyEval.overall_decision;
+    updatedPlan.unresolved_hard_stops = safetyEval.unresolved_hard_stops.length > 0 ? safetyEval.unresolved_hard_stops : undefined;
+    const invalidated = invalidateWeeklyPlanApproval(updatedPlan, `Recipe "${recipe.name_en}" included in plan`);
+    setWeeklyDietPlan(invalidated);
+    if (dayNumber === 1 && updatedDays[0]) {
+      setDietChart(updatedDays[0].meals);
+    }
+    persistWeeklyPlan(invalidated);
 
     setPatient(prev => ({
       ...prev,
@@ -2376,7 +2503,7 @@ function createTypedPlanningContextFallback(
     }));
 
     return { ok: true };
-  }, [patient, allFoods, r5NutritionContract, trafficLight, saveR8RecipeDraft, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan, recalculateDayPlanSummary]);
+  }, [patient, weeklyDietPlan, allFoods, r5NutritionContract, trafficLight, saveR8RecipeDraft, p2AnalysisResult?.p3PlanningContext, persistWeeklyPlan, recalculateDayPlanSummary]);
 
   const approveWeeklyPlan = useCallback((clinicianId: string, notes?: string): boolean => {
     // Step A — Clinical Governance & Identity Verification
@@ -2440,12 +2567,13 @@ function createTypedPlanningContextFallback(
       return false;
     }
 
-    // Step B — Comprehensive 7-Day Clinical Safety Revalidation
+    // Step B — Comprehensive 7-Day Clinical Safety Revalidation (including R8 nutrient constraints)
     const safetyEval = evaluateWeeklyPlanClinicalSafety(
       patient,
       weeklyDietPlan,
       allFoods,
-      p2AnalysisResult?.p3PlanningContext
+      p2AnalysisResult?.p3PlanningContext,
+      r5NutritionContract
     );
 
     if (!safetyEval.is_eligible_for_approval || safetyEval.overall_decision === 'HARD_STOP') {
@@ -2461,6 +2589,12 @@ function createTypedPlanningContextFallback(
     // Step C — Persist-First Sequence
     const targetVisitId = weeklyDietPlan.visit_id || activeVisitId;
     const planKey = `shuddho_weekly_plan_${weeklyDietPlan.patient_id}_${targetVisitId}`;
+    const nextApprovedVersion = weeklyDietPlan.status === 'approved' ? weeklyDietPlan.version : weeklyDietPlan.version + 1;
+    const activeHardLimits = Boolean(
+      r5NutritionContract?.nutrient_constraints?.potassium_mg_max ||
+        r5NutritionContract?.nutrient_constraints?.sodium_mg_max ||
+        r5NutritionContract?.nutrient_constraints?.phosphorus_mg_max
+    );
 
     const planWithAuthorizedAlts: WeeklyDietPlan = {
       ...weeklyDietPlan,
@@ -2470,16 +2604,29 @@ function createTypedPlanningContextFallback(
           ...meal,
           items: meal.items.map(item => ({
             ...item,
-            alternatives: (item.alternatives || []).map(alt => ({
-              ...alt,
-              authorized_for_patient_id: patient.id,
-              authorized_for_visit_id: targetVisitId,
-              authorization_status:
-                alt.match_status === 'clinically_contraindicated' ||
-                (alt.requires_clinician_review && alt.match_status !== 'equivalent_within_tolerance')
-                  ? 'draft_candidate'
-                  : 'authorized',
-            })),
+            alternatives: (item.alternatives || []).map(alt => {
+              const candFood = foodMap.get(alt.food_id);
+              const elig = candFood
+                ? evaluatePatientFoodEligibility(candFood, patient, { trafficLight, r5NutritionContract })
+                : null;
+              const isSafe = Boolean(elig?.is_safe_for_patient);
+              const hasUnresolvedReview = Boolean(alt.requires_clinician_review && !alt.clinician_review_confirmed);
+              const missingCriticalData = Boolean(activeHardLimits && alt.is_nutrient_incomplete);
+              const eligibleToAuthorize =
+                isSafe &&
+                alt.authorization_status !== 'invalidated' &&
+                alt.match_status !== 'clinically_contraindicated' &&
+                !hasUnresolvedReview &&
+                !missingCriticalData;
+
+              return {
+                ...alt,
+                authorized_for_patient_id: patient.id,
+                authorized_for_visit_id: targetVisitId,
+                authorized_for_plan_version: nextApprovedVersion,
+                authorization_status: eligibleToAuthorize ? ('authorized' as const) : ('draft_candidate' as const),
+              };
+            }),
           })),
         })),
       })),
@@ -2511,6 +2658,10 @@ function createTypedPlanningContextFallback(
     if (existingPatientRecord) {
       const updatedRecord: PatientRecord = {
         ...existingPatientRecord,
+        patient: {
+          ...existingPatientRecord.patient,
+          is_diet_plan_dirty: false,
+        },
         weekly_diet_plan: approvedPlan,
         updated_at: approvedPlan.updated_at
       };
@@ -2527,6 +2678,10 @@ function createTypedPlanningContextFallback(
 
     // 4. ONLY commit in-memory React state after verified persistence
     setWeeklyDietPlan(approvedPlan);
+    setPatient(prev => ({
+      ...prev,
+      is_diet_plan_dirty: false,
+    }));
     setWeeklyPlanApprovalError(null);
 
     // 5. Emit authoritative clinical audit event
@@ -2548,7 +2703,7 @@ function createTypedPlanningContextFallback(
     }
 
     return true;
-  }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult, allFoods, savedPatients, currentClinician]);
+  }, [patient, currentVisit, weeklyDietPlan, p2AnalysisResult, allFoods, foodMap, savedPatients, currentClinician, trafficLight, r5NutritionContract]);
 
   // -------------------------------------------------------------------
   // R4 Protocol Studio Orchestration & Lifecycle
@@ -2861,18 +3016,29 @@ function createTypedPlanningContextFallback(
     }));
   }, [foodMap, weeklyDietPlan, activeDayNumber, updateDayMealItemRawGrams]);
 
-  const swapMealItemAlternative = useCallback((mealId: string, itemId: string, alt: FoodExchangeItem) => {
+  const swapMealItemAlternative = useCallback((mealId: string, itemId: string, alt: FoodExchangeItem): FoodSwapResult => {
     if (weeklyDietPlan) {
-      swapDayMealItemAlternative(activeDayNumber, mealId, itemId, alt);
-      return;
+      return swapDayMealItemAlternative(activeDayNumber, mealId, itemId, alt);
     }
     const food = foodMap.get(alt.food_id);
-    if (!food) return;
+    if (!food) {
+      return { ok: false, reason: `Replacement food ID "${alt.food_id}" not found.` };
+    }
+    if (alt.match_status === 'clinically_contraindicated') {
+      return { ok: false, reason: 'Clinically contraindicated candidate cannot be applied.' };
+    }
+    const elig = evaluatePatientFoodEligibility(food, patient, { trafficLight, r5NutritionContract });
+    if (!elig.is_safe_for_patient) {
+      return { ok: false, reason: elig.exclusion_reasons_en.join('; '), clinicalViolations: elig.exclusion_reasons_en };
+    }
+    if (!Number.isFinite(alt.raw_weight_g) || alt.raw_weight_g <= 0) {
+      return { ok: false, reason: 'Invalid portion weight.' };
+    }
 
     setDietChart(prev => prev.map(meal => {
       if (meal.id !== mealId) return meal;
       const updatedItems = meal.items.map(item => {
-        if (item.id !== itemId) return item;
+        if (item.id !== itemId || item.is_recipe_item || item.recipe_reference) return item;
         const rawG = alt.raw_weight_g;
         const cookedG = Math.round(rawG * food.raw_to_cooked_ratio);
         const display = getCookedDisplay(food, rawG, cookedG);
@@ -2895,12 +3061,13 @@ function createTypedPlanningContextFallback(
           prep_note_bn: food.prep_note_bn,
           prep_note_en: food.prep_note_en,
           alternatives: generateExchangesForFood(
-            food, 
-            rawG, 
-            allFoods, 
+            food,
+            rawG,
+            allFoods,
             new Set(trafficLight.green.map(g => g.id)),
             new Set(trafficLight.red.map(r => r.id)),
-            new Set(trafficLight.yellow.map(y => y.id))
+            new Set(trafficLight.yellow.map(y => y.id)),
+            patient
           ),
           traffic_status: alt.traffic_status
         };
@@ -2920,7 +3087,8 @@ function createTypedPlanningContextFallback(
         meal_fat_g
       };
     }));
-  }, [foodMap, trafficLight, weeklyDietPlan, activeDayNumber, swapDayMealItemAlternative]);
+    return { ok: true, updatedItemId: itemId };
+  }, [foodMap, patient, r5NutritionContract, trafficLight, weeklyDietPlan, activeDayNumber, swapDayMealItemAlternative, allFoods]);
 
   const removeMealItem = useCallback((mealId: string, itemId: string) => {
     if (weeklyDietPlan) {

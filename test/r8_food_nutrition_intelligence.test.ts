@@ -15,6 +15,7 @@ import { FoodItem, PatientProfile } from '../src/types';
 import { SupplementProtocolItem } from '../src/types/r4Protocol';
 import {
   aggregateFoodNutrients,
+  aggregateMealItemsNutrients,
   convertFoodWeightBasis,
   convertR8NutrientUnit,
   deriveFoodMetadataExtension,
@@ -47,9 +48,17 @@ import {
   updateRecipeIngredientQuantity,
 } from '../src/engine/r8/recipeEngine';
 import { buildR5NutritionAdjustmentContract } from '../src/engine/r5NutritionContract';
-import { evaluateFoodSubstitutions, previewSubstitutionImpact } from '../src/engine/r8/substitutionEngine';
+import {
+  evaluateDailyPlanConstraints,
+  evaluateFoodSubstitutions,
+  filterAuthorizedPatientAlternatives,
+  isWeeklyPlanCurrentlyAuthorized,
+  previewSubstitutionImpact,
+} from '../src/engine/r8/substitutionEngine';
 import { generateExchangesForFood } from '../src/engine/mealScaler';
-import { buildPatientSpecificFoodExchanges } from '../src/engine/r6PrescriptionComposer';
+import { buildPatientSpecificFoodExchanges, composeR6Prescription } from '../src/engine/r6PrescriptionComposer';
+import { buildPatientReportProjection, validateReportReleaseEligibility } from '../src/engine/reports/dualReportEngine';
+import { evaluateWeeklyPlanClinicalSafety } from '../src/engine/weeklyPlanner';
 
 let passed = 0;
 function check(name: string, fn: () => void) {
@@ -436,18 +445,38 @@ check('F02: buildPatientSpecificFoodExchanges does NOT fabricate unapproved alte
     new Set(),
     new Set(),
     basePatient
-  ).map(a => ({ ...a, authorization_status: 'authorized' as const, authorized_for_patient_id: basePatient.id }));
+  ).map(a => ({
+    ...a,
+    requires_clinician_review: false,
+    authorization_status: 'authorized' as const,
+    authorized_for_patient_id: basePatient.id,
+    authorized_for_plan_version: 2,
+  }));
 
-  const mockMealsAuth = [
-    {
-      ...mockMealsEmpty[0],
-      items: [{ ...mockMealsEmpty[0].items[0], alternatives: authAlts }],
+  const mockApprovedPlan = {
+    plan_id: 'plan_r8_f02',
+    patient_id: basePatient.id,
+    visit_id: 'vis_r8_1',
+    version: 2,
+    status: 'approved' as const,
+    is_approved: true,
+    approval_metadata: {
+      clinician_id: 'DR_01',
+      clinician_name: 'Dr. Nutritionist',
+      approval_timestamp: '2026-11-28T00:00:00Z',
+      plan_version: 2,
     },
-  ];
+    days: [
+      {
+        day_number: 1,
+        meals: [{ ...mockMealsEmpty[0], items: [{ ...mockMealsEmpty[0].items[0], alternatives: authAlts }] }],
+      },
+    ],
+  };
   const authExchanges = buildPatientSpecificFoodExchanges(
-    mockMealsAuth as any,
+    mockApprovedPlan as any,
     { green: [rice, ...R8_BASELINE_FOODS.filter(f => f.id === 'f_01_0010')], yellow: [], red: [], excluded: [] } as any,
-    basePatient
+    { ...basePatient, current_visit_id: 'vis_r8_1' } as PatientProfile
   );
   assert.ok(authExchanges.length > 0);
   assert.ok(authExchanges.every(ex => ex.alternative_raw_g > 0));
@@ -638,6 +667,248 @@ check('CP-D1..D7: Clinician-editable recipe helpers (add/edit/replace/remove/div
       assert.equal(removed.ingredients.length, draft.ingredients.length);
     }
   }
+});
+
+// ── CHECKPOINT F–H DEFINITIVE INTEGRATION TESTS ──────────────────────────────
+console.log('\nCheckpoint F–H Definitive Integration & Safety Tests:');
+
+check('CP-F1..F11: Unified authorization filter enforces status+is_approved+version+patient+visit across FoodExchange, R6, and DualReport', () => {
+  const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
+  const altFood = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0010')!;
+  const patientF = { ...basePatient, current_visit_id: 'vis_f1' } as PatientProfile;
+
+  const baseAlt = {
+    food_id: altFood.id,
+    name_bn: altFood.name_bn,
+    name_en: altFood.name_en,
+    raw_weight_g: 98,
+    cooked_display_bn: '৯৮ গ্রাম',
+    cooked_display_en: '98g cooked',
+    kcal: 340,
+    protein_g: 6,
+    traffic_status: 'GREEN' as const,
+    matching_mode: 'energy_matched',
+    match_status: 'equivalent_within_tolerance',
+    requires_clinician_review: false,
+    authorized_for_patient_id: patientF.id,
+    authorized_for_visit_id: 'vis_f1',
+    authorized_for_plan_version: 2,
+    authorization_status: 'authorized' as const,
+  };
+
+  const approvedPlan: any = {
+    plan_id: 'plan_f1',
+    patient_id: patientF.id,
+    visit_id: 'vis_f1',
+    version: 2,
+    schema_version: 2,
+    status: 'approved',
+    is_approved: true,
+    overall_safety_status: 'SAFE',
+    approval_metadata: { clinician_id: 'DR_01', clinician_name: 'Dr. Test', approval_timestamp: '2026-11-28T00:00:00Z', plan_version: 2 },
+    target_macros: { calories: 1600, protein_g: 65, carbs_g: 200, fat_g: 50 },
+    days: [
+      {
+        day_number: 1,
+        day_name_bn: '১ম দিন',
+        day_name_en: 'Day 1',
+        safety_decision: 'SAFE',
+        summary: { calories: 350, protein_g: 7, carbs_g: 78, fat_g: 0.6, fiber_g: 1.5, gl: 40, gl_is_estimated: true, pral: 0, calorie_variance: 0, protein_variance: 0, carbs_variance: 0, fat_variance: 0 },
+        meals: [
+          {
+            id: 'm1',
+            meal_type: 'lunch',
+            title_bn: 'দুপুর',
+            title_en: 'Lunch',
+            target_time: '13:30',
+            meal_calories: 350,
+            meal_protein_g: 7,
+            meal_carbs_g: 78,
+            meal_fat_g: 0.6,
+            meal_gl: 40,
+            meal_gl_is_estimated: true,
+            meal_pral: 0,
+            incompatible_warnings: [],
+            items: [
+              {
+                id: 'it1',
+                food_id: rice.id,
+                food_name_bn: rice.name_bn,
+                food_name_en: rice.name_en,
+                category: rice.category,
+                raw_weight_g: 100,
+                cooked_weight_g: 250,
+                cooked_display_bn: '২৫০ গ্রাম',
+                cooked_display_en: '250g cooked',
+                kcal: 350,
+                protein_g: 7,
+                carbs_g: 78,
+                fat_g: 0.6,
+                fiber_g: 1.5,
+                prep_note_bn: 'সিদ্ধ',
+                prep_note_en: 'Boiled',
+                traffic_status: 'GREEN',
+                alternatives: [
+                  baseAlt, // valid authorized
+                  { ...baseAlt, authorization_status: 'draft_candidate' as const }, // F02 draft rejected
+                  { ...baseAlt, authorization_status: 'invalidated' as const }, // F03 invalidated rejected
+                  { ...baseAlt, requires_clinician_review: true, clinician_review_confirmed: false }, // F04 review-required rejected
+                  { ...baseAlt, authorized_for_patient_id: 'OTHER_PATIENT' }, // F05 wrong-patient rejected
+                  { ...baseAlt, authorized_for_visit_id: 'vis_old' }, // F06 wrong-visit rejected
+                  { ...baseAlt, authorized_for_plan_version: 1 }, // F07 stale version rejected
+                  { ...baseAlt, authorization_status: undefined as any }, // legacy absent metadata rejected
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  assert.equal(isWeeklyPlanCurrentlyAuthorized(approvedPlan, patientF, 'vis_f1').isPlanAuthorized, true);
+  assert.equal(isWeeklyPlanCurrentlyAuthorized({ ...approvedPlan, status: 'draft', is_approved: false }, patientF, 'vis_f1').isPlanAuthorized, false);
+
+  const tl = { green: [rice, altFood], yellow: [], red: [] };
+  const exchanges = buildPatientSpecificFoodExchanges(approvedPlan, tl, patientF, undefined, 'vis_f1');
+  assert.equal(exchanges.length, 1);
+
+  const r6Payload = composeR6Prescription({ patient: patientF, weeklyDietPlan: approvedPlan, trafficLight: tl });
+  assert.equal(r6Payload.dynamic_diet_chart.days[0].meals[0].items[0].alternatives.length, 1);
+
+  const dualPatient = buildPatientReportProjection({ patient: patientF, dietChart: [], weeklyDietPlan: approvedPlan, trafficLight: tl });
+  assert.equal(dualPatient.days[0].meals[0].items[0].approved_substitutes.length, 1);
+
+  // Unapproved plan strips ALL alternatives across Food Exchange, R6 & DualReport
+  const draftPlan = { ...approvedPlan, status: 'draft', is_approved: false };
+  assert.equal(buildPatientSpecificFoodExchanges(draftPlan, tl, patientF).length, 0);
+  const r6Draft = composeR6Prescription({ patient: patientF, weeklyDietPlan: draftPlan, trafficLight: tl });
+  assert.equal(r6Draft.dynamic_diet_chart.days[0].meals[0].items[0].alternatives.length, 0);
+  const dualDraft = buildPatientReportProjection({ patient: patientF, dietChart: [], weeklyDietPlan: draftPlan, trafficLight: tl });
+  assert.equal(dualDraft.days[0].meals[0].items[0].approved_substitutes.length, 0);
+
+  // F08 / filter check with RED
+  assert.equal(filterAuthorizedPatientAlternatives({ alternatives: [baseAlt], plan: approvedPlan, patient: patientF, trafficLight: { green: [rice], red: [altFood], yellow: [] } }).length, 0);
+});
+
+check('CP-G9..G15: Unknown foods stay incomplete (never vanish), general protein target is NOT a hard limit, and R8 hard limits block WeeklyPlan approval & R6 release', () => {
+  const rice = R8_BASELINE_FOODS.find(f => f.id === 'f_01_0012')!;
+  const spinach = R8_BASELINE_FOODS.find(f => f.id === 'f_04_0025')!;
+  const patientG = {
+    ...basePatient,
+    current_visit_id: 'vis_g1',
+    weight_kg: 60,
+    prescriptions: { potassium: { limit_mg: 900 } },
+  } as unknown as PatientProfile;
+  const contractG = buildR5NutritionAdjustmentContract({ patient: patientG });
+
+  // Unknown food_id + potassium limit -> indeterminate_incomplete_data (never vanishes)
+  const unknownCheck = evaluateDailyPlanConstraints({
+    daily_items: [
+      { food_id: rice.id, raw_weight_g: 100 },
+      { food_id: 'f_unknown_missing_999', raw_weight_g: 100 },
+    ],
+    patient: patientG,
+    r5_nutrition_contract: contractG,
+  });
+  assert.equal(unknownCheck.compliance_status, 'indeterminate_incomplete_data');
+  assert.ok(unknownCheck.indeterminate_reasons_en.some(r => r.includes('Potassium')));
+
+  // General protein_g_per_kg target without hard cap must NOT block normal protein intake
+  const proteinTargetContract = {
+    ...contractG,
+    nutrient_constraints: { ...contractG.nutrient_constraints, potassium_mg_max: undefined, protein_g_per_kg: 0.8 },
+  };
+  const protCheck = evaluateDailyPlanConstraints({
+    daily_items: [{ food_id: 'f_09_0059', raw_weight_g: 300 }], // >48g protein
+    patient: patientG,
+    r5_nutrition_contract: proteinTargetContract,
+  });
+  assert.equal(protCheck.hard_limit_violations_en.length, 0);
+
+  // Weekly plan exceeding potassium ceiling triggers HARD_STOP in evaluateWeeklyPlanClinicalSafety & blocks validateReportReleaseEligibility (G13 & G14)
+  const badPlan: any = {
+    plan_id: 'plan_g1',
+    patient_id: patientG.id,
+    visit_id: 'vis_g1',
+    version: 2,
+    status: 'approved',
+    is_approved: true,
+    overall_safety_status: 'SAFE', // stale cached SAFE flag must NOT bypass R8 revalidation!
+    approval_metadata: { clinician_id: 'DR_01', clinician_name: 'Dr', approval_timestamp: '2026-11-28T00:00:00Z', plan_version: 2 },
+    target_macros: { calories: 1500, protein_g: 60, carbs_g: 180, fat_g: 45 },
+    days: [
+      {
+        day_number: 1,
+        safety_decision: 'SAFE',
+        summary: { calories: 1500, protein_g: 60, carbs_g: 180, fat_g: 45, fiber_g: 20, gl: 50, gl_is_estimated: true, pral: 0, calorie_variance: 0, protein_variance: 0, carbs_variance: 0, fat_variance: 0 },
+        meals: [
+          {
+            id: 'm1',
+            meal_type: 'lunch',
+            title_bn: 'দুপুর',
+            title_en: 'Lunch',
+            target_time: '13:00',
+            items: [{ id: 'i_k', food_id: spinach.id, raw_weight_g: 450, food_name_en: spinach.name_en, food_name_bn: spinach.name_bn, category: spinach.category, cooked_weight_g: 400, cooked_display_bn: '', cooked_display_en: '', kcal: 100, protein_g: 10, carbs_g: 5, fat_g: 1, fiber_g: 8, alternatives: [] }],
+          },
+        ],
+      },
+    ],
+  };
+
+  const weeklySafety = evaluateWeeklyPlanClinicalSafety(patientG, badPlan, R8_BASELINE_FOODS, null, contractG);
+  assert.equal(weeklySafety.overall_decision, 'HARD_STOP');
+  assert.equal(weeklySafety.is_eligible_for_approval, false);
+
+  const releaseGate = validateReportReleaseEligibility({
+    patient: patientG,
+    plan: badPlan,
+    weeklyDietPlan: badPlan,
+    r5NutritionContract: contractG,
+    visit: { visit_id: 'vis_g1', id: 'vis_g1', patient_id: patientG.id, visit_date: '2026-11-28', visit_type: 'initial', status: 'in_progress' } as any,
+  });
+  assert.equal(releaseGate.isEligible, false);
+  assert.ok(releaseGate.blockingReasons.some(r => r.includes('R8 Clinical Constraint Violation') && r.includes('Potassium')));
+});
+
+check('CP-H1..H11: Recipe nutrient resolution uses snapshot * prescribed_servings (never first ingredient or double counting)', () => {
+  const baseRecipe = R8_REPRESENTATIVE_RECIPES.find(r => r.recipe_id === 'rec_bd_masoor_dal')!;
+  const analysis1 = computeRecipeAnalysis(baseRecipe, { patient: basePatient });
+  const recipeItem1Serving = {
+    food_id: baseRecipe.recipe_id,
+    raw_weight_g: Math.round(analysis1.total_raw_ingredient_g / baseRecipe.servings),
+    is_recipe_item: true,
+    recipe_reference: {
+      recipe_id: baseRecipe.recipe_id,
+      version: baseRecipe.version,
+      recipe_servings_base: baseRecipe.servings,
+      prescribed_servings: 1,
+      ingredients_snapshot: baseRecipe.ingredients.map(i => ({ food_id: i.food_id, raw_weight_g: i.raw_weight_g })),
+    },
+  };
+  const recipeItem2Servings = {
+    ...recipeItem1Serving,
+    recipe_reference: { ...recipeItem1Serving.recipe_reference, prescribed_servings: 2 },
+  };
+
+  const agg1 = aggregateMealItemsNutrients([recipeItem1Serving]);
+  const agg2 = aggregateMealItemsNutrients([recipeItem2Servings]);
+  // Compare against first ingredient alone (lentil): multi-ingredient recipe includes lentil + onion + garlic + mustard oil!
+  const singleIngAgg = aggregateFoodNutrients([{ food: R8_BASELINE_FOODS.find(f => f.id === baseRecipe.ingredients[0].food_id)!, raw_edible_g: baseRecipe.ingredients[0].raw_weight_g / baseRecipe.servings }]);
+  assert.ok(agg1['energy'].known_total > singleIngAgg['energy'].known_total);
+  assert.ok(Math.abs(agg1['energy'].known_total - analysis1.nutrients['energy'].per_serving) < 1.5);
+  assert.ok(Math.abs(agg2['energy'].known_total - agg1['energy'].known_total * 2) < 1.5);
+
+  // Missing snapshot NEVER falls back silently to constituent food
+  const brokenRecipeItem = {
+    food_id: baseRecipe.ingredients[0].food_id,
+    raw_weight_g: 50,
+    is_recipe_item: true,
+    recipe_reference: undefined,
+  };
+  const brokenAgg = aggregateMealItemsNutrients([brokenRecipeItem]);
+  assert.equal(brokenAgg['energy'].is_incomplete, true);
+  assert.equal(brokenAgg['energy'].known_total, 0);
 });
 
 console.log(`\nALL R8 UNIT & INTEGRATION CHECKS PASSED (${passed}/${passed})\n`);

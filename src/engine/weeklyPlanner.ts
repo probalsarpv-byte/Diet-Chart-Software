@@ -36,6 +36,9 @@ import { P3NutritionPlanningContext } from './p2/types';
 import { validateInterventionPlan } from '../clinical-safety/interventionValidation';
 import { evaluateFastingEligibility } from '../clinical-safety/fastingSafetyEngine';
 import { evaluateMealScheduleTiming } from '../clinical-safety/mealTimingEngine';
+import { aggregateMealItemsNutrients } from './r8/foodFoundation';
+import { evaluateDailyPlanConstraints } from './r8/substitutionEngine';
+import { R5NutritionAdjustmentContract } from '../types/r5Systems';
 import foodsData from '../data/foods.json';
 
 const defaultFoods = foodsData as FoodItem[];
@@ -165,12 +168,30 @@ export function calculateMealTotals(
   allFoods?: FoodItem[],
   slotErrors: MealSlotConstraintError[] = []
 ) {
-  const meal_calories = items.reduce((sum, i) => sum + i.kcal, 0);
-  const meal_protein_g = Math.round(items.reduce((sum, i) => sum + i.protein_g, 0) * 10) / 10;
-  const meal_carbs_g = Math.round(items.reduce((sum, i) => sum + i.carbs_g, 0) * 10) / 10;
-  const meal_fat_g = Math.round(items.reduce((sum, i) => sum + i.fat_g, 0) * 10) / 10;
-
   const resolvedFoods = (allFoods && allFoods.length > 0) ? allFoods : defaultFoods;
+  let meal_calories = 0;
+  let meal_protein_g = 0;
+  let meal_carbs_g = 0;
+  let meal_fat_g = 0;
+
+  for (const item of items) {
+    if (item.is_recipe_item || item.recipe_reference) {
+      const recTotals = aggregateMealItemsNutrients([item], ['energy', 'protein', 'available_carbohydrate', 'total_fat'], resolvedFoods);
+      meal_calories += Math.round(recTotals['energy']?.known_total ?? item.kcal ?? 0);
+      meal_protein_g += recTotals['protein']?.known_total ?? item.protein_g ?? 0;
+      meal_carbs_g += recTotals['available_carbohydrate']?.known_total ?? item.carbs_g ?? 0;
+      meal_fat_g += recTotals['total_fat']?.known_total ?? item.fat_g ?? 0;
+    } else {
+      meal_calories += item.kcal || 0;
+      meal_protein_g += item.protein_g || 0;
+      meal_carbs_g += item.carbs_g || 0;
+      meal_fat_g += item.fat_g || 0;
+    }
+  }
+  meal_calories = Math.round(meal_calories);
+  meal_protein_g = Math.round(meal_protein_g * 10) / 10;
+  meal_carbs_g = Math.round(meal_carbs_g * 10) / 10;
+  meal_fat_g = Math.round(meal_fat_g * 10) / 10;
 
   // Approximate Glycemic Load (GL) with is_estimated flag
   const meal_gl = Math.round(items.reduce((sum, i) => {
@@ -1643,7 +1664,8 @@ export function evaluateWeeklyPlanClinicalSafety(
   patient: PatientProfile,
   weeklyPlan: WeeklyDietPlan,
   allFoods: FoodItem[],
-  p3Context?: P3NutritionPlanningContext | null
+  p3Context?: P3NutritionPlanningContext | null,
+  r5NutritionContract?: R5NutritionAdjustmentContract
 ): WeeklyPlanSafetyEvaluation {
   const unresolvedHardStops: string[] = [];
   const reasons: string[] = [];
@@ -1737,6 +1759,35 @@ export function evaluateWeeklyPlanClinicalSafety(
           }
         }
       }
+    }
+
+    // Checkpoint G4 & H4: Shared R8 quantitative daily constraint check across ordinary foods AND recipes
+    const effectiveR5Contract = r5NutritionContract || p3Context?.r5NutritionConstraints;
+    const dailyResolvableItems = (day.meals || []).flatMap(m =>
+      (m.items || []).map(it => ({
+        item_id: it.id,
+        meal_id: m.id,
+        food_id: it.food_id,
+        raw_weight_g: it.raw_weight_g,
+        is_recipe_item: it.is_recipe_item,
+        recipe_reference: it.recipe_reference,
+      }))
+    );
+    const r8DailyEval = evaluateDailyPlanConstraints({
+      daily_items: dailyResolvableItems,
+      patient: mergedPatient,
+      r5_nutrition_contract: effectiveR5Contract,
+      foodPool: allFoods,
+    });
+    for (const v of r8DailyEval.hard_limit_violations_en) {
+      const msg = `Day ${day.day_number} Nutrient Constraint Violation: ${v}`;
+      dayNotes.push(msg);
+      if (!unresolvedHardStops.includes(msg)) {
+        unresolvedHardStops.push(msg);
+      }
+    }
+    for (const ind of r8DailyEval.indeterminate_reasons_en) {
+      dayNotes.push(`Day ${day.day_number} Indeterminate Composition: ${ind}`);
     }
 
     let dayDecision: 'SAFE' | 'CLINICAL_REVIEW_REQUIRED' | 'HARD_STOP' = 'SAFE';

@@ -533,8 +533,21 @@ export interface FoodExchangeItem {
   conditional_instructions_bn?: string[];
   authorized_for_patient_id?: string;
   authorized_for_visit_id?: string;
+  authorized_for_plan_version?: number;
+  clinician_review_confirmed?: boolean;
   authorization_status?: 'authorized' | 'draft_candidate' | 'invalidated';
 }
+
+export type FoodSwapResult =
+  | {
+      ok: true;
+      updatedItemId: string;
+    }
+  | {
+      ok: false;
+      reason: string;
+      clinicalViolations?: string[];
+    };
 
 export interface DietChartMealItem {
   id: string;
@@ -558,10 +571,17 @@ export interface DietChartMealItem {
   contraindicated_reasons?: string[];
   contraindicated_reasons_bn?: string[];
   is_locked?: boolean;
+  is_recipe_item?: boolean;
   recipe_reference?: {
     recipe_id: string;
     version: string;
+    name_en?: string;
+    name_bn?: string;
+    recipe_servings_base?: number;
     prescribed_servings: number;
+    preparation_method?: string;
+    cooked_yield_g?: number | null;
+    is_nutrition_incomplete?: boolean;
     ingredients_snapshot: Array<{ food_id: string; raw_weight_g: number }>;
   };
 }

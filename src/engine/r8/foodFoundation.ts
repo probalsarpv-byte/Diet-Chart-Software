@@ -726,3 +726,113 @@ export function aggregateFoodNutrients(
 
   return out;
 }
+
+export interface R8ResolvableMealItem {
+  item_id?: string;
+  meal_id?: string;
+  food_id: string;
+  raw_weight_g: number;
+  is_recipe_item?: boolean;
+  recipe_reference?: {
+    recipe_id: string;
+    version: string;
+    recipe_servings_base?: number;
+    prescribed_servings: number;
+    ingredients_snapshot: Array<{ food_id: string; raw_weight_g: number }>;
+  };
+}
+
+/**
+ * Shared recipe-aware meal-item & daily nutrient aggregator (Checkpoints G5 & H2).
+ * - Resolves ordinary foods cleanly without silently dropping unknown food_ids.
+ * - Resolves recipe_reference items ONLY via their versioned ingredients_snapshot scaled by
+ *   (prescribed_servings / recipe_servings_base), NEVER via ingredients[0] fallback or double counting.
+ */
+export function aggregateMealItemsNutrients(
+  items: R8ResolvableMealItem[],
+  nutrientIds: string[] = ['energy', 'protein', 'available_carbohydrate', 'total_fat', 'dietary_fiber', 'sodium', 'potassium', 'phosphorus', 'calcium', 'iron', 'magnesium'],
+  foodPool: FoodItem[] = R8_BASELINE_FOODS
+): Record<string, R8ComputedNutrientSubtotal> {
+  const foodMap = new Map(foodPool.map(f => [f.id, f]));
+  const expandedPortions: Array<{ food?: FoodItem; raw_edible_g: number; unresolved_id?: string }> = [];
+
+  for (const item of items) {
+    const isRecipe = Boolean(item.is_recipe_item || item.recipe_reference);
+    if (isRecipe) {
+      const ref = item.recipe_reference;
+      if (
+        !ref ||
+        !ref.recipe_id ||
+        !ref.version ||
+        !Array.isArray(ref.ingredients_snapshot) ||
+        ref.ingredients_snapshot.length === 0 ||
+        typeof ref.prescribed_servings !== 'number' ||
+        !Number.isFinite(ref.prescribed_servings) ||
+        ref.prescribed_servings <= 0
+      ) {
+        expandedPortions.push({ raw_edible_g: 0, unresolved_id: ref?.recipe_id || item.food_id || 'unresolved_recipe' });
+        continue;
+      }
+      const baseServings =
+        typeof ref.recipe_servings_base === 'number' && Number.isFinite(ref.recipe_servings_base) && ref.recipe_servings_base > 0
+          ? ref.recipe_servings_base
+          : 1;
+      const ratio = ref.prescribed_servings / baseServings;
+      for (const ing of ref.ingredients_snapshot) {
+        const f = foodMap.get(ing.food_id);
+        if (!f || typeof ing.raw_weight_g !== 'number' || !Number.isFinite(ing.raw_weight_g) || ing.raw_weight_g < 0) {
+          expandedPortions.push({ raw_edible_g: 0, unresolved_id: ing.food_id || 'unresolved_ingredient' });
+        } else {
+          expandedPortions.push({ food: f, raw_edible_g: ing.raw_weight_g * ratio });
+        }
+      }
+    } else {
+      const f = foodMap.get(item.food_id);
+      if (!f || typeof item.raw_weight_g !== 'number' || !Number.isFinite(item.raw_weight_g) || item.raw_weight_g < 0) {
+        expandedPortions.push({ raw_edible_g: 0, unresolved_id: item.food_id || 'unresolved_food' });
+      } else {
+        expandedPortions.push({ food: f, raw_edible_g: item.raw_weight_g });
+      }
+    }
+  }
+
+  const out: Record<string, R8ComputedNutrientSubtotal> = {};
+  for (const nid of nutrientIds) {
+    const cid = resolveR8NutrientId(nid);
+    const def = NUTRIENT_BY_ID.get(cid);
+    let knownTotal = 0;
+    let contributing = 0;
+    const missingFoodIds: string[] = [];
+
+    for (const part of expandedPortions) {
+      if (!part.food) {
+        missingFoodIds.push(part.unresolved_id || 'unknown_food');
+        continue;
+      }
+      const m = extractFoodNutrientMeasurement(part.food, cid);
+      if (m.value !== null && Number.isFinite(m.value)) {
+        knownTotal += (m.value * part.raw_edible_g) / 100;
+        contributing++;
+      } else {
+        missingFoodIds.push(part.food.id);
+      }
+    }
+
+    const totalFoods = expandedPortions.length;
+    const roundedTotal = Math.round(knownTotal * 100) / 100;
+    out[cid] = {
+      canonical_nutrient_id: cid,
+      label_en: def?.label_en || cid,
+      unit: def?.canonical_unit || 'mg',
+      known_total: roundedTotal,
+      per_serving: roundedTotal,
+      contributing_foods_count: contributing,
+      total_foods_count: totalFoods,
+      missing_food_ids: Array.from(new Set(missingFoodIds)),
+      is_incomplete: missingFoodIds.length > 0,
+      coverage_ratio: totalFoods > 0 ? Math.round((contributing / totalFoods) * 100) / 100 : 1
+    };
+  }
+
+  return out;
+}

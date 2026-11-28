@@ -353,8 +353,21 @@ export interface R8SubstitutionRequest {
   target_nutrient_id?: string;
   tolerance_pct?: number;
   max_results?: number;
-  current_meal_items?: Array<{ item_id?: string; food_id: string; raw_weight_g: number }>;
-  current_daily_items?: Array<{ item_id?: string; meal_id?: string; food_id: string; raw_weight_g: number }>;
+  current_meal_items?: Array<{
+    item_id?: string;
+    food_id: string;
+    raw_weight_g: number;
+    is_recipe_item?: boolean;
+    recipe_reference?: any;
+  }>;
+  current_daily_items?: Array<{
+    item_id?: string;
+    meal_id?: string;
+    food_id: string;
+    raw_weight_g: number;
+    is_recipe_item?: boolean;
+    recipe_reference?: any;
+  }>;
   traffic_light?: {
     green: Array<{ id: string }>;
     yellow: Array<{ id: string; reasons?: any[] }>;

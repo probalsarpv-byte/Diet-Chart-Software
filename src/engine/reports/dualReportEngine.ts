@@ -23,6 +23,10 @@ import {
 } from '@/types';
 import { CLINICAL_PHASES } from '@/engine/phaseProgression';
 import {
+  evaluateDailyPlanConstraints,
+  filterAuthorizedPatientAlternatives
+} from '@/engine/r8/substitutionEngine';
+import {
   SevenFoodGroupCategory,
   FoodGuideEntry,
   SevenFoodGroupSection,
@@ -474,6 +478,33 @@ export function validateReportReleaseEligibility(options: {
   if (hasOverallHardStop || hasPlanHardStop || hasUnresolvedHardStops || hasDayHardStop) {
     blockingReasons.push('Active Clinical Safety HARD_STOP detected. Prescription release is strictly blocked.');
     blockingReasons_bn.push('সক্রিয় ক্লিনিক্যাল সেফটি হার্ড স্টপ বিদ্যমান। রোগীর জন্য চূড়ান্ত প্রেসক্রিপশন প্রকাশ সম্পূর্ণ নিষিদ্ধ।');
+  }
+
+  // Check 7b (Checkpoint G14): Revalidate authoritative R8 daily nutrient hard constraints directly (never trust cached flags)
+  if (weeklyDietPlan?.days && weeklyDietPlan.days.length > 0) {
+    for (const d of weeklyDietPlan.days) {
+      const dailyItems = (d.meals || []).flatMap(m => (m.items || []).map(it => ({
+        item_id: it.id,
+        meal_id: m.id,
+        food_id: it.food_id,
+        raw_weight_g: it.raw_weight_g,
+        is_recipe_item: it.is_recipe_item,
+        recipe_reference: it.recipe_reference
+      })));
+      const r8DayCheck = evaluateDailyPlanConstraints({
+        daily_items: dailyItems,
+        patient,
+        r5_nutrition_contract: r5NutritionContract,
+        r7_lab_summary: options.r7LabSummary
+      });
+      if (r8DayCheck.hard_limit_violations_en.length > 0) {
+        const msg = `Day ${d.day_number} R8 Clinical Constraint Violation: ${r8DayCheck.hard_limit_violations_en.join('; ')}`;
+        if (!blockingReasons.includes(msg)) {
+          blockingReasons.push(msg);
+          blockingReasons_bn.push(`দিন ${d.day_number} অনুমোদিত পুষ্টি সীমা লঙ্ঘন: ${r8DayCheck.hard_limit_violations_en.join('; ')}`);
+        }
+      }
+    }
   }
 
   // Check 8: Contraindicated (RED) Food Items Check
@@ -1201,14 +1232,25 @@ export function buildPatientReportProjection(options: {
         title_en: meal.title_en,
         target_time: meal.target_time,
         items: meal.items.map(item => ({
-          food_name_bn: item.food_name_bn,
-          food_name_en: item.food_name_en,
+          food_name_bn: item.recipe_reference?.name_bn
+            ? `${item.recipe_reference.name_bn} (অনুমোদিত রেসিপি · ${item.recipe_reference.prescribed_servings} পরিবেশন)`
+            : item.food_name_bn,
+          food_name_en: item.recipe_reference?.name_en
+            ? `${item.recipe_reference.name_en} (Authorized Recipe · ${item.recipe_reference.prescribed_servings} serving(s))`
+            : item.food_name_en,
           raw_serving_weight_g: item.raw_weight_g,
           household_portion_bn: item.cooked_display_bn,
           household_portion_en: item.cooked_display_en,
           preparation_note_bn: item.prep_note_bn || 'স্বাভাবিক পদ্ধতিতে রান্না',
           preparation_note_en: item.prep_note_en || 'Standard preparation',
-          approved_substitutes: (item.alternatives || []).slice(0, 3).map(alt => ({
+          approved_substitutes: filterAuthorizedPatientAlternatives({
+            alternatives: item.alternatives,
+            plan: weeklyDietPlan,
+            patient,
+            visitId,
+            trafficLight,
+            r5NutritionContract
+          }).slice(0, 3).map(alt => ({
             name_bn: alt.name_bn,
             name_en: alt.name_en,
             portion_bn: alt.cooked_display_bn,

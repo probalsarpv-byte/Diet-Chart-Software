@@ -107,6 +107,7 @@ export const DietChartTab: React.FC = () => {
     rawGrams: number;
   } | null>(null);
   const [r8SwapMode, setR8SwapMode] = useState<R8SubstitutionMode>('energy_matched');
+  const [r8SwapError, setR8SwapError] = useState<string | null>(null);
 
   const activeDayPlan = weeklyDietPlan?.days?.find(d => d.day_number === activeDayNumber);
 
@@ -117,9 +118,18 @@ export const DietChartTab: React.FC = () => {
       item_id: i.id,
       food_id: i.food_id,
       raw_weight_g: i.raw_weight_g,
+      is_recipe_item: i.is_recipe_item,
+      recipe_reference: i.recipe_reference,
     }));
     const currentDailyItems = (activeDayPlan?.meals || []).flatMap(m =>
-      (m.items || []).map(i => ({ item_id: i.id, meal_id: m.id, food_id: i.food_id, raw_weight_g: i.raw_weight_g }))
+      (m.items || []).map(i => ({
+        item_id: i.id,
+        meal_id: m.id,
+        food_id: i.food_id,
+        raw_weight_g: i.raw_weight_g,
+        is_recipe_item: i.is_recipe_item,
+        recipe_reference: i.recipe_reference,
+      }))
     );
     return evaluateFoodSubstitutions(
       {
@@ -862,8 +872,11 @@ export const DietChartTab: React.FC = () => {
                               <button
                                 type="button"
                                 data-testid={`r8-smart-swap-btn-${item.id}`}
+                                disabled={Boolean(item.is_recipe_item || item.recipe_reference)}
+                                title={item.is_recipe_item || item.recipe_reference ? 'Edit recipes via Recipe Studio' : undefined}
                                 onClick={() => {
                                   setR8SwapMode('energy_matched');
+                                  setR8SwapError(null);
                                   setR8SwapTarget({
                                     mealId: meal.id,
                                     itemId: item.id,
@@ -872,7 +885,7 @@ export const DietChartTab: React.FC = () => {
                                     rawGrams: item.raw_weight_g,
                                   });
                                 }}
-                                className="px-2 py-0.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 text-[10px] font-semibold text-primary transition-all flex items-center gap-1"
+                                className="px-2 py-0.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 disabled:opacity-40 disabled:cursor-not-allowed text-[10px] font-semibold text-primary transition-all flex items-center gap-1"
                               >
                                 <Sliders className="h-2.5 w-2.5" />
                                 <span>{bn ? 'স্মার্ট বদল (R8)' : 'Smart Swap (R8)'}</span>
@@ -1798,12 +1811,24 @@ export const DietChartTab: React.FC = () => {
               <button
                 type="button"
                 data-testid="r8-swap-modal-close"
-                onClick={() => setR8SwapTarget(null)}
+                onClick={() => {
+                  setR8SwapTarget(null);
+                  setR8SwapError(null);
+                }}
                 className="px-2.5 py-1 rounded-lg border border-border text-xs font-semibold hover:bg-muted"
               >
                 {bn ? 'বন্ধ করুন' : 'Close'}
               </button>
             </div>
+
+            {r8SwapError && (
+              <div
+                data-testid="r8-swap-modal-error"
+                className="p-3 rounded-xl border border-rose-500/40 bg-rose-500/10 text-xs font-semibold text-rose-700 dark:text-rose-300"
+              >
+                {r8SwapError}
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-2">
               <label className="text-xs font-semibold text-muted-foreground">
@@ -1838,6 +1863,9 @@ export const DietChartTab: React.FC = () => {
                     <div
                       key={cand.candidate_food.id}
                       data-testid={`r8-swap-candidate-${cand.candidate_food.id}`}
+                      data-cand-name={cand.candidate_food.name_en}
+                      data-cand-name-bn={cand.candidate_food.name_bn}
+                      data-cand-grams={Math.round(cand.proposed_raw_grams)}
                       className="p-3.5 rounded-xl border border-border bg-background/70 space-y-2"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1888,13 +1916,18 @@ export const DietChartTab: React.FC = () => {
                                 authorized_for_visit_id: currentVisit?.visit_id || currentVisit?.id || patient?.current_visit_id,
                                 authorization_status: 'draft_candidate',
                               };
-                              swapDayMealItemAlternative(
+                              const res = swapDayMealItemAlternative(
                                 activeDayNumber,
                                 r8SwapTarget.mealId,
                                 r8SwapTarget.itemId,
                                 exchange
                               );
-                              setR8SwapTarget(null);
+                              if (res.ok) {
+                                setR8SwapError(null);
+                                setR8SwapTarget(null);
+                              } else {
+                                setR8SwapError(res.reason);
+                              }
                             }}
                             className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold transition"
                           >
